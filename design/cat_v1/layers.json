@@ -1,0 +1,385 @@
+{
+  "name": "AI Cat Character",
+  "version": "1.0",
+  "canvas": {
+    "width": 1024,
+    "height": 1024,
+    "origin": "top-left",
+    "unit": "px"
+  },
+  "note": "所有图层使用同一张 1024x1024 画布与同一坐标系，直接按 z 从低到高叠加即为完整角色。",
+  "parts": [
+    {
+      "name": "shadow",
+      "z": 0,
+      "file": "layers/shadow.png",
+      "pivot_px": [
+        512,
+        952
+      ],
+      "pivot_norm": [
+        0.5,
+        0.93
+      ],
+      "bbox_px": [
+        349,
+        931,
+        675,
+        973
+      ],
+      "role": "脚下软阴影，随身体压缩/拉伸改变大小与不透明度"
+    },
+    {
+      "name": "tail",
+      "z": 1,
+      "file": "layers/tail.png",
+      "pivot_px": [
+        676,
+        872
+      ],
+      "pivot_norm": [
+        0.66,
+        0.852
+      ],
+      "bbox_px": [
+        622,
+        541,
+        962,
+        937
+      ],
+      "role": "绕根端旋转做摇尾；根部埋进身体，安全重叠"
+    },
+    {
+      "name": "body",
+      "z": 2,
+      "file": "layers/body.png",
+      "pivot_px": [
+        512,
+        952
+      ],
+      "pivot_norm": [
+        0.5,
+        0.93
+      ],
+      "bbox_px": [
+        235,
+        416,
+        789,
+        955
+      ],
+      "role": "坐姿躯干，底部为缩放/呼吸锚点"
+    },
+    {
+      "name": "paw_l",
+      "z": 3,
+      "file": "layers/paw_l.png",
+      "pivot_px": [
+        428,
+        819
+      ],
+      "pivot_norm": [
+        0.418,
+        0.8
+      ],
+      "bbox_px": [
+        364,
+        676,
+        492,
+        948
+      ],
+      "role": "左前爪，可上下位移做踏步/轻点"
+    },
+    {
+      "name": "paw_r",
+      "z": 4,
+      "file": "layers/paw_r.png",
+      "pivot_px": [
+        596,
+        819
+      ],
+      "pivot_norm": [
+        0.582,
+        0.8
+      ],
+      "bbox_px": [
+        532,
+        676,
+        660,
+        948
+      ],
+      "role": "右前爪，可上下位移做踏步/轻点"
+    },
+    {
+      "name": "ear_l",
+      "z": 5,
+      "file": "layers/ear_l.png",
+      "pivot_px": [
+        346,
+        263
+      ],
+      "pivot_norm": [
+        0.338,
+        0.257
+      ],
+      "bbox_px": [
+        219,
+        36,
+        451,
+        320
+      ],
+      "role": "绕耳根旋转：竖起/压平/抖动"
+    },
+    {
+      "name": "ear_r",
+      "z": 6,
+      "file": "layers/ear_r.png",
+      "pivot_px": [
+        678,
+        263
+      ],
+      "pivot_norm": [
+        0.662,
+        0.257
+      ],
+      "bbox_px": [
+        573,
+        36,
+        805,
+        320
+      ],
+      "role": "绕耳根旋转：竖起/压平/抖动"
+    },
+    {
+      "name": "head",
+      "z": 7,
+      "file": "layers/head.png",
+      "pivot_px": [
+        512,
+        717
+      ],
+      "pivot_norm": [
+        0.5,
+        0.7
+      ],
+      "bbox_px": [
+        225,
+        151,
+        799,
+        674
+      ],
+      "role": "含脸型、口鼻浅色区与鼻子；锚点在脖子根部，可歪头/摇头"
+    },
+    {
+      "name": "cheek_l",
+      "z": 8,
+      "file": "layers/cheek_l.png",
+      "pivot_px": [
+        326,
+        548
+      ],
+      "pivot_norm": [
+        0.318,
+        0.535
+      ],
+      "bbox_px": [
+        248,
+        493,
+        403,
+        603
+      ],
+      "role": "左脸颊，可缩放做鼓腮/害羞"
+    },
+    {
+      "name": "cheek_r",
+      "z": 9,
+      "file": "layers/cheek_r.png",
+      "pivot_px": [
+        698,
+        548
+      ],
+      "pivot_norm": [
+        0.682,
+        0.535
+      ],
+      "bbox_px": [
+        621,
+        493,
+        776,
+        603
+      ],
+      "role": "右脸颊，可缩放做鼓腮/害羞"
+    },
+    {
+      "name": "blush",
+      "z": 10,
+      "file": "layers/blush.png",
+      "pivot_px": [
+        512,
+        504
+      ],
+      "pivot_norm": [
+        0.5,
+        0.492
+      ],
+      "bbox_px": [
+        246,
+        464,
+        778,
+        544
+      ],
+      "role": "腮红，整体调透明度控制害羞程度"
+    },
+    {
+      "name": "eye_l",
+      "z": 11,
+      "file": "layers/eye_l.png",
+      "pivot_px": [
+        401,
+        399
+      ],
+      "pivot_norm": [
+        0.392,
+        0.39
+      ],
+      "bbox_px": [
+        335,
+        328,
+        467,
+        471
+      ],
+      "role": "左眼虹膜+竖瞳；纵向缩放做眨眼/半闭"
+    },
+    {
+      "name": "eye_r",
+      "z": 12,
+      "file": "layers/eye_r.png",
+      "pivot_px": [
+        623,
+        399
+      ],
+      "pivot_norm": [
+        0.608,
+        0.39
+      ],
+      "bbox_px": [
+        557,
+        328,
+        689,
+        471
+      ],
+      "role": "右眼虹膜+竖瞳；纵向缩放做眨眼/半闭"
+    },
+    {
+      "name": "eye_highlight",
+      "z": 13,
+      "file": "layers/eye_highlight.png",
+      "pivot_px": [
+        512,
+        399
+      ],
+      "pivot_norm": [
+        0.5,
+        0.39
+      ],
+      "bbox_px": [
+        362,
+        353,
+        649,
+        429
+      ],
+      "role": "眼睛高光，可单独淡出"
+    },
+    {
+      "name": "mouth",
+      "z": 14,
+      "file": "layers/mouth.png",
+      "pivot_px": [
+        512,
+        545
+      ],
+      "pivot_norm": [
+        0.5,
+        0.532
+      ],
+      "bbox_px": [
+        476,
+        520,
+        547,
+        569
+      ],
+      "role": "默认柔和微笑；表情变体见 expressions/"
+    }
+  ],
+  "expressions": [
+    {
+      "name": "eye_l_happy",
+      "replaces_layer_z": 11,
+      "file": "expressions/eye_l_happy.png",
+      "pivot_px": [
+        401,
+        399
+      ],
+      "role": "弯月眼（开心）"
+    },
+    {
+      "name": "eye_r_happy",
+      "replaces_layer_z": 12,
+      "file": "expressions/eye_r_happy.png",
+      "pivot_px": [
+        623,
+        399
+      ],
+      "role": "弯月眼（开心）"
+    },
+    {
+      "name": "eye_l_closed",
+      "replaces_layer_z": 11,
+      "file": "expressions/eye_l_closed.png",
+      "pivot_px": [
+        401,
+        399
+      ],
+      "role": "闭眼（眨眼/困倦）"
+    },
+    {
+      "name": "eye_r_closed",
+      "replaces_layer_z": 12,
+      "file": "expressions/eye_r_closed.png",
+      "pivot_px": [
+        623,
+        399
+      ],
+      "role": "闭眼（眨眼/困倦）"
+    },
+    {
+      "name": "mouth_happy",
+      "replaces_layer_z": 14,
+      "file": "expressions/mouth_happy.png",
+      "pivot_px": [
+        512,
+        545
+      ],
+      "role": "大笑"
+    },
+    {
+      "name": "mouth_sad",
+      "replaces_layer_z": 14,
+      "file": "expressions/mouth_sad.png",
+      "pivot_px": [
+        512,
+        545
+      ],
+      "role": "委屈下弯"
+    },
+    {
+      "name": "mouth_open",
+      "replaces_layer_z": 14,
+      "file": "expressions/mouth_open.png",
+      "pivot_px": [
+        512,
+        545
+      ],
+      "role": "张嘴（兴奋/哈欠）"
+    }
+  ]
+}

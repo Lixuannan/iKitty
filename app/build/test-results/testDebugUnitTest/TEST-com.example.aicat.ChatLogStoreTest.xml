@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.aicat.ChatLogStoreTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-13T04:51:49.502Z" hostname="MeizhendeMacBook-Air.local" time="0.023">
+  <properties/>
+  <testcase name="clear empties the log" classname="com.example.aicat.ChatLogStoreTest" time="0.002"/>
+  <testcase name="readAfter returns only what is past the cursor" classname="com.example.aicat.ChatLogStoreTest" time="0.005"/>
+  <testcase name="tail returns only the newest entries" classname="com.example.aicat.ChatLogStoreTest" time="0.008"/>
+  <testcase name="append then tail round trips a message" classname="com.example.aicat.ChatLogStoreTest" time="0.001"/>
+  <testcase name="a corrupt line does not take the rest of the log down" classname="com.example.aicat.ChatLogStoreTest" time="0.001"/>
+  <testcase name="reading across block boundaries does not corrupt chinese text" classname="com.example.aicat.ChatLogStoreTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

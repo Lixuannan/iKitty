@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  本地与局域网的大模型服务（Ollama、LM Studio、vLLM 等）通常只提供 http。
+  Android 9 起默认禁止明文流量，会让这些 Base URL 统一失败在
+  "CLEARTEXT communication not permitted" 上，所以这里显式放开。
+  如需收紧，把它改成分域名/地址的 <domain-config> 即可。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

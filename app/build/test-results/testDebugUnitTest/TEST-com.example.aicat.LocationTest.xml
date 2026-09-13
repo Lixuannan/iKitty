@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.aicat.LocationTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-09-13T04:51:49.532Z" hostname="MeizhendeMacBook-Air.local" time="0.003">
+  <properties/>
+  <testcase name="parses the chinese ip-api response" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="ambient block carries time, gap and place" classname="com.example.aicat.LocationTest" time="0.002"/>
+  <testcase name="a place with a blank city is treated as unknown" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="display falls back city then region then country" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="failure responses and garbage are rejected instead of cached" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="parses the ipwho-is fallback shape" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="elapsed is rendered coarsely" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="ambient block omits what it does not know" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="parses the ipapi-co fallback field names" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <testcase name="a json null city does not become the string null" classname="com.example.aicat.LocationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
