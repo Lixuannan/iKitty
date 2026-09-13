@@ -1,4 +1,4 @@
-# AI Cat MVP 🐱
+# iKitty 🐱
 
 一个极简 Android/Kotlin AI 猫咪聊天 MVP。
 
