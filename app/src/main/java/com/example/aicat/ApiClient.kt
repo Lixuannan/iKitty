@@ -1,6 +1,11 @@
 package com.example.aicat
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -49,13 +54,31 @@ class ApiClient {
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    /** 正常聊天请求。 */
+    /** 正常聊天请求（非流式）。记忆整理等需要完整 JSON 的场景用它。 */
     suspend fun chat(config: ApiConfig, messages: List<ChatMessage>): ChatCompletion =
         withContext(Dispatchers.IO) {
             val spec = config.spec()
-            val built = buildPayload(config, spec, messages)
+            val built = buildChatPayload(config, spec, messages, stream = false)
             parseCompletion(post(config, config.provider().chatPath, built))
         }
+
+    /**
+     * 流式聊天请求：每收到一段增量文本就调用一次 [onDelta]。
+     *
+     * 兼容两种情况：服务商支持 SSE 时逐段回调；服务商忽略 `stream` 直接返回普通 JSON 时，
+     * 整体解析后一次性返回，回调不会触发。返回值与 [chat] 相同，调用方不必区分。
+     *
+     * 协程被取消时会取消底层 HTTP 调用，不会让读取线程挂住。
+     */
+    suspend fun chatStream(
+        config: ApiConfig,
+        messages: List<ChatMessage>,
+        onDelta: (String) -> Unit
+    ): ChatCompletion = withContext(Dispatchers.IO) {
+        val spec = config.spec()
+        val built = buildChatPayload(config, spec, messages, stream = true)
+        executeStream(config, built, onDelta)
+    }
 
     /**
      * 测试连接：用和真实聊天完全相同的参数发一条极短请求。
@@ -65,7 +88,7 @@ class ApiClient {
      */
     suspend fun test(config: ApiConfig): TestOutcome = withContext(Dispatchers.IO) {
         val spec = config.spec()
-        val built = buildPayload(config, spec, TEST_MESSAGES)
+        val built = buildChatPayload(config, spec, TEST_MESSAGES, stream = false)
         val startedAt = System.nanoTime()
         val completion = parseCompletion(post(config, config.provider().chatPath, built))
         TestOutcome(
@@ -118,63 +141,90 @@ class ApiClient {
         }
     }
 
-    // ---- 请求构建 ----
-
-    private class BuiltRequest(val payload: JSONObject, val sentParams: List<String>)
+    // ---- 响应读取 ----
 
     /**
-     * 按模型能力拼请求体：只有 [ModelSpec] 声明支持的参数才会出现。
+     * 执行一次流式请求。
+     *
+     * SSE 每行形如 `data: {...}`，以 `data: [DONE]` 结束。任何解析不出 JSON 的行都跳过，
+     * 保证个别心跳行不会中断整个回复。
      */
-    private fun buildPayload(config: ApiConfig, spec: ModelSpec, messages: List<ChatMessage>): BuiltRequest {
-        val model = config.model.trim()
-        if (model.isEmpty()) throw ApiException("请先填写模型名称")
+    private suspend fun executeStream(
+        config: ApiConfig,
+        built: BuiltRequest,
+        onDelta: (String) -> Unit
+    ): ChatCompletion {
+        val baseUrl = config.normalizedBaseUrl()
+        if (baseUrl.isBlank()) throw ApiException("请先填写 Base URL")
 
-        val resolved = config.resolvedFor(spec)
-        val sent = mutableListOf<String>()
-        val payload = JSONObject().apply { put("model", model) }
+        val request = Request.Builder()
+            .url(baseUrl + config.provider().chatPath)
+            .addHeader("Content-Type", "application/json")
+            .apply { addAuthHeader(config) }
+            .post(built.payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
 
-        resolved.temperature?.let { value ->
-            payload.put("temperature", spec.temperature?.jsonNumber(value) ?: value.toDouble())
-            sent += "temperature"
-        }
-        resolved.topP?.let { value ->
-            payload.put("top_p", spec.topP?.jsonNumber(value) ?: value.toDouble())
-            sent += "top_p"
-        }
-        resolved.maxTokens?.let {
-            payload.put("max_tokens", it)
-            sent += "max_tokens"
-        }
-
-        when (spec.reasoning) {
-            is ReasoningSpec.Toggle -> when (resolved.thinking) {
-                ThinkingMode.AUTO -> Unit
-                ThinkingMode.ON -> {
-                    payload.put("thinking", JSONObject().put("type", "enabled"))
-                    sent += "thinking"
+        val call = client.newCall(request)
+        val job = currentCoroutineContext()[Job]
+        val cancellation = job?.invokeOnCompletion { call.cancel() }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw httpFailure(response.code, response.body?.string().orEmpty())
                 }
-                ThinkingMode.OFF -> {
-                    payload.put("thinking", JSONObject().put("type", "disabled"))
-                    sent += "thinking"
+                val source = response.body?.source() ?: throw ApiException("返回内容为空")
+                val text = StringBuilder()
+                val reasoning = StringBuilder()
+                // 服务商可能忽略 stream 参数，这里留一份原文用于整体解析。
+                val wholeBody = StringBuilder()
+                var totalTokens: Int? = null
+                var sawEvent = false
+
+                while (!source.exhausted()) {
+                    currentCoroutineContext().ensureActive()
+                    val line = source.readUtf8Line() ?: break
+                    wholeBody.append(line).append('\n')
+                    if (!line.startsWith(SSE_PREFIX)) continue
+                    val data = line.removePrefix(SSE_PREFIX).trim()
+                    if (data.isEmpty() || data == SSE_DONE) continue
+                    sawEvent = true
+                    val chunk = try {
+                        JSONObject(data)
+                    } catch (_: JSONException) {
+                        continue
+                    }
+                    chunk.optJSONObject("usage")?.optInt("total_tokens")?.takeIf { it > 0 }
+                        ?.let { totalTokens = it }
+
+                    val delta = chunk.optJSONArray("choices")
+                        ?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                    val piece = delta.stringOrEmpty("content")
+                    val thought = delta.stringOrEmpty("reasoning_content")
+                        .ifEmpty { delta.stringOrEmpty("reasoning") }
+                    if (thought.isNotEmpty()) reasoning.append(thought)
+                    if (piece.isNotEmpty()) {
+                        text.append(piece)
+                        onDelta(piece)
+                    }
                 }
+
+                if (!sawEvent) return parseCompletion(wholeBody.toString())
+                if (text.isEmpty() && reasoning.isEmpty()) {
+                    throw ApiException("模型没有返回任何内容")
+                }
+                return ChatCompletion(
+                    text = text.toString().ifEmpty { reasoning.toString() },
+                    reasoning = reasoning.toString(),
+                    totalTokens = totalTokens
+                )
             }
-            is ReasoningSpec.Effort -> resolved.reasoningEffort.wireValue?.let {
-                payload.put("reasoning_effort", it)
-                sent += "reasoning_effort"
-            }
-            ReasoningSpec.AlwaysOn, ReasoningSpec.Unsupported -> Unit
+        } catch (e: IOException) {
+            // 取消请求会让阻塞中的读取抛 IOException，这里还原成取消，避免被当成网络错误。
+            if (!currentCoroutineContext().isActive) throw CancellationException("流式请求已取消")
+            throw ApiException("网络请求失败：${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            cancellation?.dispose()
         }
-
-        payload.put("messages", JSONArray().apply {
-            messages.forEach { message ->
-                put(JSONObject().apply {
-                    put("role", message.role)
-                    put("content", message.content)
-                })
-            }
-        })
-
-        return BuiltRequest(payload, sent)
     }
 
     private fun post(config: ApiConfig, path: String, built: BuiltRequest): String {
@@ -268,6 +318,8 @@ class ApiClient {
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val TEST_MESSAGES = listOf(ChatMessage("user", "只回复两个字：在呢"))
+        const val SSE_PREFIX = "data:"
+        const val SSE_DONE = "[DONE]"
     }
 }
 
@@ -276,3 +328,96 @@ private fun ApiConfig.endpointFor(path: String): String = normalizedBaseUrl() + 
 /** 字段值为 null 时 optString 会返回字符串 "null"，这里统一收敛成空串。 */
 internal fun JSONObject.stringOrEmpty(key: String): String =
     if (isNull(key)) "" else optString(key).trim()
+
+/** 待发送的请求体，以及本次实际写入的参数名（供"测试连接"展示）。 */
+internal class BuiltRequest(val payload: JSONObject, val sentParams: List<String>)
+
+/**
+ * 按模型能力拼请求体：只有 [ModelSpec] 声明支持的参数才会出现。
+ *
+ * 图片走标准的 OpenAI 兼容多模态结构（`content` 数组里的 `image_url` + data URL），
+ * 不针对任何一家服务商做特殊处理；纯文本消息的 `content` 仍然是普通字符串，
+ * 与加入图片功能之前完全一致。
+ *
+ * 独立成顶层函数是为了能在纯 JVM 单元测试里直接验证请求体结构。
+ */
+internal fun buildChatPayload(
+    config: ApiConfig,
+    spec: ModelSpec,
+    messages: List<ChatMessage>,
+    stream: Boolean
+): BuiltRequest {
+    val model = config.model.trim()
+    if (model.isEmpty()) throw ApiException("请先填写模型名称")
+
+    val resolved = config.resolvedFor(spec)
+    val sent = mutableListOf<String>()
+    val payload = JSONObject().apply { put("model", model) }
+
+    resolved.temperature?.let { value ->
+        payload.put("temperature", spec.temperature?.jsonNumber(value) ?: value.toDouble())
+        sent += "temperature"
+    }
+    resolved.topP?.let { value ->
+        payload.put("top_p", spec.topP?.jsonNumber(value) ?: value.toDouble())
+        sent += "top_p"
+    }
+    resolved.maxTokens?.let {
+        payload.put("max_tokens", it)
+        sent += "max_tokens"
+    }
+
+    when (spec.reasoning) {
+        is ReasoningSpec.Toggle -> when (resolved.thinking) {
+            ThinkingMode.AUTO -> Unit
+            ThinkingMode.ON -> {
+                payload.put("thinking", JSONObject().put("type", "enabled"))
+                sent += "thinking"
+            }
+            ThinkingMode.OFF -> {
+                payload.put("thinking", JSONObject().put("type", "disabled"))
+                sent += "thinking"
+            }
+        }
+        is ReasoningSpec.Effort -> resolved.reasoningEffort.wireValue?.let {
+            payload.put("reasoning_effort", it)
+            sent += "reasoning_effort"
+        }
+        ReasoningSpec.AlwaysOn, ReasoningSpec.Unsupported -> Unit
+    }
+
+    if (stream) payload.put("stream", true)
+
+    payload.put("messages", JSONArray().apply {
+        messages.forEach { message ->
+            put(JSONObject().apply {
+                put("role", message.role)
+                put("content", chatContent(message))
+            })
+        }
+    })
+
+    return BuiltRequest(payload, sent)
+}
+
+/**
+ * 一条消息在 `content` 字段里的取值。
+ *
+ * 没有图片时是纯字符串；有图片时是 `[{type:"text"},{type:"image_url"}]`。
+ * 只有图片、没有文字时不写空 text 段——部分服务商会拒绝空的文本块。
+ */
+internal fun chatContent(message: ChatMessage): Any {
+    if (message.images.isEmpty()) return message.content
+    return JSONArray().apply {
+        if (message.content.isNotBlank()) {
+            put(JSONObject().put("type", "text").put("text", message.content))
+        }
+        message.images.forEach { url ->
+            put(
+                JSONObject()
+                    .put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", url))
+            )
+        }
+    }
+}

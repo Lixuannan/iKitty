@@ -28,6 +28,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
@@ -46,12 +47,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.Locale
 
 private const val AUTO_FETCH_DEBOUNCE_MILLIS = 700L
 
@@ -60,9 +65,13 @@ fun SettingsScreen(
     initial: ApiConfig,
     initialPersona: CatPersona,
     initialLocationEnabled: Boolean,
+    appVersion: String,
+    updateStatus: UpdateStatus,
     onSave: (ApiConfig, CatPersona, Boolean) -> Unit,
     onTest: suspend (ApiConfig) -> Result<TestOutcome>,
     onListModels: suspend (ApiConfig) -> Result<ModelListOutcome>,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
     onBack: () -> Unit
 ) {
     var providerId by remember(initial) { mutableStateOf(initial.providerId) }
@@ -542,8 +551,174 @@ fun SettingsScreen(
             Text("恢复当前模型默认参数")
         }
 
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(20.dp))
+
+        UpdateSection(
+            currentVersion = appVersion,
+            status = updateStatus,
+            onCheck = onCheckUpdate,
+            onDownload = onDownloadUpdate
+        )
+
         Spacer(Modifier.height(40.dp))
     }
+}
+
+/**
+ * 「软件更新」区：检查 GitHub release、下载并交给系统安装器覆盖安装。
+ *
+ * 安装动作放在 UI 层，因为它需要 Activity 的 Context 去启动系统界面；
+ * 版本检查与下载属于 ViewModel。
+ */
+@Composable
+private fun UpdateSection(
+    currentVersion: String,
+    status: UpdateStatus,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit
+) {
+    val context = LocalContext.current
+    var notice by remember { mutableStateOf<String?>(null) }
+
+    /** 覆盖安装：先确认系统允许本应用装未知来源，再打开安装器。 */
+    fun install(file: File) {
+        if (!ApkInstaller.canInstall(context)) {
+            val opened = runCatching {
+                context.startActivity(ApkInstaller.unknownSourcesSettings(context))
+            }.isSuccess
+            notice = if (opened) {
+                "请先允许 iKitty「安装未知应用」，然后回来点「安装更新」。"
+            } else {
+                "打不开系统的安装授权页，请到「设置 → 应用 → 安装未知应用」里手动允许。"
+            }
+            return
+        }
+        val started = runCatching { ApkInstaller.install(context, file) }.isSuccess
+        if (!started) {
+            notice = "没有找到可用的系统安装器，请手动安装缓存目录里的安装包。"
+        }
+    }
+
+    SectionTitle("软件更新")
+
+    when (status) {
+        UpdateStatus.Idle -> StatusText("当前版本 $currentVersion")
+
+        UpdateStatus.Checking -> Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(modifier = Modifier.width(14.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "正在检查更新…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        is UpdateStatus.UpToDate -> StatusText("已是最新版本 ${status.currentVersion}")
+
+        is UpdateStatus.Available -> {
+            StatusText(
+                text = "发现新版本 ${status.info.version}（当前 ${status.currentVersion}）",
+                highlight = true
+            )
+            if (status.info.notes.isNotBlank()) ReleaseNotes(status.info.notes)
+        }
+
+        is UpdateStatus.Downloading -> {
+            Spacer(Modifier.height(4.dp))
+            if (status.totalBytes > 0) {
+                LinearProgressIndicator(
+                    progress = {
+                        (status.downloadedBytes.toFloat() / status.totalBytes).coerceIn(0f, 1f)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            val progress = if (status.totalBytes > 0) {
+                "${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalBytes)}"
+            } else {
+                formatBytes(status.downloadedBytes)
+            }
+            StatusText("正在下载 ${status.info.version}：$progress")
+        }
+
+        is UpdateStatus.Ready -> StatusText(
+            text = "${status.info.version} 已下载并校验通过，点「安装更新」交给系统覆盖安装。",
+            highlight = true
+        )
+
+        is UpdateStatus.Failed -> StatusText(status.message, isError = true)
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    when (status) {
+        is UpdateStatus.Available -> Button(onClick = onDownload) { Text("下载更新") }
+
+        is UpdateStatus.Downloading -> Button(onClick = {}, enabled = false) { Text("下载中…") }
+
+        is UpdateStatus.Ready -> Button(onClick = { install(status.file) }) { Text("安装更新") }
+
+        // 已经拿到版本信息时失败的是下载，重试下载；否则重试检查。
+        is UpdateStatus.Failed -> if (status.info != null) {
+            Button(onClick = onDownload) { Text("重试下载") }
+        } else {
+            Button(onClick = onCheck) { Text("重新检查") }
+        }
+
+        else -> Button(onClick = onCheck, enabled = status !is UpdateStatus.Checking) {
+            Text("检查更新")
+        }
+    }
+
+    notice?.let { Hint(it) }
+    Hint("更新是覆盖安装：聊天记录、图片和猫猫的记忆都留在原处，不会被清除。")
+}
+
+/** release 说明最多展示 8 行，避免长日志把设置页拉得很长。 */
+@Composable
+private fun ReleaseNotes(notes: String) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+    ) {
+        Text(
+            text = notes.trim(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 8,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+        )
+    }
+}
+
+@Composable
+private fun StatusText(text: String, highlight: Boolean = false, isError: Boolean = false) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = when {
+            isError -> MaterialTheme.colorScheme.error
+            highlight -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        modifier = Modifier.padding(top = 6.dp)
+    )
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+    else -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
 /** 模型能力摘要：让用户一眼看到这个模型能调什么、不能调什么。 */

@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：0.1.0 · 包名：`com.example.aicat` · 源码根目录：`app/src/main/java/com/example/aicat/`
+- 版本：0.2.0 · 包名：`com.example.aicat` · 源码根目录：`app/src/main/java/com/example/aicat/`
 - 技术栈：Kotlin 2.0.21、Jetpack Compose（Material3）、OkHttp 4.12.0、DataStore Preferences 1.1.1
 - 构建：AGP 8.7.3、Gradle 9.7.1、Java 17 字节码目标、minSdk 26 / targetSdk 35
 
@@ -30,6 +30,8 @@ MainActivity (ComponentActivity + MaterialTheme)
         ├── ChatLogStore         → JSONL 追加
         ├── CatMemoryStore       → 记忆 JSON
         ├── MemoryExtractor      → 记忆整理请求
+        ├── UpdateClient         → GitHub release 检查与 APK 下载
+        ├── ApkInstaller         → 覆盖安装前的包名校验 / 签名校验
         └── LocationSource ─ IpLocationSource → IP 城市定位
 ```
 
@@ -51,6 +53,7 @@ MainActivity (ComponentActivity + MaterialTheme)
 | `TimeFormat` | 时间格式化 |
 | `parseIpPlace` / `Place` | IP 返回解析 |
 | `AmbientContext` | 「此刻」背景块 |
+| `parseLatestRelease` / `compareVersions` | release JSON 解析与版本比较 |
 
 Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Context` 构造函数）、
 `SettingsStore`（DataStore）、`IpLocationSource`（OkHttp）、`CatChatViewModel`（`AndroidViewModel`）、
@@ -72,6 +75,7 @@ Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Conte
 | `config` | `ApiConfig` | 模型服务配置 |
 | `persona` | `CatPersona` | 角色设定 |
 | `locationEnabled` | `Boolean` | 是否允许 IP 定位 |
+| `updateStatus` | `UpdateStatus` | 更新流程状态（见 [18. 软件更新](#18-软件更新)） |
 
 ---
 
@@ -79,19 +83,23 @@ Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Conte
 
 1. 用户在输入框打字。`onInputChanged` 在非空时把情绪切到 `LISTENING`，清空后回到 `IDLE`；
    `busy` 期间不覆盖当前情绪。
-2. `send(text)`：`trim` 后生成 `StoredMessage`，`seq = nextSeq++`，`role = user`，
-   追加到 `messages` 并以 JSONL 落盘；同时若定位开关打开且缓存过期，后台触发一次刷新。
+2. `send(text, attachments)`：`trim` 后生成 `StoredMessage`，`seq = nextSeq++`，`role = user`，
+   `images` 记录已导入的本机文件名；追加到 `messages` 并以 JSONL 落盘。
+   文字与图片都为空、或 `busy` 时直接返回。同时若定位开关打开且缓存过期，后台触发一次刷新。
 3. `busy = true`，情绪切到 `THINKING`。
-4. `ContextAssembler.assemble(...)` 装配请求：system = 人设 + 记忆块 + 「此刻」背景块，
-   历史按 token 预算裁剪；结果写入 `contextPlan` 供记忆页展示。
-5. `ApiClient.chat(config, plan.messages)` 请求 `POST {Base}/chat/completions`。
-6. `parseCatReply(raw.text)` 解析回复：得到文本、可选情绪、可选动作。解析失败一律退回纯文本。
-7. 追加 assistant 消息并落盘；情绪按 `autoReset = true` 设置，4 秒后自动回到 `IDLE`；
-   动作按模型指定，未指定时由 `CatAnimation.defaultFor(mood)` 兜底。
-8. 出错时追加一条 `localError = true` 的 assistant 消息（显示为红色，但**不进请求、不进记忆**），
-   情绪切 `SAD` 并播放 `SHAKE`。
-9. `finally` 中 `busy = false`。
-10. `maybeExtractMemory()`：若距提取游标已有 ≥6 条非错误消息，触发一次后台记忆整理。
+4. 在 IO 线程把历史消息用到的图片编码成数据 URL（[ImageStore.dataUrls]），
+   然后 `ContextAssembler.assemble(...)` 装配请求：system = 人设 + 记忆块 + 「此刻」背景块，
+   历史按 token 预算裁剪，图片名经解析器转成数据 URL；结果写入 `contextPlan` 供记忆页展示。
+5. `ApiClient.chatStream(config, plan.messages, onDelta)` 请求 `POST {Base}/chat/completions`，
+   带 `stream: true`；每段增量把 `_streamingReply` 追加一次，界面显示流式气泡。
+6. 流结束后 `parseCatReply(raw.text)` 解析完整回复：得到文本、可选情绪、可选动作。
+   解析失败一律退回纯文本。`_streamingReply` 清空，追加 assistant 消息并落盘；
+   情绪按 `autoReset = true` 设置，4 秒后自动回到 `IDLE`；动作按模型指定，未指定时由
+   `CatAnimation.defaultFor(mood)` 兜底。
+7. 出错时：若已经流出半截回复就先落成一条 assistant 消息，再追加一条 `localError = true` 的提示
+   （显示为红色，但**不进请求、不进记忆**），情绪切 `SAD` 并播放 `SHAKE`。
+8. `finally` 中清空 `_streamingReply` 并置 `busy = false`。
+9. `maybeExtractMemory()`：若距提取游标已有 ≥6 条非错误消息，触发一次后台记忆整理。
 
 清空聊天记录会把 `nextSeq` 归 1、清空 `contextPlan`，并把记忆的 `lastExtractedSeq` 一并归零，
 否则新 `seq` 会被旧游标当成「早就整理过」。空会话会补一条开场白。
@@ -104,11 +112,13 @@ Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Conte
 
 | 类型 | 字段 | 说明 |
 | --- | --- | --- |
-| `StoredMessage` | `seq` / `role` / `content` / `createdAt` / `localError` | 落盘消息；`seq` 既是排序依据也是稳定 id |
-| `ChatMessage` | `role` / `content` | 发给服务商的形式，元数据不外泄 |
+| `StoredMessage` | `seq` / `role` / `content` / `createdAt` / `localError` / `images` | 落盘消息；`seq` 既是排序依据也是稳定 id；`images` 是本机文件名 |
+| `ChatMessage` | `role` / `content` / `images` | 发给服务商的形式；`images` 是已编码的数据 URL |
 
-`StoredMessage.toWire()` 是唯一的转换点，`localError`、`seq`、`createdAt` 都不会进请求体。
+`StoredMessage.toWire()` 是唯一的转换点，`localError`、`seq`、`createdAt`、图片文件名都不会进请求体，
+图片在这里被解析成数据 URL（见 [17. 图片存储](#17-图片存储imagestorekt)）。
 `role` 常量是 `"user"` / `"assistant"`。
+一条消息只要 `content` 与 `images` 不同时为空就有效：纯图片消息允许不带文字。
 
 ### 3.2 情绪与动作
 
@@ -220,13 +230,22 @@ JSON 契约里 `emotion` 与 `animation` 的取值就是 `CatReply` 解析表的
 ### 6.1 请求
 
 - `chat(config, messages)`：`POST {Base}{chatPath}`，返回 `ChatCompletion(text, reasoning, totalTokens)`。
-- `test(config)`：用**与聊天完全相同**的 `buildPayload` 发一条极短请求（`"只回复两个字：在呢"`），
+  记忆整理等需要完整 JSON 的场景用它（非流式）。
+- `chatStream(config, messages, onDelta)`：同样的地址，额外带 `stream: true`，逐段回调增量文本，
+  返回值和 `chat` 相同，调用方不必区分。协程被取消时会取消底层 HTTP 调用。
+- `test(config)`：用**与聊天完全相同**的 `buildChatPayload` 发一条极短请求（`"只回复两个字：在呢"`），
   返回 `TestOutcome`：`latencyMillis`、`endpoint`、`model`、`reply`、`reasoningChars`、
   `sentParams`、`skippedParams`、`totalTokens`。只要测试通过，就说明地址 / Key / 模型 / 采样参数整套可用。
 - `listModels(config)`：`GET {Base}{modelsPath}`，返回 `Available(models)` 或 `NotSupported`。
 
-`buildPayload` 只写入 `resolvedFor(spec)` 里非空的值；`model` 为空时抛 `ApiException`。
+`buildChatPayload` 只写入 `resolvedFor(spec)` 里非空的值；`model` 为空时抛 `ApiException`。
 鉴权头仅在 `apiKey` 非空时发送。
+
+`content` 的取值由 `chatContent` 决定：没有图片时是纯字符串（与加入图片功能之前逐字节一致），
+有图片时是 OpenAI 兼容的 content 数组——文字段 `{"type":"text"}`，每张图片一段
+`{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`。
+只有图片没有文字时不写空文本段，避免个别服务商拒绝空 text 块。这里没有任何服务商特有字段，
+能否理解图片由所选模型决定。
 
 超时：连接 20s、写 30s、读 90s。
 
@@ -235,6 +254,14 @@ JSON 契约里 `emotion` 与 `animation` 的取值就是 `CatReply` 解析表的
 `parseCompletion`：要求 `choices` 非空且 `choices[0].message` 存在；正文取 `content`，
 思考内容取 `reasoning_content`，为空时回退 `reasoning`；两者都为空则报「模型没有返回任何内容」；
 `content` 为空但 `reasoning` 非空时用思考内容兜底。`total_tokens` 仅在 > 0 时返回。
+
+流式读取（`executeStream`）：逐行读取 SSE，只处理 `data:` 开头的行，`data: [DONE]` 结束；
+解析不出 JSON 的行直接跳过，个别心跳行不会中断回复。增量正文取 `choices[0].delta.content`，
+思考过程取 `delta.reasoning_content`（回退 `reasoning`），两者都累积后按非流式规则收敛。
+若服务商忽略 `stream` 参数、整段返回普通 JSON（没有任何 `data:` 行），则用读到的原文走
+`parseCompletion`，于是「不支持流式」的服务商也能正常工作。
+请求被取消会让阻塞中的读取抛 `IOException`，这里在协程已取消时还原成 `CancellationException`，
+避免把主动取消显示成网络错误。
 
 `listModels` 把 404 / 405 视为「服务商不支持」（不是错误）；返回体不是 JSON 时报
 「返回内容里没有 data 数组」；模型 id 去空排序。
@@ -265,6 +292,8 @@ JSON 契约里 `emotion` 与 `animation` 的取值就是 `CatReply` 解析表的
 
 - 逐字符分类：CJK、假名、韩文、全角标点等宽字符算 1 token；其余按 4 字符 1 token（向上取整）。
 - 每条消息再加 `MESSAGE_OVERHEAD = 4`。
+- 每张图片加 `IMAGE_TOKENS = 1100` 的固定值。服务端按图片分辨率计算真实用量，
+  这里只取一个偏高的固定值来保证不超预算。
 - 真实用量由服务端 `usage` 校准（设置页「测试连接」展示）。
 
 ### 7.2 输入预算
@@ -283,11 +312,13 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
    **顺序固定为稳定 → 易变**，让服务商的提示词缓存尽量复用前缀。
 2. 过滤掉 `localError` 的消息。
 3. `buildUnits` 按轮分组：遇到 `user` 或列表为空时开新轮，其余消息并入当前轮。
-4. 计算每轮的 token 成本。
+4. 计算每轮的 token 成本，图片按张数计入。
 5. 从**最后一轮**开始向前装：最后一轮无条件保留（宁可让服务端报上下文超长，也不发只有 system 的请求），
    然后 `while (used + costs[index] <= budget - systemTokens)` 继续向前。
 6. `dropWhile { role != user }` 丢掉领先的 assistant（例如开场白），保证请求不以 assistant 开头。
-7. 输出 `[system] + kept`，并回报 `keptMessages`、`droppedMessages`、`estimatedTokens`、`inputBudget`。
+7. 输出 `[system] + kept`，kept 里的每条消息经 `toWire(imageUrl)` 把图片名解析成数据 URL
+   （解析不到的图片跳过，删掉图片文件不会让历史消息无法发送），并回报 `keptMessages`、
+   `droppedMessages`、`estimatedTokens`、`inputBudget`。
 
 `droppedMessages` 是「可发送消息数 − 实际发送数」，开场白被丢弃也会计入。
 
@@ -296,6 +327,8 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
 ## 8. 聊天记录（`ChatLogStore.kt`）
 
 - 文件：`filesDir/chat/chat_log.jsonl`，一行一条消息。
+- 每行是 `{"seq","role","content","at","error"?,"images"?}`；`images` 是本机图片文件名数组，
+  纯文字消息不写这个字段。只有图片、没有文字的消息 `content` 为空字符串，仍然合法。
 - 为什么不是 DataStore / Room：追加写入量与历史长度无关、崩溃最多坏最后一行、不引入 Room/KSP。
 - 代价是查询能力弱，因此只提供两种读法：
   - `tail(limit)`：读末尾 N 条（界面）；
@@ -456,8 +489,16 @@ DataStore Preferences，文件名 `cat_settings`。键：
 - Header：名字、当前情绪文案、`服务商 · 模型`、记忆按钮（心形，带数量）、设置按钮。
 - 消息列表：`LazyColumn`，key 用 `msg.seq`；时间只在「首条 / 说话人变化 / 间隔 ≥5 分钟」时显示。
   用户气泡靠右用主色，猫猫靠左带小猫头像；`localError` 用错误色。
-- 等待回复时追加一个三点跳动的 `ThinkingBubble`。
-- 输入栏：多行（≤5 行），IME 动作是发送；发送按钮在输入为空或 `busy` 时禁用。
+  带图片的消息在气泡内用 `FlowRow` 每行两张显示缩略图，纯图片消息不渲染空文本。
+- 等待回复时追加一个三点跳动的 `ThinkingBubble`；开始流式输出后由 `StreamingBubble` 取代，
+  内容是 `streamingReply` 的当前值。
+- 输入栏：左侧「+」弹出「从相册选择 / 拍照」，中间多行输入框（≤5 行，IME 动作是发送）。
+  已选图片显示为可横向滚动的缩略图条，每张右上角可单独删除。
+  发送按钮在「文字为空且没有图片」或 `busy` 时禁用。
+- 相册走 `PickMultipleVisualMedia`（最多 9 张，老设备回退系统文件选择器）；拍照走 `TakePicture`，
+  目标地址由 `ImageStore.newCameraTarget()` 通过 FileProvider 生成，返回后 `finishCamera` 收编或删除。
+- 这两个 launcher 和其余 `remember` 一样必须在提前 `return` 之前调用，否则切到设置页再回来会错位。
+- 自动滚动：有新消息时用 `animateScrollToItem`，流式期间改用 `scrollToItem`，避免每个增量重启动画。
 - 猫咪画布当前不显示，代码中留了恢复位置的注释。
 
 ### 12.3 设置页（`SettingsScreen.kt`）
@@ -473,6 +514,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 - 测试连接：用当前草稿参数发真实请求，成功展示耗时、端点、回复、思考字数、已发送/已跳过参数与 tokens。
 - 生成参数滑杆的范围、档位、显示精度全部来自 `ModelSpec`。
 - 「恢复当前模型默认参数」把草稿重置为该模型默认值。
+- 底部「软件更新」：检查 / 下载 / 安装三段状态驱动（见 [18. 软件更新](#18-软件更新)）。
+  安装动作放在 UI 层，因为它需要 Activity 的 Context 启动系统界面；检查与下载在 ViewModel。
 
 ### 12.4 记忆页（`CatMemoryScreen.kt`）
 
@@ -507,6 +550,11 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | 换猫咪渲染 | 整体替换 `CatView.kt`，保持 `CatView(mood, animation)` / `CatAvatar(modifier)` 签名 |
 | 接入系统定位 | 实现 `LocationSource`，在 ViewModel 里替换 `IpLocationSource` |
 | 换聊天记录存储 | 替换 `ChatLogStore`（保持 `append` / `tail` / `readAfter` / `clear`） |
+| 改图片压缩或存储位置 | 只改 `ImageStore` 的导入管线与常量 |
+| 改图片在界面上的呈现 | 只改 `ChatImage` 与 `CatChatScreen` 的气泡、附件条 |
+| 改历史图片的携带策略 | 只改 `ContextAssembler` 的 `imageUrl` 解析器与图片成本计算 |
+| 换更新来源 | 改 `UpdateModels.kt` 的 `RELEASE_API_URL` 与 `parseLatestRelease` |
+| 改更新包的下载/校验/安装 | `UpdateClient`（下载）/ `ApkInstaller`（校验与安装）/ ViewModel 的 `UPDATE_DIR` |
 | 新增页面 | 在 `CatChatScreen` 加一个布尔状态分支，或引入 Navigation |
 
 ---
@@ -517,7 +565,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ./gradlew testDebugUnitTest
 ```
 
-46 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
+74 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -525,24 +573,34 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `CatMemoryStoreTest` | 2 | 记忆保存/加载往返、损坏文件读成空记忆 |
 | `CatMemoryTest` | 11 | 合并只增不减、同 key 覆盖、未变化保留旧时间戳、`forget` 不动固定项、超限淘汰、重命名 key、超长裁剪、渲染分组、三种 JSON 形态解析、解析失败返回 null、未知分类回退 |
 | `CatPersonaTest` | 7 | 默认 prompt 含名字/性格/JSON 契约、性格渲染顺序与可空、补充设定、`HUMAN` 无「喵」、空名回退、性格存储往返、枚举反查 |
-| `ContextAssemblerTest` | 10 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、附加块按存在拼接、稳定块在易变块前、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块计入预算 |
+| `StoredMessageTest` | 7 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、纯文字 wire 不带图片 |
+| `MultimodalPayloadTest` | 5 | 纯文本仍是字符串 content 且无 `stream`、图片转成 `image_url` content 数组、纯图片不写空 text 段、流式只加 `stream` 不改 content、发送参数仍受能力表约束 |
+| `ContextAssemblerTest` | 13 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、附加块按存在拼接、稳定块在易变块前、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块计入预算、每张图片固定开销、图片解析进 wire、图片挤占历史预算 |
+| `ImageStoreTest` | 4 | 采样倍率落在上限内、按长边采样、采样后尺寸不超上限、数据 URL 的 MIME 兜底 |
 | `LocationTest` | 10 | ip-api/ipapi.co/ipwho.is 三种返回解析、JSON null 不成字符串、失败与垃圾拒绝、`display` 回退、背景块含时间/间隔/城市且标注「可能不准」、缺信息时不输出 |
+| `UpdateModelsTest` | 9 | release JSON 解析版本/说明/APK 地址/大小/发布时间、多 APK 时优先同名、无 APK 返回 null、预发布不算更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、预发布更旧、`v` 前缀归一化 |
 
 `testImplementation("org.json:json:20240303")` 是刻意的：单元测试跑在 JVM 上，
 `android.jar` 里的 `org.json` 只是会抛异常的桩，补一份真实现才能测记忆解析这类纯逻辑。
 
-未覆盖：Compose UI、真实网络请求、`SettingsStore` 的 DataStore 读写、`IpLocationSource` 的实际 HTTP。
+未覆盖：Compose UI、真实网络请求、SSE 解析、图片的真实解码与压缩（依赖 `BitmapFactory`）、
+`SettingsStore` 的 DataStore 读写、`IpLocationSource` 的实际 HTTP、
+`UpdateClient` 的真实 GitHub 请求与下载、`ApkInstaller` 的签名校验和系统安装器跳转。
 这些需要在设备上做集成/端到端验证。
 
 ---
 
 ## 15. 安全与隐私边界
 
-- **权限**：仅 `android.permission.INTERNET`。
+- **权限**：`android.permission.INTERNET` 与 `android.permission.REQUEST_INSTALL_PACKAGES`；
+  后者只用于把官方 release 的更新包交给系统安装器。
 - **明文流量**：`network_security_config.xml` 的 `base-config` 对所有域名放开，
   以便直连本地/局域网模型服务；收紧时改为按域名/地址的 `domain-config`。
-- **数据落盘**：聊天记录与记忆都是应用私有目录下的明文文件；API Key 明文存 DataStore，无额外加密。
-- **数据外发**：聊天内容只发往用户配置的 Base URL；开启定位时出口 IP 会发给第三方定位服务。
+- **数据落盘**：聊天记录、图片与记忆都是应用私有目录下的文件；API Key 明文存 DataStore，无额外加密。
+- **图片**：相册图片复制进 `filesDir/chat/images/`，拍照临时文件写在缓存目录并在返回后立即收编或删除；
+  应用只拿自己的 `FileProvider` 授权，不申请存储或相机权限（相机由系统应用完成）。
+- **数据外发**：聊天内容只发往用户配置的 Base URL；开启定位时出口 IP 会发给第三方定位服务；
+  检查更新时只向 `api.github.com` 读取 release 元数据并下载 APK，不上报任何本机信息。
 - **错误信息**：接口错误体最多截取前 200 字符回显，避免把整页网关 HTML 塞进界面。
 - **上下文隔离**：`localError` 消息与开场白不会进入请求，`StoredMessage` 的元数据不会进请求体。
 
@@ -551,11 +609,87 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ## 16. 已知技术债
 
 1. 猫咪画布未接入聊天页（见 [README 当前形态](../README.md#当前形态只有聊天)）。
-2. 非流式请求，长回复需完整等待。
-3. 服务商配置只有一套，切服务商互相覆盖。
-4. 历史只载入最近 400 条，无向上分页。
-5. 只存 UTC 毫秒时间戳，没记写入时的时区偏移。
-6. token 数只有估算。
-7. 定位仅城市级、依赖第三方 IP 服务。
-8. API Key 明文存储。
-9. 界面文案未做多语言资源。
+2. 服务商配置只有一套，切服务商互相覆盖。
+3. 历史只载入最近 400 条，无向上分页。
+4. 只存 UTC 毫秒时间戳，没记写入时的时区偏移。
+5. token 数只有估算。
+6. 定位仅城市级、依赖第三方 IP 服务。
+7. API Key 明文存储。
+8. 界面文案未做多语言资源。
+9. 图片统一降采样到最长边 1280 并转 JPEG：画质有损、透明区域填白，单条消息上限 9 张。
+10. 历史图片每轮都会重新编码并重发（`dataUrls` 只有内存缓存），图片多时请求体与内存压力明显。
+11. 图片没有查看大图、保存、缩放手势。
+12. 更新包只校验长度、包名与签名，没有 release 提供的校验和；也没有后台自动检查更新。
+
+## 17. 图片存储（`ImageStore.kt`）
+
+选中或拍摄的图片**先复制进应用私有目录**再记录文件名，因为相册返回的 `content://` URI
+只在本次进程内可读，不复制的话重启后记录里的图片会变成空白。
+
+- 目录：`filesDir/chat/images/`；拍照临时文件在 `cacheDir/chat_camera/`。
+- 导入：读边界 → 按 `sampleSizeFor` 采样解码 → 缩放到最长边 `MAX_DIMENSION = 1280` →
+  有透明通道先铺白底 → 压缩成 JPEG（质量 85）写入 `img_<uuid>.jpg`。
+  任一步失败返回 `null`，由调用方跳过这张图，而不是让发送整体失败。
+  注意 `inJustDecodeBounds` 模式下 `decodeStream` 返回 `null` 是正常行为（尺寸只写进 Options），
+  只有「流打不开」才代表失败。
+- 数据 URL：`dataUrl` / `dataUrls` 把文件编码成 `data:image/jpeg;base64,...`，
+  结果按文件名缓存在一个上限 12 条的 LRU 里（文件不会被改写，缓存永远有效）。
+- 相机：`newCameraTarget()` 用 `FileProvider`（authority `${applicationId}.fileprovider`，
+  路径配置 `res/xml/file_paths.xml`）生成可写 URI；`commitCamera` 成功后走同一条导入管线，
+  取消则删除临时文件。
+- 缩略图：`decodeSampledBitmap` 按最长边 512 采样，供 `ChatImage` 显示，避免整图进内存。
+
+---
+
+## 18. 软件更新
+
+### 18.1 数据来源与版本比较（`UpdateModels.kt`）
+
+- 来源固定为 `RELEASE_API_URL = https://api.github.com/repos/Lixuannan/iKitty/releases/latest`。
+- `parseLatestRelease(body)` 读取 `tag_name` / `body` / `published_at` 与 `assets`：
+  - `draft` / `prerelease` 为真直接返回 `null`；
+  - `normalizeVersion` 去掉 `v` 前缀与首尾空白；
+  - 优先挑文件名包含版本号的 `.apk`，其次任意 `.apk`，都没有则返回 `null`；
+  - `published_at` 不是合法 ISO-8601 时只丢时间，不影响其他字段。
+- `compareVersions(a, b)` 只比较数字段；数字段相同时，带预发布后缀的一方更旧
+  （`0.2.0-beta.1 < 0.2.0`）。认不出的段落按 0 处理，不因为版本号写法奇怪就报错。
+- `UpdateStatus` 是界面状态机：`Idle` / `Checking` / `UpToDate` / `Available` / `Downloading` /
+  `Ready` / `Failed`；`Failed.info` 非空表示「已经拿到版本信息但下载失败」，界面据此给「重试下载」。
+
+### 18.2 下载（`UpdateClient.kt`）
+
+- `fetchLatest()`：`GET releases/latest`，带 `Accept: application/vnd.github+json`。
+  返回 `null` 表示没有可下载的 APK；HTTP / 网络失败抛 `ApiException`
+  （403 / 429 提示限流，404 提示没有 release）。
+- `download(info, destination, onProgress)`：先写 `<name>.part` 再 `renameTo`，改名失败退回复制；
+  任何异常（含协程取消）都删掉 `.part`，绝不留下一个看起来完整的坏包。
+  每 64KB 回调一次进度，并在循环里 `ensureActive()` 响应取消。
+  下载完成后比对实际字节数与 release 声明的 `size`，对不上报「下载不完整」。
+- 目标目录由 ViewModel 决定：`cacheDir/updates/`；下载开始前清掉其他版本的安装包。
+
+### 18.3 校验与安装（`ApkInstaller.kt`）
+
+- `check(context, apk)` 用 `getPackageArchiveInfo` 读下载包的包名与签名，与已安装应用比对，
+  返回 `COMPATIBLE` / `PACKAGE_MISMATCH` / `SIGNATURE_MISMATCH` / `UNREADABLE`。
+- 两边签名都读不出时返回 `UNREADABLE`，而不是当作一致——那等于跳过校验。
+- `install(context, apk)` 用 `FileProvider`（authority `${applicationId}.fileprovider`，
+  路径来自 `res/xml/file_paths.xml` 的 `updates`）拿到只授权给安装器的 `content://` URI，
+  再用 `ACTION_VIEW` + `application/vnd.android.package-archive` 打开系统安装器。
+- `canInstall` 走 `canRequestPackageInstalls()`；未授权时 UI 跳 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`。
+
+### 18.4 为什么更新不会清空聊天记录
+
+- 覆盖安装只替换代码，`filesDir` / `cacheDir` / DataStore 都留在原处：聊天记录
+  （`chat/chat_log.jsonl`）、图片、记忆（`cat_memory.json`）与设置全部保留；
+- 应用**从不**执行「先卸载再安装」，也不使用任何会删除应用数据的安装 API；
+- 下载只写 `cacheDir/updates/`，FileProvider 只授权这一个文件，更新流程不会触碰 `filesDir/chat/`；
+- 签名不一致时系统本来就会拒绝覆盖安装。代码提前校验、删包并说明原因，
+  是为了避免用户被「装不上」误导去卸载重装——那才会真的清空聊天记录。
+
+### 18.5 界面（`SettingsScreen.UpdateSection`）
+
+`Idle` 显示当前版本与「检查更新」；`Available` 显示新版本号与 release 说明（最多 8 行）与「下载更新」；
+`Downloading` 显示进度条与已下载/总量；`Ready` 显示「安装更新」；
+`Failed` 按 `info` 是否为空给出「重试下载」或「重新检查」。
+安装动作放在 UI 层，因为它需要 Activity 的 Context 启动系统界面；检查与下载留在 ViewModel。
+

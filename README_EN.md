@@ -6,10 +6,10 @@
 
 iKitty is a minimal Jetpack Compose chat app. It assembles a system prompt from the cat persona,
 structured long-term memory, and a token-budgeted context window, then sends it to any
-OpenAI-compatible endpoint. Chat history, memory, and settings stay on the device. Apart from the
+OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **0.1.0** · Package: `com.example.aicat`
+- App name: **iKitty** · Version: **0.2.0** · Package: `com.example.aicat`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -23,6 +23,11 @@ model service you configure and the optional IP geolocation, nothing goes throug
   supports, and the request body sends only the fields it accepts (see [Model capability table](#model-capability-table)).
 - **A real test connection**: sends a very short request with exactly the parameters real chat uses and
   reports latency, endpoint, the parameters actually sent, the ones automatically skipped, and token usage.
+- **Multimodal image input**: the "+" button picks from the gallery or opens the system camera, with multiple
+  images per message, text plus images together, and per-image delete before sending. Images go through the
+  standard OpenAI-compatible `image_url` structure, bound to no single model or provider.
+- **Streaming replies**: the reply appears incrementally; a provider that ignores `stream` degrades to a
+  non-streaming response automatically with the same result.
 - **Cat persona**: name, traits (multi-select), speech style, cat flavor, and free-form notes, assembled
   into the system prompt and persisted.
 - **7 moods and 6 one-shot animations**: idle, listening, thinking, happy, sad, excited, sleepy, with blink,
@@ -35,6 +40,8 @@ model service you configure and the optional IP geolocation, nothing goes throug
   question from its answer, automatically omitting the oldest turns in long conversations.
 - **IP city geolocation**: lets the cat know roughly which city you are in — no permissions, no dialogs,
   and a settings toggle to turn it off.
+- **In-app updates**: the settings screen checks [GitHub releases](https://github.com/Lixuannan/iKitty/releases)
+  for a newer version, downloads it, and hands it to the system installer — chat history and memory survive.
 - **No backend required.**
 
 ## Current shape: chat only
@@ -113,6 +120,21 @@ is persisted:
 Assembly lives entirely in `CatPersona.systemPrompt()`; adding a setting touches only that file. The model
 capability table (`ModelCatalog`) is independent of it.
 
+## Image input
+
+The "+" on the left of the input bar offers two entries: **choose from gallery** (the system photo picker,
+up to 9 at once) and **take photo** (the system camera). Chosen images appear above the input field, each
+with its own delete button, so you can send text only, images only, or both together.
+
+Images are first copied into the app-private directory, downscaled, and re-encoded as JPEG before being sent.
+The request body uses the OpenAI-compatible multimodal structure (an `image_url` + data URL inside the
+`content` array), so it is bound to no particular model or API; whether images are actually understood
+depends on the model you choose.
+
+Images count against the context token budget (each at a deliberately high fixed estimate) and are re-sent
+alongside text history, so the model still "remembers" the pictures in later turns. A missing image file is
+skipped automatically and never breaks text chat.
+
 The system prompt also asks the model to answer with JSON when appropriate, which is what drives mood and
 animation:
 
@@ -189,6 +211,26 @@ location requests when off.
 Time, location, and memory blocks are appended after the persona at the end of the system prompt: stable
 prefix first, volatile last, so provider prompt caching can reuse as much as possible.
 
+## Software updates
+
+The "Software update" section at the bottom of the settings screen reads the latest version from
+[GitHub releases](https://github.com/Lixuannan/iKitty/releases). A download is offered only when that
+version is newer than the installed one; the downloaded APK is checked for package name and signature
+before being handed to the system installer for an in-place update.
+
+- The APK is downloaded to `cacheDir/updates/` and handed to the system installer through a `FileProvider`
+  grant that exposes only that one file.
+- If package name or signature does not match, the APK is deleted and the reason is shown. Such a package
+  could not be installed anyway; saying so up front prevents someone from uninstalling first.
+- **An in-place update never clears chat history**: history, images, and memory live under the app-private
+  `filesDir/chat/`, and settings live in DataStore. An in-place update only replaces the code, so the data
+  stays where it is; the app never uninstalls before installing.
+- The first update requires allowing iKitty to install unknown apps (the `REQUEST_INSTALL_PACKAGES`
+  permission).
+
+> Version comparison, download, and verification are described in the
+> [detailed design document](docs/DOC_EN.md#18-software-updates).
+
 ## Data and privacy
 
 | Data | Location | Notes |
@@ -196,12 +238,17 @@ prefix first, volatile last, so provider prompt caching can reuse as much as pos
 | API settings | DataStore file `cat_settings` | Base URL, key, model, sampling parameters, provider, location toggle |
 | Cat persona | Same DataStore | Name, traits, speech style, flavor, notes |
 | Chat history | `filesDir/chat/chat_log.jsonl` | Plaintext JSONL, app-private directory |
+| Chat images | `filesDir/chat/images/*.jpg` | Downscaled JPEG; camera temp files live in the cache and are adopted on success |
 | Structured memory | `filesDir/chat/cat_memory.json` | Plaintext JSON including the extraction cursor |
+| Downloaded update | `cacheDir/updates/*.apk` | Transient file, reclaimed by the system after installation |
 
-- The app requests a single permission: `INTERNET`.
+- The app requests two permissions: `INTERNET` and `REQUEST_INSTALL_PACKAGES`; the latter is used only to
+  hand the official update package to the system installer.
 - There is no backend; chat content goes only to the model service you configured.
 - With location enabled, the egress IP is shared with third-party geolocation services
   (ip-api / ipwho.is / ipapi.co).
+- Checking for updates only reads release metadata from `api.github.com` and downloads the APK; no local
+  information is reported.
 - The API key is stored in plaintext in the app-private DataStore with no additional encryption — a known
   limitation.
 
@@ -239,6 +286,7 @@ iKitty/
 │   ├── SettingsScreen.kt          Settings screen UI
 │   ├── CatMemoryScreen.kt         Memory screen UI
 │   ├── CatView.kt                 Canvas cat and avatar
+│   ├── ChatImage.kt               Local image thumbnails
 │   ├── CatState.kt                Mood / animation enums
 │   ├── CatReply.kt                Model reply parsing
 │   ├── CatPersona.kt              Persona -> system prompt
@@ -251,11 +299,12 @@ iKitty/
 │   ├── ContextAssembler.kt        Token estimation and context assembly
 │   ├── ChatLogStore.kt            Append-only JSONL chat log
 │   ├── StoredMessage.kt           Persisted message model
+│   ├── ImageStore.kt              Image import, downscaling, data-URL encoding
 │   ├── SettingsStore.kt           DataStore persistence
 │   ├── AmbientContext.kt          "Right now" background block
 │   ├── Location.kt / IpLocationSource.kt  IP city geolocation
 │   └── TimeFormat.kt              Time and interval formatting
-├── app/src/test/java/com/example/aicat/   46 plain-JVM unit tests
+├── app/src/test/java/com/example/aicat/   65 plain-JVM unit tests
 ├── design/cat_v1/                 Layered cat character assets and spec
 └── docs/DOC_EN.md                 Detailed design document
 ```
@@ -266,28 +315,32 @@ iKitty/
 ./gradlew testDebugUnitTest
 ```
 
-The 46 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, memory merge and
-parsing, context assembly, persona prompt, IP response parsing, and the “right now” block. UI and real
-network requests are outside unit-test scope. See
-[the design document](docs/DOC_EN.md#14-testing-strategy) for details.
+The 65 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
+persistence and round-trip, memory merge and parsing, context assembly (including image tokens and image
+resolution), multimodal request-body structure, persona prompt, image sampling ratio and MIME, IP response
+parsing, and the “right now” block. UI, real network requests, and image decoding/compression are outside
+unit-test scope. See [the design document](docs/DOC_EN.md#14-testing-strategy) for details.
 
 ## Known limitations and roadmap
 
 1. The cat canvas is not shown on the chat screen (see [Current shape](#current-shape-chat-only)).
-2. Model replies are not streamed; long replies must complete before showing.
-3. Only one provider configuration is stored — switching providers overwrites the key and model.
-4. The chat screen loads only the most recent 400 messages; there is no upward pagination.
-5. Messages store only UTC millisecond timestamps with no recorded timezone offset, so “what time was it
+2. Only one provider configuration is stored — switching providers overwrites the key and model.
+3. The chat screen loads only the most recent 400 messages; there is no upward pagination.
+4. Messages store only UTC millisecond timestamps with no recorded timezone offset, so “what time was it
    then” is inaccurate across timezones.
-6. Token counts are estimates; assembly deliberately overestimates.
-7. Location accuracy is city-level and depends on third-party IP services.
-8. The API key is stored in plaintext; EncryptedSharedPreferences / Keystore is not wired in.
-9. UI strings are Chinese only; no localization resources yet.
+5. Token counts are estimates; assembly deliberately overestimates.
+6. Location accuracy is city-level and depends on third-party IP services.
+7. The API key is stored in plaintext; EncryptedSharedPreferences / Keystore is not wired in.
+8. UI strings are Chinese only; no localization resources yet.
+9. Images are downscaled and re-encoded as JPEG: lossy, with transparent areas flattened to white, and at
+   most 9 per message.
+10. Historical images are re-sent every turn, so many images noticeably enlarge the request body and traffic.
+11. Images can only be viewed inside the app — no full-screen viewer, save-to-gallery, or zoom.
 
-Planned work: put the cat canvas back (optionally toggled), move to Rive/Lottie animation, stream
-responses, save per-provider configurations, paginate history upwards, record the timezone offset at write
-time, add a system-location `LocationSource` implementation (runtime permissions and failure fallback
-required), and add retrieval (message chunking + vectors) when “never forget” is genuinely needed.
+Planned work: put the cat canvas back (optionally toggled), move to Rive/Lottie animation, save per-provider
+configurations, paginate history upwards, record the timezone offset at write time, add a system-location
+`LocationSource` implementation (runtime permissions and failure fallback required), add a full-screen image
+viewer, and add retrieval (message chunking + vectors) when “never forget” is genuinely needed.
 
 ## Related documents
 

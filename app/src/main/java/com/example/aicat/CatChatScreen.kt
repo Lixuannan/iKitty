@@ -1,17 +1,25 @@
 package com.example.aicat
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -24,14 +32,19 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,10 +59,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -57,35 +72,70 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** 一条消息最多附带几张图片。 */
+private const val MAX_ATTACHMENTS = 9
 
 @Composable
 fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
     val messages by vm.messages.collectAsState()
     val mood by vm.mood.collectAsState()
     val busy by vm.busy.collectAsState()
+    val streamingReply by vm.streamingReply.collectAsState()
     val config by vm.config.collectAsState()
     val persona by vm.persona.collectAsState()
     val memory by vm.memory.collectAsState()
     val memoryStatus by vm.memoryStatus.collectAsState()
     val contextPlan by vm.contextPlan.collectAsState()
     val locationEnabled by vm.locationEnabled.collectAsState()
+    val updateStatus by vm.updateStatus.collectAsState()
 
     var input by remember { mutableStateOf("") }
+    /** 已选好、等待发送的图片文件名。 */
+    var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSettings by remember { mutableStateOf(false) }
     var showMemory by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // 相册选择：优先用系统照片选择器，老设备自动回退到系统文件选择器。
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS)
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                attachments = (attachments + vm.importImages(uris)).take(MAX_ATTACHMENTS)
+            }
+        }
+    }
+
+    // 系统相机：直接写进 FileProvider 提供的目标地址，返回后再收编进本机存储。
+    val takePhoto = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        scope.launch {
+            vm.finishCamera(success)?.let { name ->
+                attachments = (attachments + name).take(MAX_ATTACHMENTS)
+            }
+        }
+    }
 
     if (showSettings) {
         SettingsScreen(
             initial = config,
             initialPersona = persona,
             initialLocationEnabled = locationEnabled,
+            appVersion = vm.appVersion,
+            updateStatus = updateStatus,
             onSave = { newConfig, newPersona, enableLocation ->
                 vm.saveSettings(newConfig, newPersona, enableLocation)
                 showSettings = false
             },
             onTest = { vm.testConnection(it) },
             onListModels = { vm.listModels(it) },
+            onCheckUpdate = { vm.checkForUpdate() },
+            onDownloadUpdate = { vm.downloadUpdate() },
             onBack = { showSettings = false }
         )
         return
@@ -110,17 +160,25 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
         return
     }
 
-    // 自动滚动到最新一条
-    LaunchedEffect(messages.size, busy) {
-        val itemCount = messages.size + if (busy) 1 else 0
-        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    // 自动滚动到最新一条。流式输出期间用 scrollToItem，避免每个增量都重启一次动画。
+    LaunchedEffect(messages.size, busy, streamingReply) {
+        val itemCount = messages.size + if (busy || streamingReply != null) 1 else 0
+        if (itemCount > 0) {
+            if (streamingReply != null) {
+                listState.scrollToItem(itemCount - 1)
+            } else {
+                listState.animateScrollToItem(itemCount - 1)
+            }
+        }
     }
 
     fun submit() {
         val text = input.trim()
-        if (text.isEmpty() || busy) return
+        if ((text.isEmpty() && attachments.isEmpty()) || busy) return
+        val toSend = attachments
         input = ""
-        vm.send(text)
+        attachments = emptyList()
+        vm.send(text, toSend)
     }
 
     Column(
@@ -150,17 +208,34 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             itemsIndexed(messages, key = { _, msg -> msg.seq }) { index, msg ->
                 MessageBubble(msg = msg, showTime = shouldShowTime(messages, index))
             }
-            if (busy) item { ThinkingBubble() }
+            if (busy && streamingReply.isNullOrEmpty()) {
+                item { ThinkingBubble() }
+            }
+            if (!streamingReply.isNullOrEmpty()) {
+                item { StreamingBubble(text = streamingReply.orEmpty()) }
+            }
         }
 
         InputBar(
             value = input,
+            attachments = attachments,
             onValueChange = {
                 input = it
                 vm.onInputChanged(it)
             },
             onSend = { submit() },
-            sendEnabled = input.isNotBlank() && !busy
+            onPickImages = {
+                pickImages.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onTakePhoto = {
+                vm.newCameraTarget()?.let { uri -> takePhoto.launch(uri) }
+            },
+            onRemoveAttachment = { index ->
+                attachments = attachments.filterIndexed { position, _ -> position != index }
+            },
+            sendEnabled = (input.isNotBlank() || attachments.isNotEmpty()) && !busy
         )
     }
 }
@@ -236,6 +311,7 @@ private const val TIME_GAP_MILLIS = 5 * 60 * 1000L
 /** 气泡四边统一圆角；用户和猫猫只靠左右位置和配色区分，不再靠缺角。 */
 private val BubbleShape = RoundedCornerShape(20.dp)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MessageBubble(msg: StoredMessage, showTime: Boolean) {
     val isUser = msg.role == StoredMessage.ROLE_USER
@@ -276,17 +352,74 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean) {
                 border = if (isUser) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.widthIn(max = 292.dp)
             ) {
-                Text(
-                    text = msg.content,
+                Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = when {
-                        isUser -> MaterialTheme.colorScheme.onPrimary
-                        msg.localError -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurface
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (msg.images.isNotEmpty()) {
+                        FlowRow(
+                            maxItemsInEachRow = 2,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            msg.images.forEach { name ->
+                                ChatImage(
+                                    name = name,
+                                    modifier = Modifier
+                                        .size(126.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                )
+                            }
+                        }
                     }
-                )
+                    // 图片消息允许不带文字，此时不渲染空气泡文本。
+                    if (msg.content.isNotEmpty()) {
+                        Text(
+                            text = msg.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = when {
+                                isUser -> MaterialTheme.colorScheme.onPrimary
+                                msg.localError -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+/** 流式回复的临时气泡：内容随增量增长，结束后由真正的消息取代。 */
+@Composable
+private fun StreamingBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+        ) {
+            CatAvatar(modifier = Modifier.fillMaxSize().padding(3.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        Surface(
+            shape = BubbleShape,
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 1.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.widthIn(max = 292.dp)
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -347,47 +480,126 @@ private fun ThinkingBubble() {
 @Composable
 private fun InputBar(
     value: String,
+    attachments: List<String>,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    onPickImages: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onRemoveAttachment: (Int) -> Unit,
     sendEnabled: Boolean
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 8.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("和猫猫说点什么…") },
-                maxLines = 5,
-                shape = RoundedCornerShape(22.dp),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Send
-                ),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.background,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.background,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                )
-            )
-            Spacer(Modifier.width(8.dp))
-            FilledIconButton(
-                onClick = onSend,
-                enabled = sendEnabled,
-                modifier = Modifier.size(50.dp)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (attachments.isNotEmpty()) {
+                AttachmentStrip(names = attachments, onRemove = onRemoveAttachment)
             }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                AddImageButton(onPickImages = onPickImages, onTakePhoto = onTakePhoto)
+                Spacer(Modifier.width(4.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("和猫猫说点什么…") },
+                    maxLines = 5,
+                    shape = RoundedCornerShape(22.dp),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(onSend = { onSend() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.background,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    )
+                )
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = onSend,
+                    enabled = sendEnabled,
+                    modifier = Modifier.size(50.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+                }
+            }
+        }
+    }
+}
+
+/** 已选图片的缩略图条，每张右上角带一个删除按钮。 */
+@Composable
+private fun AttachmentStrip(names: List<String>, onRemove: (Int) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        names.forEachIndexed { index, name ->
+            Box(modifier = Modifier.size(64.dp)) {
+                ChatImage(
+                    name = name,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                )
+                IconButton(
+                    onClick = { onRemove(index) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x99000000))
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "移除图片",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 「+」按钮：相册与拍照两个入口。 */
+@Composable
+private fun AddImageButton(onPickImages: () -> Unit, onTakePhoto: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(48.dp)) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = "添加图片",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("从相册选择") },
+                onClick = {
+                    open = false
+                    onPickImages()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("拍照") },
+                onClick = {
+                    open = false
+                    onTakePhoto()
+                }
+            )
         }
     }
 }

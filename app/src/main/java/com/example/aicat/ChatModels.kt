@@ -1,8 +1,16 @@
 package com.example.aicat
 
+/**
+ * 一条发给服务商的消息。
+ *
+ * [images] 是已经编码好的数据 URL（`data:image/jpeg;base64,...`）。为空表示普通纯文本消息，
+ * 此时请求体里的 `content` 就是一个字符串；非空时按 OpenAI 兼容的多模态 content 数组发送。
+ * 这里刻意不关心具体服务商：图片走标准的 `image_url` 结构，而不是某家的私有字段。
+ */
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val images: List<String> = emptyList()
 )
 
 /** 思考深度。OFF 表示不发送 reasoning_effort。 */

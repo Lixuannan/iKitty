@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  系统相机通过 FileProvider 拿到一个可写的 content:// 目标地址。
+  只放行缓存目录下的拍照临时文件；拍成功后应用会把它收编进 filesDir/chat/images/。
+-->
+<paths>
+    <cache-path name="camera" path="chat_camera/" />
+    <!-- 下载好的更新包放在缓存目录，只通过 FileProvider 临时授权给系统安装器读取。 -->
+    <cache-path name="updates" path="updates/" />
+</paths>

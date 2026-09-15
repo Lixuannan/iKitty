@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.aicat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     compileOptions {
@@ -23,6 +23,15 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    buildTypes {
+        release {
+            // 沿用 v0.1.0 的 debug 签名密钥：老用户已装的包就是这把 key 签的，
+            // 换 key 会让系统拒绝覆盖安装，只能卸载重装，而卸载会清空聊天记录。
+            // 换成正式发布密钥时，必须同时准备一次带数据迁移的过渡方案。
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 }
 

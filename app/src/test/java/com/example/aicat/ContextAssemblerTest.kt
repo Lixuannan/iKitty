@@ -133,4 +133,53 @@ class ContextAssemblerTest {
         assertTrue(fat.keptMessages < lean.keptMessages)
         assertTrue(fat.messages.first().content.contains("此刻"))
     }
+
+    @Test
+    fun `each image adds a fixed token cost`() {
+        assertTrue(
+            TokenEstimator.estimateMessage("看图", imageCount = 1) >=
+                TokenEstimator.estimateMessage("看图") + TokenEstimator.IMAGE_TOKENS
+        )
+    }
+
+    @Test
+    fun `images are resolved into the wire format`() {
+        val history = listOf(
+            user(1, "第一轮"),
+            cat(2, "回复"),
+            StoredMessage(3, StoredMessage.ROLE_USER, "看图", 3, images = listOf("a.jpg", "gone.jpg"))
+        )
+        val plan = ContextAssembler.assemble(
+            systemPrompt = "系统",
+            memoryBlock = "",
+            ambientBlock = "",
+            history = history,
+            budget = 10_000,
+            imageUrl = { name -> if (name == "a.jpg") "data:image/jpeg;base64,AA" else null }
+        )
+        // 文件已删除的图片被跳过，而不是让整条消息发送失败。
+        assertEquals(listOf("data:image/jpeg;base64,AA"), plan.messages.last().images)
+        assertEquals("看图", plan.messages.last().content)
+    }
+
+    @Test
+    fun `images eat into the history budget`() {
+        val base = buildList {
+            repeat(10) { index ->
+                add(user(index * 2L + 1, "第 $index 轮：" + "字".repeat(40)))
+                add(cat(index * 2L + 2, "回复 " + "字".repeat(40)))
+            }
+        }
+        val heavy = base + StoredMessage(
+            seq = 100,
+            role = StoredMessage.ROLE_USER,
+            content = "看图",
+            createdAt = 100,
+            images = List(20) { "i$it.jpg" }
+        )
+        val lean = assemble("系统", base, budget = 3000)
+        val fat = assemble("系统", heavy, budget = 3000)
+
+        assertTrue(fat.keptMessages < lean.keptMessages)
+    }
 }

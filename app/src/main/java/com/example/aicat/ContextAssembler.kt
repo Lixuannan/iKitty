@@ -27,6 +27,14 @@ object TokenEstimator {
     /** 每条消息的固定开销：role、分隔符等。 */
     private const val MESSAGE_OVERHEAD = 4
 
+    /**
+     * 每张图片的粗估 token。
+     *
+     * 服务端按图片分辨率计算真实用量，这里只取一个偏高的固定值：估算只需要保证"不超预算"，
+     * 精确值看服务端返回的 usage。
+     */
+    const val IMAGE_TOKENS = 1100
+
     fun estimateText(text: String): Int {
         if (text.isEmpty()) return 0
         var wide = 0
@@ -36,7 +44,8 @@ object TokenEstimator {
         return wide + (narrow + 3) / 4
     }
 
-    fun estimateMessage(content: String): Int = estimateText(content) + MESSAGE_OVERHEAD
+    fun estimateMessage(content: String, imageCount: Int = 0): Int =
+        estimateText(content) + MESSAGE_OVERHEAD + imageCount * IMAGE_TOKENS
 
     private fun Char.isWide(): Boolean {
         val code = code
@@ -86,7 +95,14 @@ object ContextAssembler {
         memoryBlock: String,
         ambientBlock: String,
         history: List<StoredMessage>,
-        budget: Int
+        budget: Int,
+        /**
+         * 把 [StoredMessage.images] 里的本机文件名解析成数据 URL。
+         *
+         * 装配本身保持纯函数：调用方先在 IO 线程把需要的图片编码好，这里只做查表，
+         * 于是长对话重发历史图片不会阻塞主线程。
+         */
+        imageUrl: (String) -> String? = { null }
     ): ContextPlan {
         // 稳定的在前、易变的在后：这样提示词缓存的前缀能尽量复用。
         val system = buildString {
@@ -105,7 +121,9 @@ object ContextAssembler {
         var used = 0
         var start = units.size
         if (units.isNotEmpty()) {
-            val costs = units.map { unit -> unit.sumOf { TokenEstimator.estimateMessage(it.content) } }
+            val costs = units.map { unit ->
+                unit.sumOf { TokenEstimator.estimateMessage(it.content, it.images.size) }
+            }
             // 至少保留最后一轮：宁可让服务端报上下文超长，
             // 也不要发一条只有 system、没有 user 的请求。
             start = units.lastIndex
@@ -124,7 +142,7 @@ object ContextAssembler {
 
         val messages = buildList {
             add(ChatMessage("system", system))
-            kept.forEach { add(it.toWire()) }
+            kept.forEach { add(it.toWire(imageUrl)) }
         }
         return ContextPlan(
             messages = messages,

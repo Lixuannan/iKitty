@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.1.0 · Package: `com.example.aicat` · Source root: `app/src/main/java/com/example/aicat/`
+- Version: 0.2.0 · Package: `com.example.aicat` · Source root: `app/src/main/java/com/example/aicat/`
 - Stack: Kotlin 2.0.21, Jetpack Compose (Material3), OkHttp 4.12.0, DataStore Preferences 1.1.1
 - Build: AGP 8.7.3, Gradle 9.7.1, Java 17 bytecode target, minSdk 26 / targetSdk 35
 
@@ -31,6 +31,8 @@ MainActivity (ComponentActivity + MaterialTheme)
         ├── ChatLogStore         → JSONL append
         ├── CatMemoryStore       → memory JSON
         ├── MemoryExtractor      → memory extraction request
+        ├── UpdateClient         → GitHub release lookup and APK download
+        ├── ApkInstaller         → package/signature check before an in-place update
         └── LocationSource ─ IpLocationSource → IP city geolocation
 ```
 
@@ -52,6 +54,7 @@ The following objects reference no Android API and are therefore callable direct
 | `TimeFormat` | Time formatting |
 | `parseIpPlace` / `Place` | IP response parsing |
 | `AmbientContext` | "Right now" background block |
+| `parseLatestRelease` / `compareVersions` | Release JSON parsing and version comparison |
 
 The Android adapters are: `ChatLogStore`, `CatMemoryStore` (files + a `Context` constructor),
 `SettingsStore` (DataStore), `IpLocationSource` (OkHttp), `CatChatViewModel` (`AndroidViewModel`),
@@ -73,6 +76,7 @@ Every state flow exposed by `CatChatViewModel`:
 | `config` | `ApiConfig` | Model service configuration |
 | `persona` | `CatPersona` | Cat persona |
 | `locationEnabled` | `Boolean` | Whether IP geolocation is allowed |
+| `updateStatus` | `UpdateStatus` | Update flow state (see [18. Software updates](#18-software-updates)) |
 
 ---
 
@@ -80,23 +84,27 @@ Every state flow exposed by `CatChatViewModel`:
 
 1. The user types. `onInputChanged` moves the mood to `LISTENING` while the field is non-empty and back to
    `IDLE` when cleared; it does not override the mood while `busy`.
-2. `send(text)`: after `trim`, a `StoredMessage` is created with `seq = nextSeq++` and `role = user`,
-   appended to `messages`, and persisted as JSONL. If the location toggle is on and the cache is stale, a
-   background refresh is triggered.
+2. `send(text, attachments)`: after `trim`, a `StoredMessage` is created with `seq = nextSeq++` and
+   `role = user`, with `images` holding the imported local file names. It is appended to `messages` and
+   persisted as JSONL. Both text and images empty, or `busy`, returns immediately. If the location toggle is
+   on and the cache is stale, a background refresh is triggered.
 3. `busy = true`, mood moves to `THINKING`.
-4. `ContextAssembler.assemble(...)` builds the request: system = persona + memory block + "right now" block,
-   with history trimmed to the token budget. The result is stored in `contextPlan` for the memory screen.
-5. `ApiClient.chat(config, plan.messages)` calls `POST {Base}/chat/completions`.
-6. `parseCatReply(raw.text)` parses the reply into text, an optional mood, and an optional animation.
-   Any parse failure falls back to plain text.
-7. The assistant message is appended and persisted. The mood is set with `autoReset = true` and returns to
-   `IDLE` after 4 seconds; the animation comes from the model, or from `CatAnimation.defaultFor(mood)`
-   when unspecified.
-8. On error, an assistant message with `localError = true` is appended (shown in red, but it **never enters
-   the request or memory**), the mood moves to `SAD`, and `SHAKE` plays.
-9. `busy = false` in `finally`.
-10. `maybeExtractMemory()`: if at least 6 non-error messages have accumulated past the extraction cursor, a
-    background memory extraction starts.
+4. On an IO thread, images used by the history are encoded into data URLs
+   (`ImageStore.dataUrls`). Then `ContextAssembler.assemble(...)` builds the request: system = persona +
+   memory block + "right now" block, with history trimmed to the token budget and image names resolved
+   through the resolver. The result is stored in `contextPlan` for the memory screen.
+5. `ApiClient.chatStream(config, plan.messages, onDelta)` calls `POST {Base}/chat/completions` with
+   `stream: true`; each delta appends to `_streamingReply`, which the UI shows as a streaming bubble.
+6. After the stream ends, `parseCatReply(raw.text)` parses the complete reply into text, an optional mood,
+   and an optional animation. Any parse failure falls back to plain text. `_streamingReply` is cleared, the
+   assistant message is appended and persisted. The mood is set with `autoReset = true` and returns to
+   `IDLE` after 4 seconds; the animation comes from the model, or from `CatAnimation.defaultFor(mood)`.
+7. On error: any partial reply already streamed is first persisted as an assistant message, then a
+   `localError = true` message is appended (shown in red, but it **never enters the request or memory**),
+   the mood moves to `SAD`, and `SHAKE` plays.
+8. `finally` clears `_streamingReply` and sets `busy = false`.
+9. `maybeExtractMemory()`: if at least 6 non-error messages have accumulated past the extraction cursor, a
+   background memory extraction starts.
 
 Clearing chat history resets `nextSeq` to 1, clears `contextPlan`, and resets the memory's
 `lastExtractedSeq` to zero; otherwise new `seq` values would look "already extracted" to the old cursor.
@@ -110,11 +118,13 @@ An empty conversation gets a greeting.
 
 | Type | Fields | Notes |
 | --- | --- | --- |
-| `StoredMessage` | `seq` / `role` / `content` / `createdAt` / `localError` | Persisted message; `seq` is both the ordering key and a stable id |
-| `ChatMessage` | `role` / `content` | The form sent to the provider; metadata never leaves |
+| `StoredMessage` | `seq` / `role` / `content` / `createdAt` / `localError` / `images` | Persisted message; `seq` is both the ordering key and a stable id; `images` are local file names |
+| `ChatMessage` | `role` / `content` / `images` | The form sent to the provider; `images` are encoded data URLs |
 
-`StoredMessage.toWire()` is the single conversion point; `localError`, `seq`, and `createdAt` never reach
-the request body. The role constants are `"user"` / `"assistant"`.
+`StoredMessage.toWire()` is the single conversion point; `localError`, `seq`, `createdAt`, and image file
+names never reach the request body — images are resolved to data URLs there
+(see [17. Image storage](#17-image-storage-imagestorekt)). The role constants are `"user"` / `"assistant"`.
+A message is valid as long as `content` and `images` are not both empty: image-only messages carry no text.
 
 ### 3.2 Mood and animation
 
@@ -230,14 +240,24 @@ Explicit values in the built-in table override it: all GLM at 128000 (`glm-4-lon
 ### 6.1 Requests
 
 - `chat(config, messages)`: `POST {Base}{chatPath}`, returning `ChatCompletion(text, reasoning, totalTokens)`.
-- `test(config)`: sends a very short request through the **exact same** `buildPayload` as chat
+  Used by memory extraction and any scenario that needs complete JSON (non-streaming).
+- `chatStream(config, messages, onDelta)`: the same address with `stream: true`, invoking `onDelta` once per
+  incremental piece of text and returning the same value as `chat`, so callers need not distinguish.
+  Cancelling the coroutine cancels the underlying HTTP call.
+- `test(config)`: sends a very short request through the **exact same** `buildChatPayload` as chat
   (`"只回复两个字：在呢"`), returning `TestOutcome`: `latencyMillis`, `endpoint`, `model`, `reply`,
   `reasoningChars`, `sentParams`, `skippedParams`, `totalTokens`. A passing test means the address, key,
   model, and sampling parameters all work together.
 - `listModels(config)`: `GET {Base}{modelsPath}`, returning `Available(models)` or `NotSupported`.
 
-`buildPayload` writes only values that `resolvedFor(spec)` leaves non-null; an empty `model` throws
+`buildChatPayload` writes only values that `resolvedFor(spec)` leaves non-null; an empty `model` throws
 `ApiException`. The authorization header is sent only when `apiKey` is non-blank.
+
+The `content` value comes from `chatContent`: a plain string when there are no images (byte-for-byte what it
+was before image support), and an OpenAI-compatible content array when there are images — a text part
+`{"type":"text"}` plus one `{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}` part per
+image. An image-only message writes no empty text part, so providers that reject empty text blocks still
+work. No provider-specific field appears here; whether images are understood depends on the chosen model.
 
 Timeouts: 20 s connect, 30 s write, 90 s read.
 
@@ -247,6 +267,15 @@ Timeouts: 20 s connect, 30 s write, 90 s read.
 `content`; the reasoning content comes from `reasoning_content`, falling back to `reasoning`. If both are
 empty it reports "the model returned no content"; if `content` is empty but `reasoning` is not, the
 reasoning text is used as a fallback. `total_tokens` is returned only when > 0.
+
+Streaming reads (`executeStream`): SSE is read line by line; only lines starting with `data:` are handled,
+`data: [DONE]` ends the stream, and any line that does not parse as JSON is skipped so an occasional
+heartbeat cannot break the reply. Incremental text comes from `choices[0].delta.content` and thinking from
+`delta.reasoning_content` (falling back to `reasoning`); both accumulate and converge by the non-streaming
+rules. If a provider ignores `stream` and returns an ordinary JSON body (no `data:` lines at all), the
+buffered text goes through `parseCompletion`, so providers without streaming still work. Cancelling the
+request makes the blocking read throw `IOException`; when the coroutine is already cancelled this is
+re-thrown as `CancellationException` so a deliberate cancellation is not shown as a network error.
 
 `listModels` treats 404 / 405 as "provider does not support this" (not an error), reports
 "no data array in the response" when the body is not JSON, and sorts model ids after dropping blanks.
@@ -279,6 +308,8 @@ overestimates:
 - Per character: CJK, kana, Hangul, full-width punctuation, and similar wide characters cost 1 token;
   everything else costs 1 token per 4 characters (rounded up).
 - Each message adds `MESSAGE_OVERHEAD = 4`.
+- Each image adds a fixed `IMAGE_TOKENS = 1100`. The server computes real image usage from resolution;
+  this high fixed value only exists to keep assembly from overshooting the budget.
 - Real usage is calibrated by the server's `usage` (shown by **Test connection**).
 
 ### 7.2 Input budget
@@ -300,14 +331,15 @@ produce a negative budget.
 2. Messages with `localError` are filtered out.
 3. `buildUnits` groups by turn: a `user` message or an empty list starts a new turn; other messages join
    the current turn.
-4. Each turn's token cost is computed.
+4. Each turn's token cost is computed, counting images by the piece.
 5. Packing walks backwards from the **last turn**: the last turn is kept unconditionally (better to let the
    server report an over-long context than to send a request with only a system message), then
    `while (used + costs[index] <= budget - systemTokens)` continues backwards.
 6. `dropWhile { role != user }` removes a leading assistant message (such as the greeting), so a request
    never begins with an assistant message.
-7. The output is `[system] + kept`, reporting `keptMessages`, `droppedMessages`, `estimatedTokens`, and
-   `inputBudget`.
+7. The output is `[system] + kept`, where each kept message goes through `toWire(imageUrl)` to resolve image
+   names into data URLs (unresolvable images are skipped, so deleting an image file never makes a historical
+   message unsendable), reporting `keptMessages`, `droppedMessages`, `estimatedTokens`, and `inputBudget`.
 
 `droppedMessages` is "sendable messages − messages actually sent", so a dropped greeting counts.
 
@@ -316,6 +348,8 @@ produce a negative budget.
 ## 8. Chat log (`ChatLogStore.kt`)
 
 - File: `filesDir/chat/chat_log.jsonl`, one message per line.
+- Each line is `{"seq","role","content","at","error"?,"images"?}`; `images` is an array of local image file
+  names and is omitted for text-only messages. An image-only message has an empty `content` and is still valid.
 - Not DataStore / Room because: append cost is independent of history length, a crash damages at most the
   last line, and it avoids pulling in Room/KSP.
 - The cost is weak querying, so only two reads exist:
@@ -496,10 +530,20 @@ comes with a navigation migration.
   settings button.
 - Message list: a `LazyColumn` keyed by `msg.seq`; time is shown only on the first message, when the
   speaker changes, or when the gap is ≥ 5 minutes. User bubbles sit right in the primary color; cat bubbles
-  sit left with a small cat avatar; `localError` uses the error color.
-- A three-dot `ThinkingBubble` is appended while awaiting a reply.
-- Input bar: multiline (≤ 5 lines) with an IME send action; the send button is disabled when the input is
-  empty or `busy`.
+  sit left with a small cat avatar; `localError` uses the error color. Messages with images render thumbnails
+  inside the bubble as a `FlowRow` two per row; image-only messages render no empty text.
+- A three-dot `ThinkingBubble` is appended while awaiting a reply; once streaming starts it is replaced by a
+  `StreamingBubble` showing the current `streamingReply`.
+- Input bar: a leading "+" opens "choose from gallery / take photo", and a multiline field (≤ 5 lines, IME
+  send action) sits in the middle. Chosen images appear as a horizontally scrollable thumbnail strip, each
+  with its own delete button. The send button is disabled when there is no text and no image, or while `busy`.
+- The gallery uses `PickMultipleVisualMedia` (up to 9; older devices fall back to the system file picker);
+  the camera uses `TakePicture` with a target URI generated by `ImageStore.newCameraTarget()` through
+  FileProvider, and `finishCamera` adopts or deletes it on return.
+- Both launchers, like the other `remember` calls, must be invoked before the early `return`s; otherwise
+  navigating to settings and back would shift their positions.
+- Auto-scroll: `animateScrollToItem` for new messages, switching to `scrollToItem` during streaming so each
+  delta does not restart the animation.
 - The cat canvas is currently not shown; a comment marks where to restore it.
 
 ### 12.3 Settings screen (`SettingsScreen.kt`)
@@ -517,6 +561,9 @@ All inputs are local `remember`ed drafts; only pressing **Save** writes back to 
   endpoint, reply, reasoning character count, sent/skipped parameters, and tokens.
 - Generation-parameter sliders take their range, detents, and display precision entirely from `ModelSpec`.
 - "Restore current model defaults" resets the draft to that model's defaults.
+- The "Software update" section at the bottom drives three phases — check, download, install
+  (see [18. Software updates](#18-software-updates)). The install step lives in the UI because it needs an
+  Activity `Context` to launch system screens; checking and downloading stay in the ViewModel.
 
 ### 12.4 Memory screen (`CatMemoryScreen.kt`)
 
@@ -553,6 +600,11 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | Replace cat rendering | Replace `CatView.kt` wholesale, keeping the `CatView(mood, animation)` / `CatAvatar(modifier)` signatures |
 | Integrate system location | Implement `LocationSource` and swap it for `IpLocationSource` in the ViewModel |
 | Replace chat-log storage | Replace `ChatLogStore` (keep `append` / `tail` / `readAfter` / `clear`) |
+| Change image compression or storage location | Change only `ImageStore`'s import pipeline and constants |
+| Change how images look in the UI | Change only `ChatImage` and the bubble/attachment strip in `CatChatScreen` |
+| Change how historical images are carried | Change only `ContextAssembler`'s `imageUrl` resolver and image cost |
+| Change the update source | Change `RELEASE_API_URL` and `parseLatestRelease` in `UpdateModels.kt` |
+| Change update download/verification/install | `UpdateClient` (download) / `ApkInstaller` (check and install) / the ViewModel's `UPDATE_DIR` |
 | Add a screen | Add a boolean-state branch in `CatChatScreen`, or introduce navigation |
 
 ---
@@ -563,7 +615,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 ./gradlew testDebugUnitTest
 ```
 
-46 cases, all plain JVM tests (no device or emulator):
+74 cases, all plain JVM tests (no device or emulator):
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -571,27 +623,38 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | `CatMemoryStoreTest` | 2 | Memory save/load round trip, corrupt file reading as empty memory |
 | `CatMemoryTest` | 11 | Additive merge, same-key overwrite, unchanged fact keeps its timestamp, `forget` leaves pinned alone, over-cap eviction, key rename, over-long truncation, render grouping, three JSON shapes, parse failure returning null, unknown category fallback |
 | `CatPersonaTest` | 7 | Default prompt carries name/traits/JSON contract, trait render order and empty set, extra notes, `HUMAN` has no "meow", blank-name fallback, trait storage round trip, enum lookup |
-| `ContextAssemblerTest` | 10 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, extra blocks joined only when present, stable blocks before volatile, non-negative budget, Chinese costing more than equal-length ASCII, window in the model name, ambient block counted against the budget |
+| `StoredMessageTest` | 7 | Image message JSON round trip, image-only message valid, text-only omits `images`, neither text nor images rejected, blank image names dropped, `toWire` resolving and skipping missing images, plain-text wire carrying no images |
+| `MultimodalPayloadTest` | 5 | Plain text stays a string content with no `stream`, images become `image_url` content parts, image-only writes no empty text part, streaming only adds `stream`, sent params still follow the capability table |
+| `ContextAssemblerTest` | 13 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, extra blocks joined only when present, stable blocks before volatile, non-negative budget, Chinese costing more than equal-length ASCII, window in the model name, ambient block counted against the budget, fixed per-image cost, images resolved into the wire, images eating history budget |
+| `ImageStoreTest` | 4 | Sampling ratio within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs |
 | `LocationTest` | 10 | Three provider response shapes, JSON null not becoming the string "null", failures and garbage rejected, `display` fallback, ambient block carrying time/gap/city and labeling it "may be inaccurate", omitted unknowns |
+| `UpdateModelsTest` | 9 | Release JSON parsing version/notes/APK URL/size/published time, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, prerelease older, `v` prefix normalization |
 
 `testImplementation("org.json:json:20240303")` is deliberate: unit tests run on the JVM, where the
 `org.json` in `android.jar` is only a throwing stub; a real implementation is needed to test pure logic such
 as memory parsing.
 
-Not covered: Compose UI, real network requests, DataStore reads/writes in `SettingsStore`, and the actual
-HTTP of `IpLocationSource`. These need on-device integration / end-to-end verification.
+Not covered: Compose UI, real network requests, SSE parsing, real image decoding/compression (which depends
+on `BitmapFactory`), DataStore reads/writes in `SettingsStore`, the actual HTTP of `IpLocationSource`,
+real GitHub requests and downloads in `UpdateClient`, and `ApkInstaller`'s signature check and system
+installer hand-off. These need on-device integration / end-to-end verification.
 
 ---
 
 ## 15. Security and privacy boundaries
 
-- **Permissions**: only `android.permission.INTERNET`.
+- **Permissions**: `android.permission.INTERNET` and `android.permission.REQUEST_INSTALL_PACKAGES`; the
+  latter is used only to hand the official release APK to the system installer.
 - **Cleartext traffic**: `network_security_config.xml`'s `base-config` permits it for every domain so local
   and LAN model services work; tighten it with per-domain `domain-config` entries.
-- **Data at rest**: chat history and memory are plaintext files in the app-private directory; the API key is
+- **Data at rest**: chat history, images, and memory are files in the app-private directory; the API key is
   plaintext in DataStore with no extra encryption.
+- **Images**: gallery images are copied into `filesDir/chat/images/`; the camera temp file is written to the
+  cache directory and adopted or deleted immediately on return. The app grants only its own `FileProvider`
+  URI and requests no storage or camera permission — the system camera app performs the capture.
 - **Data leaving the device**: chat content goes only to the configured Base URL; with location enabled, the
-  egress IP goes to third-party geolocation services.
+  egress IP goes to third-party geolocation services; an update check only reads release metadata from
+  `api.github.com` and downloads the APK, reporting no local information.
 - **Error messages**: at most the first 200 characters of an error body are echoed, so a whole gateway HTML
   page does not end up in the UI.
 - **Context isolation**: `localError` messages and the greeting never enter a request, and `StoredMessage`
@@ -602,11 +665,103 @@ HTTP of `IpLocationSource`. These need on-device integration / end-to-end verifi
 ## 16. Known technical debt
 
 1. The cat canvas is not wired into the chat screen (see [README current shape](../README_EN.md#current-shape-chat-only)).
-2. Non-streaming requests; long replies must complete first.
-3. Only one provider configuration is stored; switching providers overwrites.
-4. History loads only the most recent 400 messages, with no upward pagination.
-5. Only UTC millisecond timestamps are stored; the timezone offset at write time is not recorded.
-6. Token counts are estimates only.
-7. Location is city-level and depends on third-party IP services.
-8. The API key is stored in plaintext.
-9. UI strings have no localization resources.
+2. Only one provider configuration is stored; switching providers overwrites.
+3. History loads only the most recent 400 messages, with no upward pagination.
+4. Only UTC millisecond timestamps are stored; the timezone offset at write time is not recorded.
+5. Token counts are estimates only.
+6. Location is city-level and depends on third-party IP services.
+7. The API key is stored in plaintext.
+8. UI strings have no localization resources.
+9. Images are downscaled to a 1280 px longest edge and re-encoded as JPEG: lossy, with transparent areas
+   flattened to white, and at most 9 per message.
+10. Historical images are re-encoded and re-sent every turn (`dataUrls` has only an in-memory cache), so many
+    images noticeably enlarge the request body and memory pressure.
+11. Images have no full-screen viewer, save, or pinch-to-zoom.
+12. The update package is checked only for length, package name, and signature, with no checksum from the
+    release, and there is no background automatic update check.
+
+## 17. Image storage (`ImageStore.kt`)
+
+Chosen or captured images are **copied into the app-private directory** before their file name is recorded,
+because a gallery `content://` URI is only readable within the current process; without the copy, images in
+the history would go blank after a restart.
+
+- Directories: `filesDir/chat/images/`; camera temp files in `cacheDir/chat_camera/`.
+- Import: read bounds → sample-decode via `sampleSizeFor` → scale to a longest edge of
+  `MAX_DIMENSION = 1280` → flatten alpha onto white → compress to JPEG (quality 85) as `img_<uuid>.jpg`.
+  Any step failing returns `null` so the caller skips that image instead of failing the whole send.
+  Note that `decodeStream` returning `null` under `inJustDecodeBounds` is normal — the size is only written
+  into the `Options`; only an unopenable stream counts as failure.
+- Data URLs: `dataUrl` / `dataUrls` encode a file as `data:image/jpeg;base64,...`, cached by file name in a
+  12-entry LRU (files are never rewritten, so cache entries never go stale).
+- Camera: `newCameraTarget()` produces a writable URI through `FileProvider` (authority
+  `${applicationId}.fileprovider`, paths configured in `res/xml/file_paths.xml`); on success `commitCamera`
+  runs the same import pipeline, and on cancel the temp file is deleted.
+- Thumbnails: `decodeSampledBitmap` samples to a 512 px longest edge for `ChatImage`, keeping full images out
+  of memory.
+
+---
+
+## 18. Software updates
+
+### 18.1 Source and version comparison (`UpdateModels.kt`)
+
+- The source is fixed at `RELEASE_API_URL = https://api.github.com/repos/Lixuannan/iKitty/releases/latest`.
+- `parseLatestRelease(body)` reads `tag_name` / `body` / `published_at` and `assets`:
+  - a truthy `draft` / `prerelease` returns `null` immediately;
+  - `normalizeVersion` strips the `v` prefix and surrounding whitespace;
+  - it prefers the `.apk` whose name contains the version, then any `.apk`, and returns `null` when neither
+    exists;
+  - an invalid ISO-8601 `published_at` only loses the time, never the other fields.
+- `compareVersions(a, b)` compares numeric segments only; when those are equal, the side with a prerelease
+  suffix is older (`0.2.0-beta.1 < 0.2.0`). Unrecognized segments count as 0, so an odd version string never
+  turns into an error.
+- `UpdateStatus` is the UI state machine: `Idle` / `Checking` / `UpToDate` / `Available` / `Downloading` /
+  `Ready` / `Failed`. A non-null `Failed.info` means "version known, download failed", which is how the UI
+  offers "retry download".
+
+### 18.2 Download (`UpdateClient.kt`)
+
+- `fetchLatest()`: `GET releases/latest` with `Accept: application/vnd.github+json`. A `null` return means no
+  downloadable APK; HTTP or network failures throw `ApiException` (403 / 429 report rate limiting, 404
+  reports a missing release).
+- `download(info, destination, onProgress)`: writes `<name>.part` first and then `renameTo`s it, falling back
+  to a copy when the rename fails; any exception (including coroutine cancellation) deletes the `.part`, so a
+  half-written APK never looks complete. Progress is reported every 64 KB, and the loop calls
+  `ensureActive()` so cancellation is honored promptly. The final byte count is compared against the `size`
+  the release declared, and a mismatch reports an incomplete download.
+- The ViewModel owns the destination directory: `cacheDir/updates/`, cleared of other versions before a
+  download starts.
+
+### 18.3 Verification and installation (`ApkInstaller.kt`)
+
+- `check(context, apk)` reads the downloaded package's package name and signature through
+  `getPackageArchiveInfo` and compares them with the installed app, returning `COMPATIBLE` /
+  `PACKAGE_MISMATCH` / `SIGNATURE_MISMATCH` / `UNREADABLE`.
+- When neither side yields a signature it returns `UNREADABLE` rather than treating them as equal — that
+  would silently skip the check.
+- `install(context, apk)` obtains a `content://` URI through `FileProvider` (authority
+  `${applicationId}.fileprovider`, paths from the `updates` entry in `res/xml/file_paths.xml`) that grants
+  the installer access to that one file, then opens the system installer with `ACTION_VIEW` and
+  `application/vnd.android.package-archive`.
+- `canInstall` calls `canRequestPackageInstalls()`; when it is false the UI opens
+  `ACTION_MANAGE_UNKNOWN_APP_SOURCES`.
+
+### 18.4 Why an update does not clear chat history
+
+- An in-place update only replaces code; `filesDir`, `cacheDir`, and DataStore stay where they are, so chat
+  history (`chat/chat_log.jsonl`), images, memory (`cat_memory.json`), and settings all survive.
+- The app **never** uninstalls before installing and uses no install API that deletes app data.
+- The download writes only to `cacheDir/updates/`, and the FileProvider grant covers that single file, so the
+  update flow never touches `filesDir/chat/`.
+- A signature mismatch would be rejected by the system anyway. Verifying it up front, deleting the package,
+  and explaining why is what keeps users from being misled into uninstalling and reinstalling — which is what
+  would actually clear chat history.
+
+### 18.5 UI (`SettingsScreen.UpdateSection`)
+
+`Idle` shows the current version and "check for updates"; `Available` shows the new version and the release
+notes (at most 8 lines) plus "download update"; `Downloading` shows a progress bar and downloaded/total;
+`Ready` shows "install update"; `Failed` offers "retry download" or "check again" depending on whether
+`info` is present. The install step lives in the UI layer because it needs an Activity `Context` to launch
+system screens; checking and downloading stay in the ViewModel.
