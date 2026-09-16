@@ -1,4 +1,0 @@
-com.example.aicat.test.app-androidTest-0 /Users/meizhenchen/Documents/AICatMVP/app/build/generated/res/resValues/androidTest/debug
-com.example.aicat.test.app-mergeDebugAndroidTestResources-1 /Users/meizhenchen/Documents/AICatMVP/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/merged.dir
-com.example.aicat.test.app-mergeDebugAndroidTestResources-2 /Users/meizhenchen/Documents/AICatMVP/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/stripped.dir
-com.example.aicat.test.app-debugAndroidTest-3 /Users/meizhenchen/Documents/AICatMVP/app/build/intermediates/merged_res/debugAndroidTest/mergeDebugAndroidTestResources

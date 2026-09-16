@@ -1,4 +1,0 @@
-#Sun Sep 13 13:01:11 CST 2026
-base.0=/Users/meizhenchen/Documents/AICatMVP/app/build/intermediates/dex/debugAndroidTest/mergeProjectDexDebugAndroidTest/0/classes.dex
-path.0=0/classes.dex
-renamed.0=classes.dex

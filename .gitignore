@@ -1,8 +1,13 @@
 *.iml
 .gradle
+.kotlin
 /local.properties
 /.idea
 /build
+/app/build
 /captures
 .externalNativeBuild
 .cxx
+
+# macOS
+.DS_Store
