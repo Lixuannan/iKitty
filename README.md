@@ -8,15 +8,16 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 拼成 system prompt 直接发给任意 OpenAI 兼容服务。聊天记录、图片、记忆和设置全部存在本机，
 除了你自己配置的模型服务和可选的 IP 定位，不经过任何第三方服务器。
 
-- 应用名：**iKitty** · 版本：**0.2.0** · 包名：`com.example.aicat`
+- 应用名：**iKitty** · 版本：**0.2.1** · 包名：`com.example.aicat`
 - 仓库：<https://github.com/Lixuannan/iKitty>
 
 ---
 
 ## 功能特性
 
-- **任意 OpenAI 兼容服务**：内置智谱 GLM、DeepSeek、Z.AI、OpenAI、Moonshot/Kimi、通义千问、
-  硅基流动、OpenRouter、Ollama 本地共 9 个预设，外加自定义 Base URL。
+- **任意 OpenAI 兼容服务**：内置智谱 GLM、Z.AI、DeepSeek、OpenAI、Anthropic、Google Gemini、xAI、
+  通义千问、Moonshot/Kimi、MiniMax、字节豆包、腾讯混元、百度文心、Mistral、硅基流动、OpenRouter、
+  Ollama 本地共 17 个预设，外加自定义 Base URL。
 - **按模型能力动态出参数**：不同服务商、不同模型可调的参数和取值范围不同，设置页只渲染该模型真正支持的
   控件，请求体也只发送它真正接受的字段（详见[模型能力表](#模型能力表)）。
 - **测试连接即真实请求**：用与聊天完全相同的参数发一条极短消息，回报耗时、端点、实际发送/自动跳过的参数和 tokens。
@@ -214,20 +215,31 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 
 `ModelCatalog` 是「哪些参数能调、取值范围多少」的唯一来源，设置页与请求体都由它驱动：
 
-| 服务商 | 模型 | temperature | top_p | max_tokens | 思考 |
-| --- | --- | --- | --- | --- | --- |
-| 智谱 GLM | glm-4.5 / glm-4.6 | 0–1 | 0.01–1 | ≤32768 | `thinking.type` 开关（默认开） |
-| 智谱 GLM | glm-4.5-air / flash | 0–1 | 0.01–1 | ≤32768 | `thinking.type` 开关（默认关） |
-| 智谱 GLM | glm-4-plus / air / flash / long | 0–1 | 0.01–1 | ≤4095 | 不支持 |
-| 智谱 GLM | glm-z1-air / flash | 0–1 | 0.01–1 | ≤4095 | 始终思考，不可关 |
-| DeepSeek | deepseek-chat | 0–2 | 0.01–1 | ≤8192 | 不支持 |
-| DeepSeek | deepseek-reasoner | 不发送 | 不发送 | ≤65536 | 始终思考，不可关 |
-| OpenAI | gpt-4o / 4.1 系列 | 0–2 | 0.01–1 | 见内置值 | 不支持 |
-| OpenAI | o4-mini | 不发送 | 不发送 | ≤100000 | `reasoning_effort` |
+| 服务商 | 模型 | temperature | top_p | max_tokens | 思考 | 上下文窗口 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 智谱 GLM / Z.AI | glm-5.3 | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 1M |
+| 智谱 GLM / Z.AI | glm-5.3-flash | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 200K |
+| DeepSeek | deepseek-v4-pro / deepseek-flash | 0–2 | 0.01–1 | ≤8192 | 不支持 | 128K |
+| OpenAI | gpt-5.5 / gpt-5.3-codex | 不发送 | 不发送 | ≤32768 | `reasoning_effort` | 400K |
+| Anthropic | claude-opus-4.7 / claude-sonnet-4.6 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 200K |
+| Google | gemini-3.1-pro / gemini-3-flash | 0–2 | 0.01–1 | ≤8192 | 不支持 | 1M |
+| xAI | grok-4 | 0–2 | 0.01–1 | ≤8192 | 不支持 | 256K |
+| 通义千问 | qwen3.6-max / qwen3-coder-next | 0–2 | 0.01–1 | ≤8192 | 不支持 | 256K |
+| Moonshot | kimi-k3 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 256K |
+| MiniMax | MiniMax-M3 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 1M |
+| 豆包 | doubao-seed-2.0-pro | 0–1 | 0.01–1 | ≤8192 | 不支持 | 256K |
+| 腾讯混元 | hunyuan-turbos | 0–2 | 0.01–1 | ≤8192 | 不支持 | 128K |
+| 百度文心 | ernie-x1.1 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 128K |
+| Mistral | mistral-small-4 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 128K |
+| OpenRouter / 硅基流动 / Ollama | llama-4-maverick | 0–2 | 0.01–1 | ≤8192 | 不支持 | 1M |
 
 其它服务商和手动输入的模型名走名称启发式（`reasoner` / `z1` / `r1` → 始终思考，
-`glm-4.5+` → thinking 开关，`o*` / `gpt-5` → reasoning_effort），兜底按通用 OpenAI 兼容规则处理并在设置页标注。
-新增服务商或模型只需改这一张表。
+`glm-4.5`–`glm-4.9` → thinking 开关，`glm-5` 起 / `o*` / `gpt-5` → `reasoning_effort`），
+兜底按通用 OpenAI 兼容规则处理并在设置页标注。新增服务商或模型只需改这一张表。
+
+上下文窗口是 `ContextAssembler` 计算 token 预算的依据。表里的窗口按各系列公开值填写，
+其中 GLM-5.3 与 MiniMax M3 的 1M 已核实，其余取同系列上一代的保守值——官方数字有变化时，
+改 `ModelCatalog.builtIn` 对应调用处的 `window` 即可。没有内置条目的模型仍走 32K 兜底。
 
 `max_tokens` 的 0 表示「不限制、不发送」，设置页显示为「不限制」。
 

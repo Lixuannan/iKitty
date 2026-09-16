@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：0.2.0 · 包名：`com.example.aicat` · 源码根目录：`app/src/main/java/com/example/aicat/`
+- 版本：0.2.1 · 包名：`com.example.aicat` · 源码根目录：`app/src/main/java/com/example/aicat/`
 - 技术栈：Kotlin 2.0.21、Jetpack Compose（Material3）、OkHttp 4.12.0、DataStore Preferences 1.1.1
 - 构建：AGP 8.7.3、Gradle 9.7.1、Java 17 字节码目标、minSdk 26 / targetSdk 35
 
@@ -189,29 +189,42 @@ JSON 契约里 `emotion` 与 `animation` 的取值就是 `CatReply` 解析表的
 
 ### 5.2 内置服务商（`providers` 顺序即设置页顺序）
 
-智谱 GLM → DeepSeek → Z.AI（GLM 国际站）→ OpenAI → Moonshot / Kimi → 通义千问 →
-硅基流动 → OpenRouter → Ollama 本地 → 自定义（`CUSTOM_PROVIDER_ID = "custom"`）。
+智谱 GLM → Z.AI（GLM 国际站）→ DeepSeek → OpenAI → Anthropic → Google Gemini → xAI →
+通义千问 → Moonshot / Kimi → MiniMax → 豆包（火山方舟）→ 腾讯混元 → 百度文心（千帆）→ Mistral →
+硅基流动 → OpenRouter → Ollama 本地 → 自定义（`CUSTOM_PROVIDER_ID = "custom"`），共 17 个预设 + 自定义。
+
+除 Anthropic / Google 走各自官方的 OpenAI 兼容层外，其余都是原生的 OpenAI 兼容端点，所以
+`chatPath` 与 `modelsPath` 保持默认。Meta 的 Llama 只以开放权重形式发布，没有官方托管 API，
+同一个权重经 OpenRouter（`meta-llama/llama-4-maverick`）、硅基流动与 Ollama（`llama4:maverick`）
+接入，三者的模型 ID 各不相同。
 
 `providerIdForBaseUrl(url)` 由去掉尾部斜杠的 Base URL 反查预设；设置页在用户编辑地址时据此自动切换服务商，
 匹配不到则落到 `custom`。
 
 ### 5.3 能力解析优先级（`resolve`）
 
-1. **内置精确表** `MODEL_SPECS`：以 `(providerId, modelId)` 为键。GLM 表同时注册给 `zhipu` 与 `zai`。
+1. **内置精确表** `MODEL_SPECS`：以 `(providerId, modelId)` 为键，由 `builtIn(...)` 构造。
+   GLM 表同时注册给 `zhipu` 与 `zai`；`builtIn` 的 `temperatureMax = null` 或
+   `ReasoningSpec.AlwaysOn` 都表示该模型不接受 `temperature` / `top_p`（GPT-5 系列与始终思考的模型）。
 2. **名称启发式** `genericSpec`：按顺序匹配
    - `^(o[1-9](-|$)|gpt-5)` → `Effort(LOW/MEDIUM/HIGH)`；
+   - `glm-[5-9]\.` → `Effort(LOW/MEDIUM/HIGH)`（GLM-5 起改用 `reasoning_effort`）；
    - `reasoner|reasoning|thinking|(^|[-_/])r1([-_/]|$)|z1` → `AlwaysOn`；
    - `glm-4\.[5-9]` → `Toggle(defaultOn = true)`；
    - 否则 `Unsupported`。
-3. **通用兜底**：`AlwaysOn` 的模型不发送 `temperature` / `top_p`；其余给 `temperature`（GLM 前缀或
-   `moonshot` 服务商上限 1.0，其他 2.0）、`top_p`、`max_tokens`（默认 8192，步长 512），
+3. **通用兜底**：`AlwaysOn` 的模型不发送 `temperature` / `top_p`；其余给 `temperature`（GLM 前缀、
+   `moonshot`、`anthropic` 上限 1.0，其他 2.0）、`top_p`、`max_tokens`（默认 8192，步长 512），
    并标注「没有该模型的内置参数表」。
 
 ### 5.4 上下文窗口
 
 `defaultContextWindow(modelId)`：名字里 `数字k` → ×1024，`数字m` → ×1024×1024，否则 32768。
-内置表里的显式值覆盖它：GLM 全系 128000（`glm-4-long` 为 1000000）、
-`deepseek-chat` / `deepseek-reasoner` 64000、`gpt-4o*` 128000、`gpt-4.1*` 1000000、`o4-mini` 200000。
+内置表里的显式值覆盖它，新表里：GLM-5.3 / MiniMax M3 / Gemini 3 / Llama 4 Maverick 为 1000000、
+GLM-5.3-Flash 200000、GPT-5.x 400000、Grok 4 / Qwen3.6 / Kimi K3 / 豆包 256000、
+Claude 4.x 200000、DeepSeek V4 / 混元 / 文心 / Mistral 128000。
+
+除 GLM-5.3 与 MiniMax M3 的 1M 已核实外，其余新模型的窗口取同系列上一代的公开保守值；
+官方调整时改 `ModelCatalog.builtIn` 对应调用处的 `window` 参数即可。没有内置条目的模型仍走 32768 兜底。
 
 ### 5.5 请求构建中的思考字段
 
@@ -565,7 +578,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ./gradlew testDebugUnitTest
 ```
 
-74 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
+82 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -579,6 +592,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `ImageStoreTest` | 4 | 采样倍率落在上限内、按长边采样、采样后尺寸不超上限、数据 URL 的 MIME 兜底 |
 | `LocationTest` | 10 | ip-api/ipapi.co/ipwho.is 三种返回解析、JSON null 不成字符串、失败与垃圾拒绝、`display` 回退、背景块含时间/间隔/城市且标注「可能不准」、缺信息时不输出 |
 | `UpdateModelsTest` | 9 | release JSON 解析版本/说明/APK 地址/大小/发布时间、多 APK 时优先同名、无 APK 返回 null、预发布不算更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、预发布更旧、`v` 前缀归一化 |
+| `ModelCatalogTest` | 8 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 reasoning_effort 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 不发送采样参数、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底 |
 
 `testImplementation("org.json:json:20240303")` 是刻意的：单元测试跑在 JVM 上，
 `android.jar` 里的 `org.json` 只是会抛异常的桩，补一份真实现才能测记忆解析这类纯逻辑。
@@ -620,6 +634,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 10. 历史图片每轮都会重新编码并重发（`dataUrls` 只有内存缓存），图片多时请求体与内存压力明显。
 11. 图片没有查看大图、保存、缩放手势。
 12. 更新包只校验长度、包名与签名，没有 release 提供的校验和；也没有后台自动检查更新。
+13. 新一批内置模型的上下文窗口多为同系列上一代的保守值（只有 GLM-5.3 / MiniMax M3 的 1M 已核实），
+    且除 GPT-5.x、GLM-5.3 外没有为其它新模型声明推理控制方式；两者都只影响参数与预算，不影响能否请求。
 
 ## 17. 图片存储（`ImageStore.kt`）
 

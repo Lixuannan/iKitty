@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.2.0 · Package: `com.example.aicat` · Source root: `app/src/main/java/com/example/aicat/`
+- Version: 0.2.1 · Package: `com.example.aicat` · Source root: `app/src/main/java/com/example/aicat/`
 - Stack: Kotlin 2.0.21, Jetpack Compose (Material3), OkHttp 4.12.0, DataStore Preferences 1.1.1
 - Build: AGP 8.7.3, Gradle 9.7.1, Java 17 bytecode target, minSdk 26 / targetSdk 35
 
@@ -197,31 +197,46 @@ defaults; an empty string means "none selected"; unrecognized names are dropped 
 
 ### 5.2 Built-in providers (`providers` order is settings-screen order)
 
-Zhipu GLM → DeepSeek → Z.AI (GLM international) → OpenAI → Moonshot / Kimi → DashScope (Qwen) →
-SiliconFlow → OpenRouter → local Ollama → Custom (`CUSTOM_PROVIDER_ID = "custom"`).
+Zhipu GLM → Z.AI (GLM international) → DeepSeek → OpenAI → Anthropic → Google Gemini → xAI →
+DashScope (Qwen) → Moonshot / Kimi → MiniMax → Doubao (Volcengine Ark) → Tencent Hunyuan →
+Baidu ERNIE (Qianfan) → Mistral → SiliconFlow → OpenRouter → local Ollama → Custom
+(`CUSTOM_PROVIDER_ID = "custom"`): 17 presets plus custom.
+
+Apart from Anthropic and Google, which go through their own OpenAI compatibility layers, every provider is
+a native OpenAI-compatible endpoint, so `chatPath` and `modelsPath` keep their defaults. Meta publishes
+Llama only as open weights with no first-party hosted API, so the same weights are reached through
+OpenRouter (`meta-llama/llama-4-maverick`), SiliconFlow, and Ollama (`llama4:maverick`) — three different
+model IDs.
 
 `providerIdForBaseUrl(url)` reverse-looks-up a preset from the trailing-slash-stripped Base URL; the
 settings screen uses it to switch providers when the user edits the address, falling back to `custom`.
 
 ### 5.3 Capability resolution order (`resolve`)
 
-1. **Exact built-in table** `MODEL_SPECS`, keyed by `(providerId, modelId)`. The GLM table is registered
-   for both `zhipu` and `zai`.
+1. **Exact built-in table** `MODEL_SPECS`, keyed by `(providerId, modelId)` and built through
+   `builtIn(...)`. The GLM table is registered for both `zhipu` and `zai`; `temperatureMax = null` or
+   `ReasoningSpec.AlwaysOn` means the model accepts neither `temperature` nor `top_p` (the GPT-5 series and
+   always-thinking models).
 2. **Name heuristics** `genericSpec`, matched in order:
    - `^(o[1-9](-|$)|gpt-5)` → `Effort(LOW/MEDIUM/HIGH)`;
+   - `glm-[5-9]\.` → `Effort(LOW/MEDIUM/HIGH)` (GLM-5 and later use `reasoning_effort`);
    - `reasoner|reasoning|thinking|(^|[-_/])r1([-_/]|$)|z1` → `AlwaysOn`;
    - `glm-4\.[5-9]` → `Toggle(defaultOn = true)`;
    - otherwise `Unsupported`.
 3. **Generic fallback**: `AlwaysOn` models send no `temperature` / `top_p`; the rest get `temperature`
-   (max 1.0 for a `glm` prefix or the `moonshot` provider, 2.0 otherwise), `top_p`, and `max_tokens`
-   (default 8192, step 512), labeled "no built-in capability table for this model".
+   (max 1.0 for a `glm` prefix or the `moonshot` / `anthropic` providers, 2.0 otherwise), `top_p`, and
+   `max_tokens` (default 8192, step 512), labeled "no built-in capability table for this model".
 
 ### 5.4 Context window
 
 `defaultContextWindow(modelId)`: `Nk` in the name → ×1024, `Nm` → ×1024×1024, otherwise 32768.
-Explicit values in the built-in table override it: all GLM at 128000 (`glm-4-long` at 1000000),
-`deepseek-chat` / `deepseek-reasoner` at 64000, `gpt-4o*` at 128000, `gpt-4.1*` at 1000000,
-`o4-mini` at 200000.
+Explicit values in the built-in table override it: GLM-5.3 / MiniMax M3 / Gemini 3 / Llama 4 Maverick at
+1000000, GLM-5.3-Flash at 200000, GPT-5.x at 400000, Grok 4 / Qwen3.6 / Kimi K3 / Doubao at 256000,
+Claude 4.x at 200000, and DeepSeek V4 / Hunyuan / ERNIE / Mistral at 128000.
+
+Except for the verified 1M windows of GLM-5.3 and MiniMax M3, the new models use conservative values from
+the previous generation of the same series. When a vendor changes a number, edit the `window` argument at
+the corresponding `ModelCatalog.builtIn` call. Models without a built-in entry still fall back to 32768.
 
 ### 5.5 Reasoning fields in the request
 
@@ -615,7 +630,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 ./gradlew testDebugUnitTest
 ```
 
-74 cases, all plain JVM tests (no device or emulator):
+82 cases, all plain JVM tests (no device or emulator):
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -629,6 +644,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | `ImageStoreTest` | 4 | Sampling ratio within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs |
 | `LocationTest` | 10 | Three provider response shapes, JSON null not becoming the string "null", failures and garbage rejected, `display` fallback, ambient block carrying time/gap/city and labeling it "may be inaccurate", omitted unknowns |
 | `UpdateModelsTest` | 9 | Release JSON parsing version/notes/APK URL/size/published time, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, prerelease older, `v` prefix normalization |
+| `ModelCatalogTest` | 8 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends no sampling parameters, Meta Llama reaches aggregators and local runtimes, and legacy models still resolve through the generic fallback |
 
 `testImplementation("org.json:json:20240303")` is deliberate: unit tests run on the JVM, where the
 `org.json` in `android.jar` is only a throwing stub; a real implementation is needed to test pure logic such
@@ -679,6 +695,10 @@ installer hand-off. These need on-device integration / end-to-end verification.
 11. Images have no full-screen viewer, save, or pinch-to-zoom.
 12. The update package is checked only for length, package name, and signature, with no checksum from the
     release, and there is no background automatic update check.
+13. Most context windows of the newly added models are conservative values from the previous generation
+    (only GLM-5.3 and MiniMax M3 at 1M are verified), and no reasoning control is declared for the new
+    models other than GPT-5.x and GLM-5.3. Both only affect parameters and budgeting, never whether a
+    request can be made.
 
 ## 17. Image storage (`ImageStore.kt`)
 

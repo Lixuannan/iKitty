@@ -9,15 +9,16 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **0.2.0** · Package: `com.example.aicat`
+- App name: **iKitty** · Version: **0.2.1** · Package: `com.example.aicat`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
 
 ## Features
 
-- **Any OpenAI-compatible service**: nine built-in providers — Zhipu GLM, DeepSeek, Z.AI, OpenAI,
-  Moonshot/Kimi, DashScope (Qwen), SiliconFlow, OpenRouter, and local Ollama — plus a custom Base URL.
+- **Any OpenAI-compatible service**: seventeen built-in providers — Zhipu GLM, Z.AI, DeepSeek, OpenAI,
+  Anthropic, Google Gemini, xAI, DashScope (Qwen), Moonshot/Kimi, MiniMax, ByteDance Doubao, Tencent
+  Hunyuan, Baidu ERNIE, Mistral, SiliconFlow, OpenRouter, and local Ollama — plus a custom Base URL.
 - **Parameters driven by model capability**: each provider and model exposes a different set of tunable
   parameters with different ranges. The settings screen renders only the controls the model actually
   supports, and the request body sends only the fields it accepts (see [Model capability table](#model-capability-table)).
@@ -257,21 +258,33 @@ before being handed to the system installer for an in-place update.
 `ModelCatalog` is the single source of truth for which parameters are tunable and over what range; both
 the settings screen and the request body are driven by it:
 
-| Provider | Model | temperature | top_p | max_tokens | Reasoning |
-| --- | --- | --- | --- | --- | --- |
-| Zhipu GLM | glm-4.5 / glm-4.6 | 0–1 | 0.01–1 | ≤32768 | `thinking.type` toggle (default on) |
-| Zhipu GLM | glm-4.5-air / flash | 0–1 | 0.01–1 | ≤32768 | `thinking.type` toggle (default off) |
-| Zhipu GLM | glm-4-plus / air / flash / long | 0–1 | 0.01–1 | ≤4095 | Not supported |
-| Zhipu GLM | glm-z1-air / flash | 0–1 | 0.01–1 | ≤4095 | Always thinking, cannot be disabled |
-| DeepSeek | deepseek-chat | 0–2 | 0.01–1 | ≤8192 | Not supported |
-| DeepSeek | deepseek-reasoner | Not sent | Not sent | ≤65536 | Always thinking, cannot be disabled |
-| OpenAI | gpt-4o / 4.1 series | 0–2 | 0.01–1 | Built-in value | Not supported |
-| OpenAI | o4-mini | Not sent | Not sent | ≤100000 | `reasoning_effort` |
+| Provider | Model | temperature | top_p | max_tokens | Reasoning | Context window |
+| --- | --- | --- | --- | --- | --- | --- |
+| Zhipu GLM / Z.AI | glm-5.3 | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 1M |
+| Zhipu GLM / Z.AI | glm-5.3-flash | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 200K |
+| DeepSeek | deepseek-v4-pro / deepseek-flash | 0–2 | 0.01–1 | ≤8192 | Not supported | 128K |
+| OpenAI | gpt-5.5 / gpt-5.3-codex | Not sent | Not sent | ≤32768 | `reasoning_effort` | 400K |
+| Anthropic | claude-opus-4.7 / claude-sonnet-4.6 | 0–1 | 0.01–1 | ≤8192 | Not supported | 200K |
+| Google | gemini-3.1-pro / gemini-3-flash | 0–2 | 0.01–1 | ≤8192 | Not supported | 1M |
+| xAI | grok-4 | 0–2 | 0.01–1 | ≤8192 | Not supported | 256K |
+| DashScope | qwen3.6-max / qwen3-coder-next | 0–2 | 0.01–1 | ≤8192 | Not supported | 256K |
+| Moonshot | kimi-k3 | 0–1 | 0.01–1 | ≤8192 | Not supported | 256K |
+| MiniMax | MiniMax-M3 | 0–1 | 0.01–1 | ≤8192 | Not supported | 1M |
+| Doubao | doubao-seed-2.0-pro | 0–1 | 0.01–1 | ≤8192 | Not supported | 256K |
+| Tencent Hunyuan | hunyuan-turbos | 0–2 | 0.01–1 | ≤8192 | Not supported | 128K |
+| ERNIE | ernie-x1.1 | 0–1 | 0.01–1 | ≤8192 | Not supported | 128K |
+| Mistral | mistral-small-4 | 0–1 | 0.01–1 | ≤8192 | Not supported | 128K |
+| OpenRouter / SiliconFlow / Ollama | llama-4-maverick | 0–2 | 0.01–1 | ≤8192 | Not supported | 1M |
 
 Other providers and hand-typed model names go through name-based heuristics (`reasoner` / `z1` / `r1` →
-always thinking, `glm-4.5+` → thinking toggle, `o*` / `gpt-5` → reasoning_effort), fall back to generic
-OpenAI-compatible rules, and are labeled as such in the settings screen. Adding a provider or model means
-editing only this table.
+always thinking, `glm-4.5`–`glm-4.9` → thinking toggle, `glm-5` and up / `o*` / `gpt-5` →
+`reasoning_effort`), fall back to generic OpenAI-compatible rules, and are labeled as such in the settings
+screen. Adding a provider or model means editing only this table.
+
+The context window drives `ContextAssembler`'s token budget. The windows here follow each series' public
+values: GLM-5.3 and MiniMax M3 at 1M are verified, the rest are conservative values from the previous
+generation of the same series. When a vendor changes a number, edit the `window` argument at the
+corresponding `ModelCatalog.builtIn` call. Models without a built-in entry still fall back to 32K.
 
 A `max_tokens` of 0 means “unlimited, do not send”, shown as “unlimited” in the settings screen.
 

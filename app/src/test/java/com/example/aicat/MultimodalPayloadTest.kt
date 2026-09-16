@@ -14,9 +14,9 @@ import org.junit.Test
  */
 class MultimodalPayloadTest {
 
-    private val spec = ModelCatalog.resolve("openai", "gpt-4o-mini")
+    private val spec = ModelCatalog.resolve("google", "gemini-3-flash")
 
-    private fun config() = ApiConfig(providerId = "openai", model = "gpt-4o-mini")
+    private fun config() = ApiConfig(providerId = "google", model = "gemini-3-flash")
 
     private fun firstMessage(payload: org.json.JSONObject) =
         payload.getJSONArray("messages").getJSONObject(0)

@@ -43,7 +43,7 @@ data class ApiConfig(
     val providerId: String = "openai",
     val baseUrl: String = "https://api.openai.com/v1",
     val apiKey: String = "",
-    val model: String = "gpt-4o-mini",
+    val model: String = "gpt-5.5",
     val temperature: Float = 0.8f,
     val topP: Float = 1f,
     /** 0 表示不限制，请求里不发送 max_tokens。 */

@@ -172,24 +172,24 @@ object ModelCatalog {
     )
 
     private val GLM_MODELS = listOf(
-        "glm-4.5",
-        "glm-4.6",
-        "glm-4.5-air",
-        "glm-4.5-flash",
-        "glm-4-plus",
-        "glm-4-air",
-        "glm-4-flash",
-        "glm-4-long",
-        "glm-z1-air",
-        "glm-z1-flash"
+        "glm-5.3",
+        "glm-5.3-flash"
     )
 
     private val EFFORT_MODEL = Regex("^(o[1-9](-|$)|gpt-5)", RegexOption.IGNORE_CASE)
     private val ALWAYS_THINKING_MODEL =
         Regex("(reasoner|reasoning|thinking|(^|[-_/])r1([-_/]|$)|z1)", RegexOption.IGNORE_CASE)
+
+    /** GLM-4.5 / 4.6 走 `thinking.type` 开关。 */
     private val GLM_THINKING_MODEL = Regex("glm-4\\.[5-9]", RegexOption.IGNORE_CASE)
 
-    /** 顺序即设置页下拉框顺序；GLM 与 DeepSeek 排在最前。 */
+    /** GLM-5 起改用 `reasoning_effort`。 */
+    private val GLM_EFFORT_MODEL = Regex("glm-[5-9]\\.", RegexOption.IGNORE_CASE)
+
+    private val EFFORT_LEVELS =
+        listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH)
+
+    /** 顺序即设置页下拉框顺序：国内常用的 GLM / DeepSeek 在最前，聚合平台与本地在后。 */
     val providers: List<ProviderSpec> = listOf(
         ProviderSpec(
             id = "zhipu",
@@ -197,15 +197,7 @@ object ModelCatalog {
             baseUrl = "https://open.bigmodel.cn/api/paas/v4",
             keyHint = "xxxxx.xxxxx",
             models = GLM_MODELS,
-            note = "GLM-4.5 / 4.6 用 thinking 开关控制深度思考，GLM-4 系列不区分思考模式。"
-        ),
-        ProviderSpec(
-            id = "deepseek",
-            name = "DeepSeek",
-            baseUrl = "https://api.deepseek.com/v1",
-            keyHint = "sk-...",
-            models = listOf("deepseek-chat", "deepseek-reasoner"),
-            note = "deepseek-chat 走普通采样参数；deepseek-reasoner 始终思考，不接受 temperature / top_p。"
+            note = "GLM-5.3 用 reasoning_effort 控制思考深度。"
         ),
         ProviderSpec(
             id = "zai",
@@ -216,46 +208,115 @@ object ModelCatalog {
             note = "与智谱同源，模型与参数能力一致。"
         ),
         ProviderSpec(
+            id = "deepseek",
+            name = "DeepSeek",
+            baseUrl = "https://api.deepseek.com/v1",
+            keyHint = "sk-...",
+            models = listOf("deepseek-v4-pro", "deepseek-flash"),
+            note = "V4 Pro 偏推理与编码，Flash 偏速度与成本。"
+        ),
+        ProviderSpec(
             id = "openai",
             name = "OpenAI",
             baseUrl = "https://api.openai.com/v1",
             keyHint = "sk-...",
-            models = listOf("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "o4-mini")
+            models = listOf("gpt-5.5", "gpt-5.3-codex"),
+            note = "两个都是推理模型，只接受 reasoning_effort，不发送 temperature / top_p。"
         ),
         ProviderSpec(
-            id = "moonshot",
-            name = "Moonshot / Kimi",
-            baseUrl = "https://api.moonshot.cn/v1",
-            keyHint = "sk-...",
-            models = listOf("moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k")
+            id = "anthropic",
+            name = "Anthropic Claude",
+            baseUrl = "https://api.anthropic.com/v1",
+            keyHint = "sk-ant-...",
+            models = listOf("claude-opus-4.7", "claude-sonnet-4.6"),
+            note = "走 Anthropic 的 OpenAI 兼容层，鉴权仍是 Authorization: Bearer。"
+        ),
+        ProviderSpec(
+            id = "google",
+            name = "Google Gemini",
+            baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
+            keyHint = "AIza...",
+            models = listOf("gemini-3.1-pro", "gemini-3-flash"),
+            note = "Gemini 的 OpenAI 兼容端点，API Key 直接放在 Bearer 里。"
+        ),
+        ProviderSpec(
+            id = "xai",
+            name = "xAI Grok",
+            baseUrl = "https://api.x.ai/v1",
+            keyHint = "xai-...",
+            models = listOf("grok-4")
         ),
         ProviderSpec(
             id = "dashscope",
             name = "通义千问",
             baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
             keyHint = "sk-...",
-            models = listOf("qwen-plus", "qwen-turbo", "qwen-max")
+            models = listOf("qwen3.6-max", "qwen3-coder-next")
+        ),
+        ProviderSpec(
+            id = "moonshot",
+            name = "Moonshot / Kimi",
+            baseUrl = "https://api.moonshot.cn/v1",
+            keyHint = "sk-...",
+            models = listOf("kimi-k3")
+        ),
+        ProviderSpec(
+            id = "minimax",
+            name = "MiniMax",
+            baseUrl = "https://api.minimaxi.com/v1",
+            keyHint = "eyJ...",
+            models = listOf("MiniMax-M3"),
+            note = "国际站地址；国内站请改成 https://api.minimax.chat/v1。"
+        ),
+        ProviderSpec(
+            id = "doubao",
+            name = "字节豆包（火山方舟）",
+            baseUrl = "https://ark.cn-beijing.volces.com/api/v3",
+            keyHint = "...",
+            models = listOf("doubao-seed-2.0-pro"),
+            note = "方舟也支持填推理接入点 ID（ep-... 开头），直接填模型名同样可以。"
+        ),
+        ProviderSpec(
+            id = "hunyuan",
+            name = "腾讯混元",
+            baseUrl = "https://api.hunyuan.cloud.tencent.com/v1",
+            keyHint = "sk-...",
+            models = listOf("hunyuan-turbos")
+        ),
+        ProviderSpec(
+            id = "ernie",
+            name = "百度文心（千帆）",
+            baseUrl = "https://qianfan.baidubce.com/v2",
+            keyHint = "bce-v3/...",
+            models = listOf("ernie-x1.1")
+        ),
+        ProviderSpec(
+            id = "mistral",
+            name = "Mistral",
+            baseUrl = "https://api.mistral.ai/v1",
+            keyHint = "...",
+            models = listOf("mistral-small-4")
         ),
         ProviderSpec(
             id = "siliconflow",
             name = "硅基流动",
             baseUrl = "https://api.siliconflow.cn/v1",
             keyHint = "sk-...",
-            models = listOf("Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3")
+            models = listOf("meta-llama/Llama-4-Maverick-17B-128E-Instruct")
         ),
         ProviderSpec(
             id = "openrouter",
             name = "OpenRouter",
             baseUrl = "https://openrouter.ai/api/v1",
             keyHint = "sk-or-...",
-            models = listOf("openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet")
+            models = listOf("meta-llama/llama-4-maverick")
         ),
         ProviderSpec(
             id = "ollama",
             name = "Ollama 本地",
             baseUrl = "http://10.0.2.2:11434/v1",
             keyHint = "本地服务可以留空",
-            models = listOf("llama3.2", "qwen2.5", "gemma2"),
+            models = listOf("llama4:maverick"),
             authRequired = false,
             note = "10.0.2.2 是 Android 模拟器访问宿主机的地址；真机请改成电脑的局域网 IP。"
         ),
@@ -268,6 +329,18 @@ object ModelCatalog {
         putAll(specsByKey(glmSpecs("zai")))
         putAll(specsByKey(deepSeekSpecs()))
         putAll(specsByKey(openAiSpecs()))
+        putAll(specsByKey(anthropicSpecs()))
+        putAll(specsByKey(googleSpecs()))
+        putAll(specsByKey(xaiSpecs()))
+        putAll(specsByKey(dashScopeSpecs()))
+        putAll(specsByKey(moonshotSpecs()))
+        putAll(specsByKey(minimaxSpecs()))
+        putAll(specsByKey(doubaoSpecs()))
+        putAll(specsByKey(hunyuanSpecs()))
+        putAll(specsByKey(ernieSpecs()))
+        putAll(specsByKey(mistralSpecs()))
+        // Meta 的 Llama 只以开放权重形式发布，没有官方托管 API，经聚合平台/本地运行时接入。
+        putAll(specsByKey(metaSpecs()))
     }
 
     fun provider(id: String): ProviderSpec = providers.firstOrNull { it.id == id } ?: CUSTOM
@@ -296,15 +369,19 @@ object ModelCatalog {
 
     private fun genericSpec(providerId: String, modelId: String): ModelSpec {
         val reasoning = when {
-            EFFORT_MODEL.containsMatchIn(modelId) ->
-                ReasoningSpec.Effort(listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH))
+            EFFORT_MODEL.containsMatchIn(modelId) -> ReasoningSpec.Effort(EFFORT_LEVELS)
+            GLM_EFFORT_MODEL.containsMatchIn(modelId) -> ReasoningSpec.Effort(EFFORT_LEVELS)
             ALWAYS_THINKING_MODEL.containsMatchIn(modelId) -> ReasoningSpec.AlwaysOn
             GLM_THINKING_MODEL.containsMatchIn(modelId) -> ReasoningSpec.Toggle(defaultOn = true)
             else -> ReasoningSpec.Unsupported
         }
         val reasoningOnly = reasoning == ReasoningSpec.AlwaysOn
-        // GLM 的 temperature 上限是 1.0，其余 OpenAI 兼容端点普遍是 2.0。
-        val temperatureMax = if (modelId.startsWith("glm", ignoreCase = true) || providerId == "moonshot") 1f else 2f
+        // GLM / Moonshot / Anthropic 的 temperature 上限是 1.0，其余 OpenAI 兼容端点普遍是 2.0。
+        val temperatureMax = when {
+            modelId.startsWith("glm", ignoreCase = true) -> 1f
+            providerId == "moonshot" || providerId == "anthropic" -> 1f
+            else -> 2f
+        }
         return ModelSpec(
             providerId = providerId,
             modelId = modelId,
@@ -319,164 +396,254 @@ object ModelCatalog {
 
     // ---- 内置模型能力表 ----
 
-    private fun deepSeekSpecs(): List<ModelSpec> {
-        val provider = "deepseek"
-        return listOf(
-            ModelSpec(
-                providerId = provider,
-                modelId = "deepseek-chat",
-                label = "DeepSeek Chat（V3）",
-                temperature = temperature(2f, 1f),
-                topP = topP(1f),
-                maxTokens = tokens(8192, 512),
-                reasoning = ReasoningSpec.Unsupported,
-                contextWindow = 64_000
-            ),
-            ModelSpec(
-                providerId = provider,
-                modelId = "deepseek-reasoner",
-                label = "DeepSeek Reasoner（R1）",
-                temperature = null,
-                topP = null,
-                maxTokens = tokens(65536, 1024),
-                reasoning = ReasoningSpec.AlwaysOn,
-                note = "始终思考，不接受 temperature / top_p；max_tokens 同时限制思考与回答。",
-                contextWindow = 64_000
-            )
-        )
-    }
-
-    // GLM 全系 128K 窗口，只有 glm-4-long 是 1M。
-    private fun glmSpecs(providerId: String): List<ModelSpec> = listOf(
-        ModelSpec(
+    /**
+     * 内置模型条目的通用构造：默认值统一取 temperature 0.8 / top_p 1.0 / 输出长度不限制。
+     *
+     * 上下文窗口按各系列的公开值填写——GLM-5.3 与 MiniMax M3 的 1M 已核实，
+     * 其余取同系列上一代的保守值；官方数字有变化时改这里即可。
+     * 没有内置条目的模型仍走 [genericSpec] 的 32K 兜底。
+     */
+    private fun builtIn(
+        providerId: String,
+        modelId: String,
+        label: String,
+        window: Int,
+        temperatureMax: Float? = 2f,
+        reasoning: ReasoningSpec = ReasoningSpec.Unsupported,
+        maxOutput: Int = 8192,
+        note: String? = null
+    ): ModelSpec {
+        // 始终思考的模型，以及显式传 null 的模型（如 GPT-5 系列），都不接受 temperature / top_p。
+        val samplingAllowed = temperatureMax != null && reasoning != ReasoningSpec.AlwaysOn
+        return ModelSpec(
             providerId = providerId,
-            modelId = "glm-4.5",
-            label = "GLM-4.5",
-            temperature = temperature(1f, 1f),
-            topP = topP(0.95f),
-            maxTokens = tokens(32768, 1024),
-            reasoning = ReasoningSpec.Toggle(defaultOn = true),
-            note = "默认开启思考；关闭思考后建议把 temperature 调到 0.6 左右。"
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4.6",
-            label = "GLM-4.6",
-            temperature = temperature(1f, 1f),
-            topP = topP(0.95f),
-            maxTokens = tokens(32768, 1024),
-            reasoning = ReasoningSpec.Toggle(defaultOn = true)
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4.5-air",
-            label = "GLM-4.5-Air",
-            temperature = temperature(1f, 1f),
-            topP = topP(0.95f),
-            maxTokens = tokens(32768, 1024),
-            reasoning = ReasoningSpec.Toggle(defaultOn = false),
-            note = "默认不开启思考，需要时手动打开。"
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4.5-flash",
-            label = "GLM-4.5-Flash",
-            temperature = temperature(1f, 1f),
-            topP = topP(0.95f),
-            maxTokens = tokens(32768, 1024),
-            reasoning = ReasoningSpec.Toggle(defaultOn = false)
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4-plus",
-            label = "GLM-4-Plus",
-            temperature = temperature(1f, 0.95f),
-            topP = topP(0.7f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.Unsupported
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4-air",
-            label = "GLM-4-Air",
-            temperature = temperature(1f, 0.95f),
-            topP = topP(0.7f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.Unsupported
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4-flash",
-            label = "GLM-4-Flash",
-            temperature = temperature(1f, 0.95f),
-            topP = topP(0.7f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.Unsupported
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-4-long",
-            label = "GLM-4-Long",
-            temperature = temperature(1f, 0.95f),
-            topP = topP(0.7f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.Unsupported
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-z1-air",
-            label = "GLM-Z1-Air",
-            temperature = temperature(1f, 0.6f),
-            topP = topP(0.95f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.AlwaysOn,
-            note = "思考型模型，无法关闭思考。"
-        ),
-        ModelSpec(
-            providerId = providerId,
-            modelId = "glm-z1-flash",
-            label = "GLM-Z1-Flash",
-            temperature = temperature(1f, 0.6f),
-            topP = topP(0.95f),
-            maxTokens = tokens(4095, 256),
-            reasoning = ReasoningSpec.AlwaysOn
-        )
-    ).map { spec ->
-        spec.copy(contextWindow = if (spec.modelId == "glm-4-long") 1_000_000 else 128_000)
-    }
-
-    private fun openAiSpecs(): List<ModelSpec> {
-        val provider = "openai"
-        fun standard(modelId: String, label: String, maxTokens: Int, window: Int) = ModelSpec(
-            providerId = provider,
             modelId = modelId,
             label = label,
-            temperature = temperature(2f, 1f),
-            topP = topP(1f),
-            maxTokens = tokens(maxTokens, 1024),
-            reasoning = ReasoningSpec.Unsupported,
+            temperature = if (samplingAllowed) temperature(temperatureMax!!, 0.8f) else null,
+            topP = if (samplingAllowed) topP(1f) else null,
+            maxTokens = tokens(maxOutput, 512),
+            reasoning = reasoning,
+            note = note,
             contextWindow = window
         )
-        return listOf(
-            standard("gpt-4o-mini", "GPT-4o mini", 16384, 128_000),
-            standard("gpt-4o", "GPT-4o", 16384, 128_000),
-            standard("gpt-4.1-mini", "GPT-4.1 mini", 32768, 1_000_000),
-            standard("gpt-4.1", "GPT-4.1", 32768, 1_000_000),
-            ModelSpec(
-                providerId = provider,
-                modelId = "o4-mini",
-                label = "o4-mini",
-                temperature = null,
-                topP = null,
-                maxTokens = tokens(100000, 1024),
-                reasoning = ReasoningSpec.Effort(
-                    listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH)
-                ),
-                note = "推理模型只接受 reasoning_effort，不接受 temperature / top_p。",
-                contextWindow = 200_000
-            )
-        )
     }
+
+    private fun deepSeekSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "deepseek",
+            modelId = "deepseek-v4-pro",
+            label = "DeepSeek V4 Pro",
+            window = 128_000,
+            note = "面向推理与编码。"
+        ),
+        builtIn(
+            providerId = "deepseek",
+            modelId = "deepseek-flash",
+            label = "DeepSeek Flash",
+            window = 128_000,
+            note = "低成本的快速档。"
+        )
+    )
+
+    /** GLM-5.3 起改用 reasoning_effort 控制思考深度。 */
+    private fun glmSpecs(providerId: String): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = providerId,
+            modelId = "glm-5.3",
+            label = "GLM-5.3",
+            window = 1_000_000,
+            temperatureMax = 1f,
+            reasoning = ReasoningSpec.Effort(EFFORT_LEVELS),
+            maxOutput = 32768,
+            note = "面向 Coding / Agent，用 reasoning_effort 控制思考深度。"
+        ),
+        builtIn(
+            providerId = providerId,
+            modelId = "glm-5.3-flash",
+            label = "GLM-5.3-Flash",
+            window = 200_000,
+            temperatureMax = 1f,
+            reasoning = ReasoningSpec.Effort(EFFORT_LEVELS),
+            maxOutput = 32768,
+            note = "轻量档，适合需要快速响应的场景。"
+        )
+    )
+
+    private fun openAiSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "openai",
+            modelId = "gpt-5.5",
+            label = "GPT-5.5",
+            window = 400_000,
+            temperatureMax = null,
+            reasoning = ReasoningSpec.Effort(EFFORT_LEVELS),
+            maxOutput = 32768,
+            note = "推理模型只接受 reasoning_effort，不接受 temperature / top_p。"
+        ),
+        builtIn(
+            providerId = "openai",
+            modelId = "gpt-5.3-codex",
+            label = "GPT-5.3 Codex",
+            window = 400_000,
+            temperatureMax = null,
+            reasoning = ReasoningSpec.Effort(EFFORT_LEVELS),
+            maxOutput = 32768,
+            note = "面向编码的推理模型，同样只接受 reasoning_effort。"
+        )
+    )
+
+    private fun anthropicSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "anthropic",
+            modelId = "claude-opus-4.7",
+            label = "Claude Opus 4.7",
+            window = 200_000,
+            temperatureMax = 1f,
+            note = "综合与 Agent 场景。"
+        ),
+        builtIn(
+            providerId = "anthropic",
+            modelId = "claude-sonnet-4.6",
+            label = "Claude Sonnet 4.6",
+            window = 200_000,
+            temperatureMax = 1f,
+            note = "编码与日常场景，速度与成本更均衡。"
+        )
+    )
+
+    private fun googleSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "google",
+            modelId = "gemini-3.1-pro",
+            label = "Gemini 3.1 Pro",
+            window = 1_000_000,
+            note = "综合与多模态场景。"
+        ),
+        builtIn(
+            providerId = "google",
+            modelId = "gemini-3-flash",
+            label = "Gemini 3 Flash",
+            window = 1_000_000,
+            note = "多模态的快速档。"
+        )
+    )
+
+    private fun xaiSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "xai",
+            modelId = "grok-4",
+            label = "Grok 4",
+            window = 256_000,
+            note = "综合与推理场景。"
+        )
+    )
+
+    private fun dashScopeSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "dashscope",
+            modelId = "qwen3.6-max",
+            label = "Qwen3.6-Max",
+            window = 256_000,
+            note = "综合与中文场景。"
+        ),
+        builtIn(
+            providerId = "dashscope",
+            modelId = "qwen3-coder-next",
+            label = "Qwen3-Coder-Next",
+            window = 256_000,
+            note = "面向编码。"
+        )
+    )
+
+    private fun moonshotSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "moonshot",
+            modelId = "kimi-k3",
+            label = "Kimi K3",
+            window = 256_000,
+            temperatureMax = 1f,
+            note = "长上下文与编码。"
+        )
+    )
+
+    private fun minimaxSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "minimax",
+            modelId = "MiniMax-M3",
+            label = "MiniMax M3",
+            window = 1_000_000,
+            temperatureMax = 1f,
+            note = "1M 上下文、原生多模态，面向推理与编码。"
+        )
+    )
+
+    private fun doubaoSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "doubao",
+            modelId = "doubao-seed-2.0-pro",
+            label = "Doubao Seed 2.0 Pro",
+            window = 256_000,
+            temperatureMax = 1f,
+            note = "综合与多模态场景。"
+        )
+    )
+
+    private fun hunyuanSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "hunyuan",
+            modelId = "hunyuan-turbos",
+            label = "混元 TurboS",
+            window = 128_000,
+            note = "综合与中文场景。"
+        )
+    )
+
+    private fun ernieSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "ernie",
+            modelId = "ernie-x1.1",
+            label = "文心 ERNIE-X1.1",
+            window = 128_000,
+            temperatureMax = 1f,
+            note = "中文与 Agent 场景。"
+        )
+    )
+
+    private fun mistralSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "mistral",
+            modelId = "mistral-small-4",
+            label = "Mistral Small 4",
+            window = 128_000,
+            temperatureMax = 1f,
+            note = "开放权重系列。"
+        )
+    )
+
+    /** Meta 的 Llama 没有官方托管 API，同一个权重经聚合平台与本地运行时接入，模型 ID 各不相同。 */
+    private fun metaSpecs(): List<ModelSpec> = listOf(
+        builtIn(
+            providerId = "openrouter",
+            modelId = "meta-llama/llama-4-maverick",
+            label = "Llama 4 Maverick",
+            window = 1_000_000,
+            note = "开放权重，经 OpenRouter 接入。"
+        ),
+        builtIn(
+            providerId = "siliconflow",
+            modelId = "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+            label = "Llama 4 Maverick",
+            window = 1_000_000,
+            note = "开放权重，经硅基流动接入。"
+        ),
+        builtIn(
+            providerId = "ollama",
+            modelId = "llama4:maverick",
+            label = "Llama 4 Maverick（本地）",
+            window = 1_000_000,
+            note = "本地运行时，实际可用窗口取决于机器显存。"
+        )
+    )
 
     private fun temperature(max: Float, default: Float) = NumberParam(0f, max, 0.1f, default, 1)
     private fun topP(default: Float) = NumberParam(0.01f, 1f, 0.01f, default, 2)

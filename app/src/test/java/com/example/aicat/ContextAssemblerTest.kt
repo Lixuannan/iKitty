@@ -96,7 +96,7 @@ class ContextAssemblerTest {
 
     @Test
     fun `budget leaves room for the reply and never goes negative`() {
-        val spec = ModelCatalog.resolve("deepseek", "deepseek-reasoner")
+        val spec = ModelCatalog.resolve("deepseek", "deepseek-v4-pro")
         val budget = ContextAssembler.budgetFor(spec, spec.maxTokens!!.max.toInt())
         assertTrue(budget >= ContextAssembler.MIN_INPUT_BUDGET)
         assertTrue(budget < spec.contextWindow)
@@ -114,8 +114,9 @@ class ContextAssemblerTest {
     fun `the model name can carry the context window`() {
         assertEquals(8192, ModelCatalog.resolve("moonshot", "moonshot-v1-8k").contextWindow)
         assertEquals(131072, ModelCatalog.resolve("moonshot", "moonshot-v1-128k").contextWindow)
-        assertEquals(1_000_000, ModelCatalog.resolve("openai", "gpt-4.1").contextWindow)
-        assertEquals(64_000, ModelCatalog.resolve("deepseek", "deepseek-chat").contextWindow)
+        assertEquals(1_000_000, ModelCatalog.resolve("zhipu", "glm-5.3").contextWindow)
+        assertEquals(400_000, ModelCatalog.resolve("openai", "gpt-5.5").contextWindow)
+        assertEquals(128_000, ModelCatalog.resolve("deepseek", "deepseek-v4-pro").contextWindow)
     }
 
     @Test
