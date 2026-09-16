@@ -8,7 +8,7 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 拼成 system prompt 直接发给任意 OpenAI 兼容服务。聊天记录、图片、记忆和设置全部存在本机，
 除了你自己配置的模型服务和可选的 IP 定位，不经过任何第三方服务器。
 
-- 应用名：**iKitty** · 版本：**0.2.1** · 包名：`com.example.aicat`
+- 应用名：**iKitty** · 版本：**0.3.0** · 包名：`com.codingcow.ikitty`
 - 仓库：<https://github.com/Lixuannan/iKitty>
 
 ---
@@ -33,6 +33,8 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 - **IP 城市定位**：让猫猫知道「大概在哪个城市」，零权限、无弹窗，设置里可关闭。
 - **应用内更新**：设置页可从 [GitHub release](https://github.com/Lixuannan/iKitty/releases)
   检查新版本、下载并交给系统覆盖安装，聊天记录与记忆都会保留。
+- **完整备份与恢复**：设置页可把聊天记录、图片、记忆和设置打包成一个 `.ikitty` 文件导出，
+  换机或重装后一键还原。
 - **不需要后端**。
 
 ## 当前形态：只有聊天
@@ -194,6 +196,20 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 
 > 版本比较、下载与校验的实现见[详细设计文档](docs/DOC.md#18-软件更新)。
 
+## 备份与恢复
+
+设置页的「备份与恢复」可以把整个应用的数据导出成一个 `.ikitty` 文件，或者用这样的文件整体还原：
+
+- 备份**包含全部内容**：聊天记录、聊天里的图片、结构化记忆，以及全部设置——其中包括 API Key；
+- `.ikitty` 实际上是一个 ZIP，里面是几个明文 JSON/JSONL 条目和原始 JPEG，用任何解压工具都能打开检查；
+- 导出走系统的「保存到…」，导入走系统的文件选择器，应用不需要任何存储权限，也不关心文件放在哪；
+- **导入是整体覆盖**：聊天记录、图片、记忆、设置都会变成备份里的内容，覆盖后无法撤销。所以导出按钮会先提示
+  「文件里有 Key」，导入按钮会先确认「本机数据会被覆盖」；导入前建议先导出一份当前数据；
+- 导入前会先解包并全部校验，任何一个条目坏了就报错退出，**本机数据一个字节都不会被动**；
+- 导出的是**已经保存**的设置：设置页里改了但没点「保存」的内容不会被写进备份。
+
+> 容器格式、校验规则与覆盖顺序见[详细设计文档](docs/DOC.md#19-备份与恢复)。
+
 ## 数据与隐私
 
 | 数据 | 位置 | 说明 |
@@ -203,13 +219,15 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 | 聊天记录 | `filesDir/chat/chat_log.jsonl` | 明文 JSONL，只在本应用私有目录 |
 | 聊天图片 | `filesDir/chat/images/*.jpg` | 降采样后的 JPEG；拍照临时文件在缓存目录，成功后收编 |
 | 结构化记忆 | `filesDir/chat/cat_memory.json` | 明文 JSON，含提取游标 |
+| 导出的备份 | 由用户选择（SAF） | `.ikitty` 文件，**含 API Key**，只应保存在可信位置 |
 | 下载的更新包 | `cacheDir/updates/*.apk` | 临时文件，安装后由系统回收 |
 
 - 应用申请 `INTERNET` 和 `REQUEST_INSTALL_PACKAGES` 两个权限，后者只用于把官方更新包交给系统安装器；
 - 没有后端，聊天内容只发给你配置的模型服务；
 - 开启定位时，出口 IP 会交给第三方定位服务（ip-api / ipwho.is / ipapi.co）；
 - 检查更新时只向 `api.github.com` 读取 release 元数据并下载 APK，不上报任何本机信息；
-- API Key 以明文存放在应用私有 DataStore 中，未做额外加密——这是当前的已知限制。
+- API Key 以明文存放在应用私有 DataStore 中，未做额外加密——这是当前的已知限制；
+- 导出的备份里同样含明文 API Key，应用只负责在导出前提示，文件本身不加密码。
 
 ## 模型能力表
 
@@ -247,7 +265,7 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 
 ```
 iKitty/
-├── app/src/main/java/com/example/aicat/
+├── app/src/main/java/com/codingcow/ikitty/
 │   ├── MainActivity.kt            入口 Activity 与主题
 │   ├── CatChatScreen.kt           聊天页 UI
 │   ├── CatChatViewModel.kt        聊天状态与全部编排
@@ -268,11 +286,12 @@ iKitty/
 │   ├── ChatLogStore.kt            JSONL 追加式聊天记录
 │   ├── StoredMessage.kt           落盘消息模型
 │   ├── ImageStore.kt              图片导入、降采样、数据 URL 编码
+│   ├── BackupArchive.kt           .ikitty 备份的导出、校验与还原
 │   ├── SettingsStore.kt           DataStore 持久化
 │   ├── AmbientContext.kt          「此刻」背景块
 │   ├── Location.kt / IpLocationSource.kt  IP 城市定位
 │   └── TimeFormat.kt              时间与间隔格式化
-├── app/src/test/java/com/example/aicat/   65 个纯 JVM 单元测试
+├── app/src/test/java/com/codingcow/ikitty/   94 个纯 JVM 单元测试
 ├── design/cat_v1/                 分层猫咪角色素材与规范
 └── docs/DOC.md                    详细设计文档
 ```
@@ -283,9 +302,10 @@ iKitty/
 ./gradlew testDebugUnitTest
 ```
 
-当前 65 个用例覆盖纯逻辑契约：聊天记录的读写与坏行容错、带图片消息的落盘与还原、
+当前 94 个用例覆盖纯逻辑契约：聊天记录的读写与坏行容错、带图片消息的落盘与还原、
 记忆合并与解析、上下文装配（含图片 token 与图片解析）、多模态请求体结构、
-角色 prompt、图片采样倍率与 MIME、IP 返回解析与「此刻」背景块。
+角色 prompt、图片采样倍率与 MIME、IP 返回解析与「此刻」背景块，
+以及 `.ikitty` 备份的导出/导入往返、设置序列化、坏文件与越界条目的拒绝。
 UI、真实网络请求和图片解码压缩不在单元测试范围内。
 详见[详细设计文档](docs/DOC.md#14-测试策略)。
 
@@ -315,4 +335,4 @@ UI、真实网络请求和图片解码压缩不在单元测试范围内。
 
 ## 许可
 
-仓库当前未包含 `LICENSE` 文件。
+本项目使用 [Apache License 2.0](LICENSE)。

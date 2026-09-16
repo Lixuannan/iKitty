@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.2.1 · Package: `com.example.aicat` · Source root: `app/src/main/java/com/example/aicat/`
+- Version: 0.3.0 · Package: `com.codingcow.ikitty` · Source root: `app/src/main/java/com/codingcow/ikitty/`
 - Stack: Kotlin 2.0.21, Jetpack Compose (Material3), OkHttp 4.12.0, DataStore Preferences 1.1.1
 - Build: AGP 8.7.3, Gradle 9.7.1, Java 17 bytecode target, minSdk 26 / targetSdk 35
 
@@ -33,6 +33,7 @@ MainActivity (ComponentActivity + MaterialTheme)
         ├── MemoryExtractor      → memory extraction request
         ├── UpdateClient         → GitHub release lookup and APK download
         ├── ApkInstaller         → package/signature check before an in-place update
+        ├── BackupArchive        → `.ikitty` export / validation / restore
         └── LocationSource ─ IpLocationSource → IP city geolocation
 ```
 
@@ -55,6 +56,7 @@ The following objects reference no Android API and are therefore callable direct
 | `parseIpPlace` / `Place` | IP response parsing |
 | `AmbientContext` | "Right now" background block |
 | `parseLatestRelease` / `compareVersions` | Release JSON parsing and version comparison |
+| `BackupArchive` / `settingsToJson` / `settingsFromJson` / `parseCatMemory` | Backup archive read/write, settings serialization, memory parsing |
 
 The Android adapters are: `ChatLogStore`, `CatMemoryStore` (files + a `Context` constructor),
 `SettingsStore` (DataStore), `IpLocationSource` (OkHttp), `CatChatViewModel` (`AndroidViewModel`),
@@ -77,6 +79,7 @@ Every state flow exposed by `CatChatViewModel`:
 | `persona` | `CatPersona` | Cat persona |
 | `locationEnabled` | `Boolean` | Whether IP geolocation is allowed |
 | `updateStatus` | `UpdateStatus` | Update flow state (see [18. Software updates](#18-software-updates)) |
+| `backupStatus` | `BackupStatus` | Export/import progress (see [19. Backup and restore](#19-backup-and-restore)) |
 
 ---
 
@@ -167,9 +170,11 @@ same animation can be triggered again.
 Defaults: name「猫猫」, traits `{gentle, playful}`, style `casual`, flavor `occasional meow`.
 
 `systemPrompt()` assembles in this order: identity line → traits section (omitted when empty, in enum
-declaration order) → speech style → cat flavor (including "do not overuse kaomoji") → JSON reply contract →
-comfort principle → extra notes (only when non-empty). The `emotion` and `animation` values in the JSON
-contract are exactly the inputs to the `CatReply` lookup tables.
+declaration order) → speech style → cat flavor (`flavor.prompt` plus the flavor-dependent `flavor.hint`)
+→ JSON reply contract → comfort principle → extra notes (only when non-empty). The `hint` bullet carries the
+cat-action rule: "like a friend" only says "do not overuse kaomoji" and pushes no actions, while
+"occasional meow" and "strong cat flavor" explicitly suggest describing cat actions in the reply. The
+`emotion` and `animation` values in the JSON contract are exactly the inputs to the `CatReply` lookup tables.
 
 `welcome()` varies with flavor: the `HUMAN` greeting contains no "meow", the others do. `displayName()`
 falls back to the default name when the name is blank, and every UI location reads the name through it.
@@ -576,6 +581,10 @@ All inputs are local `remember`ed drafts; only pressing **Save** writes back to 
   endpoint, reply, reasoning character count, sent/skipped parameters, and tokens.
 - Generation-parameter sliders take their range, detents, and display precision entirely from `ModelSpec`.
 - "Restore current model defaults" resets the draft to that model's defaults.
+- "Backup and restore": exports/imports `.ikitty`, each action behind its own confirmation dialog
+  (see [19. Backup and restore](#19-backup-and-restore)). File selection uses
+  `rememberLauncherForActivityResult` + SAF (`CreateDocument` / `OpenDocument`), so the app requests no
+  storage permission; unpacking, validation, and writing all live in the ViewModel.
 - The "Software update" section at the bottom drives three phases — check, download, install
   (see [18. Software updates](#18-software-updates)). The install step lives in the UI because it needs an
   Activity `Context` to launch system screens; checking and downloading stay in the ViewModel.
@@ -620,6 +629,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | Change how historical images are carried | Change only `ContextAssembler`'s `imageUrl` resolver and image cost |
 | Change the update source | Change `RELEASE_API_URL` and `parseLatestRelease` in `UpdateModels.kt` |
 | Change update download/verification/install | `UpdateClient` (download) / `ApkInstaller` (check and install) / the ViewModel's `UPDATE_DIR` |
+| Change what a backup contains | The entry constants, `manifestJson`, and `settingsToJson` / `settingsFromJson` in `BackupArchive`; bump `FORMAT_VERSION` when the format breaks compatibility |
 | Add a screen | Add a boolean-state branch in `CatChatScreen`, or introduce navigation |
 
 ---
@@ -630,14 +640,14 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 ./gradlew testDebugUnitTest
 ```
 
-82 cases, all plain JVM tests (no device or emulator):
+94 cases, all plain JVM tests (no device or emulator):
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
 | `ChatLogStoreTest` | 6 | Append/tail round trip, only newest returned, Chinese text uncorrupted across 8192-byte chunks, `readAfter` cursor, a corrupt line not affecting the rest, clear |
 | `CatMemoryStoreTest` | 2 | Memory save/load round trip, corrupt file reading as empty memory |
 | `CatMemoryTest` | 11 | Additive merge, same-key overwrite, unchanged fact keeps its timestamp, `forget` leaves pinned alone, over-cap eviction, key rename, over-long truncation, render grouping, three JSON shapes, parse failure returning null, unknown category fallback |
-| `CatPersonaTest` | 7 | Default prompt carries name/traits/JSON contract, trait render order and empty set, extra notes, `HUMAN` has no "meow", blank-name fallback, trait storage round trip, enum lookup |
+| `CatPersonaTest` | 8 | Default prompt carries name/traits/JSON contract, trait render order and empty set, extra notes, `HUMAN` has no "meow", only non-"like a friend" flavors suggesting cat actions, blank-name fallback, trait storage round trip, enum lookup |
 | `StoredMessageTest` | 7 | Image message JSON round trip, image-only message valid, text-only omits `images`, neither text nor images rejected, blank image names dropped, `toWire` resolving and skipping missing images, plain-text wire carrying no images |
 | `MultimodalPayloadTest` | 5 | Plain text stays a string content with no `stream`, images become `image_url` content parts, image-only writes no empty text part, streaming only adds `stream`, sent params still follow the capability table |
 | `ContextAssemblerTest` | 13 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, extra blocks joined only when present, stable blocks before volatile, non-negative budget, Chinese costing more than equal-length ASCII, window in the model name, ambient block counted against the budget, fixed per-image cost, images resolved into the wire, images eating history budget |
@@ -645,6 +655,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | `LocationTest` | 10 | Three provider response shapes, JSON null not becoming the string "null", failures and garbage rejected, `display` fallback, ambient block carrying time/gap/city and labeling it "may be inaccurate", omitted unknowns |
 | `UpdateModelsTest` | 9 | Release JSON parsing version/notes/APK URL/size/published time, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, prerelease older, `v` prefix normalization |
 | `ModelCatalogTest` | 8 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends no sampling parameters, Meta Llama reaches aggregators and local runtimes, and legacy models still resolve through the generic fallback |
+| `BackupArchiveTest` | 11 | Export/import round trip restoring messages, memory, images, and settings; overwriting deleting old images and memory; non-zip and missing-manifest rejected; too-new format version rejected; out-of-bounds image entries ignored; an empty backup clearing local history; a corrupt chat log refusing to overwrite; full settings serialization round trip; missing fields falling back to defaults; memory parsing tolerating garbage; the default file name carrying the extension |
 
 `testImplementation("org.json:json:20240303")` is deliberate: unit tests run on the JVM, where the
 `org.json` in `android.jar` is only a throwing stub; a real implementation is needed to test pure logic such
@@ -653,7 +664,9 @@ as memory parsing.
 Not covered: Compose UI, real network requests, SSE parsing, real image decoding/compression (which depends
 on `BitmapFactory`), DataStore reads/writes in `SettingsStore`, the actual HTTP of `IpLocationSource`,
 real GitHub requests and downloads in `UpdateClient`, and `ApkInstaller`'s signature check and system
-installer hand-off. These need on-device integration / end-to-end verification.
+installer hand-off. The backup tests cover the archive itself, while SAF file selection and
+`ContentResolver` reads/writes likewise need on-device verification.
+These need on-device integration / end-to-end verification.
 
 ---
 
@@ -665,6 +678,9 @@ installer hand-off. These need on-device integration / end-to-end verification.
   and LAN model services work; tighten it with per-domain `domain-config` entries.
 - **Data at rest**: chat history, images, and memory are files in the app-private directory; the API key is
   plaintext in DataStore with no extra encryption.
+- **Backup files**: a `.ikitty` file holds the plaintext API key and the entire conversation, so the app
+  must warn before exporting. Import accepts only the format the app itself writes, and unpacking checks for
+  path escapes (see [19. Backup and restore](#19-backup-and-restore)).
 - **Images**: gallery images are copied into `filesDir/chat/images/`; the camera temp file is written to the
   cache directory and adopted or deleted immediately on return. The app grants only its own `FileProvider`
   URI and requests no storage or camera permission — the system camera app performs the capture.
@@ -699,6 +715,10 @@ installer hand-off. These need on-device integration / end-to-end verification.
     (only GLM-5.3 and MiniMax M3 at 1M are verified), and no reasoning control is declared for the new
     models other than GPT-5.x and GLM-5.3. Both only affect parameters and budgeting, never whether a
     request can be made.
+14. Backups are plaintext ZIPs with no password or encryption; import can only replace everything rather
+    than restoring selected items, there is no scheduled/automatic backup, and an export carries the API key.
+15. Only the most recent 400 messages are held in memory while the backup is complete: after importing a
+    long backup the UI still shows only the last 400.
 
 ## 17. Image storage (`ImageStore.kt`)
 
@@ -785,3 +805,77 @@ notes (at most 8 lines) plus "download update"; `Downloading` shows a progress b
 `Ready` shows "install update"; `Failed` offers "retry download" or "check again" depending on whether
 `info` is present. The install step lives in the UI layer because it needs an Activity `Context` to launch
 system screens; checking and downloading stay in the ViewModel.
+
+---
+
+## 19. Backup and restore
+
+### 19.1 Container format (`BackupArchive.kt`)
+
+The exported file has the `.ikitty` extension and is an ordinary ZIP with these entries:
+
+| Entry | Content |
+| --- | --- |
+| `manifest.json` | `format = "ikitty-backup"`, `version`, `appVersion`, `exportedAt`, and the three entry counts |
+| `chat/chat_log.jsonl` | JSONL identical to the on-disk format of [section 8](#8-chat-log-chatlogstorekt) |
+| `chat/cat_memory.json` | Memory JSON identical to [9.5 persistence](#95-persistence-catmemorystorekt) |
+| `chat/images/<name>` | The original JPEGs referenced by messages, file names unchanged |
+| `settings.json` | Model configuration, persona, and the location toggle (**including the API key**) |
+
+ZIP rather than one large JSON: the chat log is already JSONL and can be moved in and out verbatim, and
+images stay as original JPEGs instead of base64 (which would add a third to the size and force everything
+into memory). The JSON entries are plaintext, so any unzip tool can show the user what a backup holds.
+
+`MIME` is `application/octet-stream`: `.ikitty` has no registered type, and declaring `application/zip`
+makes some file pickers rename the file back to `.zip`.
+
+### 19.2 Export
+
+1. Scan the local JSONL line by line, counting parseable messages and collecting referenced image names
+   (corrupt lines are skipped per [section 8](#8-chat-log-chatlogstorekt));
+2. Only images that **actually exist** are written, so a name pointing at a deleted file produces no empty
+   entry;
+3. Settings come from the ViewModel and are the **saved** values — drafts edited in the settings screen but
+   never saved are not included;
+4. Returns a `BackupSummary`, which the UI turns into "exported N messages, M images, K facts".
+
+### 19.3 Import: validate everything first, then touch local data
+
+Import means **full replacement**, so it is deliberately two-phase:
+
+1. `stage(input)` unpacks into `cacheDir/backup_staging/` and validates everything: the manifest exists and
+   its `format` matches, `version` does not exceed the supported `FORMAT_VERSION`, `settings.json` exists,
+   and a non-empty chat log must yield at least one parseable message (otherwise it counts as corrupt). Any
+   failure deletes the staging directory and throws `BackupException` — **not one byte of local data is
+   touched**;
+2. `commit(contents)` replaces the log and memory via temp-file-plus-rename, clears
+   `filesDir/chat/images/` and puts the archived images back under their original names, then deletes the
+   staging directory.
+
+Defences:
+
+- Entry names are accepted only as bare file names under `chat/images/`; anything containing `/`, `\`, `..`,
+  or a leading `.` is ignored, so zip slip cannot write outside the archive directory;
+- Caps of 20000 entries, 2 GiB total uncompressed, 32 MiB per image, and 1 MiB per JSON entry make a
+  malformed file fail before it fills the cache partition;
+- One bad entry rejects the whole backup: there is no "import what is readable" mode, because half a backup
+  is more dangerous than none.
+
+### 19.4 Refreshing state after an import
+
+`commit` handles files only; settings must go back into DataStore and UI state must be re-read:
+
+- The ViewModel calls `store.save(config)` / `save(persona)` / `saveLocationEnabled` in turn;
+- `reloadFromDisk()` re-reads DataStore, the memory file, and the last `LOAD_LIMIT` messages, resets
+  `nextSeq`, clears `contextPlan`, and calls `images.invalidateCache()` — archived images overwrite by name
+  and the cache may still hold the old encoding;
+- An empty imported conversation gets a greeting, otherwise the screen would be blank.
+
+### 19.5 UI (`SettingsScreen.BackupSection`)
+
+- "Export backup" → confirmation (the file contains the API key) → SAF `CreateDocument` with the default
+  name `iKitty-yyyyMMdd-HHmm.ikitty` (`defaultBackupFileName`);
+- "Import backup" → confirmation (full replacement, irreversible) → SAF `OpenDocument` (`*/*`; `.ikitty` has
+  no registered MIME type);
+- `BackupStatus`'s four states (`Idle` / `Working` / `Done` / `Failed`) drive progress and result text; a
+  new import cannot start while another action runs or a model reply is pending.

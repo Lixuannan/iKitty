@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.aicat"
+    namespace = "com.codingcow.ikitty"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.aicat"
+        applicationId = "com.codingcow.ikitty"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
     }
 
     compileOptions {

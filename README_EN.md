@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **0.2.1** · Package: `com.example.aicat`
+- App name: **iKitty** · Version: **0.3.0** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -43,6 +43,8 @@ model service you configure and the optional IP geolocation, nothing goes throug
   and a settings toggle to turn it off.
 - **In-app updates**: the settings screen checks [GitHub releases](https://github.com/Lixuannan/iKitty/releases)
   for a newer version, downloads it, and hands it to the system installer — chat history and memory survive.
+- **Full backup and restore**: the settings screen packs chat history, images, memory, and settings into a
+  single `.ikitty` file, and restores them in one step after a reinstall or on a new device.
 - **No backend required.**
 
 ## Current shape: chat only
@@ -232,6 +234,27 @@ before being handed to the system installer for an in-place update.
 > Version comparison, download, and verification are described in the
 > [detailed design document](docs/DOC_EN.md#18-software-updates).
 
+## Backup and restore
+
+The "Backup and restore" section of the settings screen exports all app data into a single `.ikitty` file,
+and restores from such a file in one step:
+
+- A backup contains **everything**: chat history, the images referenced by it, structured memory, and all
+  settings — including the API key.
+- `.ikitty` is a ZIP: plaintext JSON/JSONL entries plus the original JPEGs, openable with any unzip tool.
+- Export goes through the system "save to…" dialog and import through the system file picker; the app needs
+  no storage permission and does not care where the file lives.
+- **Import replaces everything**: history, images, memory, and settings become the contents of the backup,
+  and it cannot be undone. The export button therefore warns that the file contains the key first, and the
+  import button asks for confirmation; exporting the current data first is recommended.
+- Import unpacks and validates the whole file before touching local data, so a bad file leaves the app
+  exactly as it was.
+- The export contains the **saved** settings: edits made in the settings screen but never saved are not
+  included.
+
+> The container format, validation rules, and overwrite order are described in the
+> [detailed design document](docs/DOC_EN.md#19-backup-and-restore).
+
 ## Data and privacy
 
 | Data | Location | Notes |
@@ -241,6 +264,7 @@ before being handed to the system installer for an in-place update.
 | Chat history | `filesDir/chat/chat_log.jsonl` | Plaintext JSONL, app-private directory |
 | Chat images | `filesDir/chat/images/*.jpg` | Downscaled JPEG; camera temp files live in the cache and are adopted on success |
 | Structured memory | `filesDir/chat/cat_memory.json` | Plaintext JSON including the extraction cursor |
+| Exported backup | Chosen by the user (SAF) | `.ikitty` file, **contains the API key**, keep it somewhere trusted |
 | Downloaded update | `cacheDir/updates/*.apk` | Transient file, reclaimed by the system after installation |
 
 - The app requests two permissions: `INTERNET` and `REQUEST_INSTALL_PACKAGES`; the latter is used only to
@@ -252,6 +276,8 @@ before being handed to the system installer for an in-place update.
   information is reported.
 - The API key is stored in plaintext in the app-private DataStore with no additional encryption — a known
   limitation.
+- An exported backup contains that plaintext key as well; the app only warns before exporting and does not
+  encrypt the file.
 
 ## Model capability table
 
@@ -292,7 +318,7 @@ A `max_tokens` of 0 means “unlimited, do not send”, shown as “unlimited”
 
 ```
 iKitty/
-├── app/src/main/java/com/example/aicat/
+├── app/src/main/java/com/codingcow/ikitty/
 │   ├── MainActivity.kt            Entry Activity and theme
 │   ├── CatChatScreen.kt           Chat screen UI
 │   ├── CatChatViewModel.kt        Chat state and all orchestration
@@ -313,11 +339,12 @@ iKitty/
 │   ├── ChatLogStore.kt            Append-only JSONL chat log
 │   ├── StoredMessage.kt           Persisted message model
 │   ├── ImageStore.kt              Image import, downscaling, data-URL encoding
+│   ├── BackupArchive.kt           `.ikitty` export, validation, and restore
 │   ├── SettingsStore.kt           DataStore persistence
 │   ├── AmbientContext.kt          "Right now" background block
 │   ├── Location.kt / IpLocationSource.kt  IP city geolocation
 │   └── TimeFormat.kt              Time and interval formatting
-├── app/src/test/java/com/example/aicat/   65 plain-JVM unit tests
+├── app/src/test/java/com/codingcow/ikitty/   94 plain-JVM unit tests
 ├── design/cat_v1/                 Layered cat character assets and spec
 └── docs/DOC_EN.md                 Detailed design document
 ```
@@ -328,11 +355,13 @@ iKitty/
 ./gradlew testDebugUnitTest
 ```
 
-The 65 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
+The 94 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
 persistence and round-trip, memory merge and parsing, context assembly (including image tokens and image
 resolution), multimodal request-body structure, persona prompt, image sampling ratio and MIME, IP response
-parsing, and the “right now” block. UI, real network requests, and image decoding/compression are outside
-unit-test scope. See [the design document](docs/DOC_EN.md#14-testing-strategy) for details.
+parsing, the “right now” block, and `.ikitty` export/import round-trips, settings serialization, and
+rejection of corrupt files and out-of-bounds entries. UI, real network requests, and image
+decoding/compression are outside unit-test scope. See
+[the design document](docs/DOC_EN.md#14-testing-strategy) for details.
 
 ## Known limitations and roadmap
 
@@ -362,4 +391,4 @@ viewer, and add retrieval (message chunking + vectors) when “never forget” i
 
 ## License
 
-The repository currently contains no `LICENSE` file.
+This project is licensed under the [Apache License 2.0](LICENSE).
