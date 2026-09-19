@@ -84,12 +84,14 @@ xcrun simctl launch "iPhone 17" com.codingcow.ikitty
 | 重启后读回 | 重启后仍显示同一条，且没有重复追加开场白 |
 | Ktor Darwin 传输 + ATS | 运行日志里 `http://ip-api.com/json/` 连接并 `finished successfully` |
 | 三个 sheet（设置 / 记忆 / 备份） | 截图确认渲染正常且不崩 |
+| **完整发送链路** | 起一个假的 OpenAI SSE 服务，应用真的发出请求（`stream: true` + 共享 `CatPersona` 生成的 system prompt），四段 SSE 增量被正确拼成 `喵～在呢，我听到啦`，落盘为第 3 条消息并渲染成气泡 |
 
-**还没实测**：发送一条真实回复（需要 API Key 或本地模型服务）、相册/相机选图、
+**还没实测**：用真实的模型服务商发一次（需要 API Key）、相册/相机选图、
 CoreGraphics 图片归一化、`fileImporter` / `ShareLink` 的完整交互。
 
 **已知环境限制**：`simctl` 不支持点击，AppleScript 也够不到 Simulator GUI，
-所以界面交互目前只能靠"临时启动参数打开某个页面 + 截图"来取证。
+所以界面交互目前只能靠"临时启动参数打开某个页面 / 触发一次发送 + 截图"来取证；
+取证用的临时钩子不会留在提交里（`ChatView.swift` 与提交版本逐字节一致）。
 
 **踩到的坑：手工配置 source set 会让默认层级模板失效。**
 加 `okhttpMain` 中间 source set 之后，`iosMain` 变成"被配置了但不属于任何编译"——
