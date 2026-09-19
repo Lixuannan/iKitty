@@ -13,7 +13,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Android / JVM 侧的 [HttpTransport] 实现。
+ * JVM 与 Android 共用的 [HttpTransport] 实现。
  *
  * 用的是原来 `ApiClient` 里的那套 OkHttp 配置与取消方式，逐行搬过来，行为不变：
  * 三个超时、`call.cancel()` 取消、`IOException` 归一成 [HttpTransportException]。
@@ -106,13 +106,14 @@ class OkHttpTransport(
     }
 }
 
-/** Android 侧的默认客户端：OkHttp 传输 + `Dispatchers.IO`。 */
-fun androidApiClient(): ApiClient = ApiClient(OkHttpTransport(), Dispatchers.IO)
+/** 用 OkHttp 的默认客户端；JVM 与 Android 共用这一份。 */
+fun okHttpApiClient(ioDispatcher: CoroutineDispatcher = Dispatchers.IO): ApiClient =
+    ApiClient(OkHttpTransport(), ioDispatcher)
 
 /**
- * Android 侧的定位来源。
+ * 定位用的来源。
  *
  * 和原实现一样用一个独立的客户端：定位是可选的附加功能，不该和聊天共用连接池。
  * 超时由 [IpLocationSource] 用 `withTimeoutOrNull` 统一控制。
  */
-fun androidLocationSource(): LocationSource = IpLocationSource(OkHttpTransport())
+fun okHttpLocationSource(): LocationSource = IpLocationSource(OkHttpTransport())

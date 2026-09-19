@@ -33,9 +33,9 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         const val UPDATE_PROGRESS_STEPS = 100L
     }
 
-    private val api = androidApiClient()
+    private val api = okHttpApiClient()
     private val images = ImageStore(app)
-    private val locationSource: LocationSource = androidLocationSource()
+    private val locationSource: LocationSource = okHttpLocationSource()
     private val updateClient = UpdateClient()
 
     /**

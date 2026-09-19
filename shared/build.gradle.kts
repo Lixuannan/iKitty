@@ -8,6 +8,12 @@ plugins {
 // 平台无关的业务逻辑集中在这里：Android 应用（:app）与 iOS 应用（iosApp）共用同一份代码。
 // 依赖方向固定为 app → shared、iosApp → shared，shared 不允许反向依赖任何一侧。
 kotlin {
+    // 必须显式应用：下面手工创建了 okhttpMain 这个中间 source set，
+    // 一旦手工配置过 source set 层级，默认层级模板就不再自动应用，
+    // 结果是 iosMain 被"配置了但不属于任何编译"——框架照样链接成功，
+    // 却完全不含 iOS 侧的代码。这个坑只在 Swift 报 "cannot find X in scope" 时才暴露。
+    applyDefaultHierarchyTemplate()
+
     androidTarget {
         compilerOptions {
             jvmTarget = JvmTarget.JVM_17
@@ -34,6 +40,13 @@ kotlin {
     }
 
     sourceSets {
+        // OkHttp 不是 Android 独有的：JVM 与 Android 共用同一份实现。
+        // 抽成中间 source set 之后，真的跑一次真实网络往返的集成测试就能放在 jvmTest 里，
+        // 不必为了测传输层去开模拟器。
+        val okhttpMain by creating {
+            dependsOn(commonMain.get())
+        }
+
         commonMain.dependencies {
             // 只用 JsonElement API（buildJsonObject / JsonObject 读写），刻意不用 @Serializable，
             // 因此不需要 serialization 编译器插件。
@@ -49,11 +62,19 @@ kotlin {
             // 协程类型出现在公开签名里（suspend 函数与注入的 CoroutineDispatcher）。
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
         }
-        androidMain.dependencies {
-            // Android 侧的 HttpTransport 实现。okhttp 只出现在 androidMain，
-            // 所以 iOS 侧不会被迫拖进 OkHttp。
+        androidMain {
+            dependsOn(okhttpMain)
+            dependencies {
+                // DataStore 是 Android 专有的设置存储。
+                implementation("androidx.datastore:datastore-preferences:1.1.1")
+            }
+        }
+        jvmMain {
+            dependsOn(okhttpMain)
+        }
+        okhttpMain.dependencies {
+            // OkHttp 只出现在 okhttpMain，iOS 侧不会被迫拖进它。
             implementation("com.squareup.okhttp3:okhttp:4.12.0")
-            implementation("androidx.datastore:datastore-preferences:1.1.1")
         }
         iosMain.dependencies {
             // iOS 侧的 HttpTransport。Ktor Darwin 直接封装 NSURLSession，
