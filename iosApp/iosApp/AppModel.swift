@@ -13,7 +13,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var state: ChatUiState?
     @Published var draft: String = ""
     @Published var isShowingSettings = false
-    @Published var settingsError: String?
 
     /// 已选好、还没发出去的图片（本机文件名）。
     @Published private(set) var pendingImages: [String] = []
@@ -83,8 +82,42 @@ final class AppModel: ObservableObject {
         environment.updateLocationEnabled(enabled: enabled)
     }
 
-    func savePersona(name: String, notes: String) {
-        environment.updatePersona(name: name, notes: notes)
+    func savePersona(
+        name: String,
+        notes: String,
+        traits: [CatTrait],
+        speechStyle: CatSpeechStyle,
+        flavor: CatFlavor
+    ) {
+        environment.updatePersona(
+            name: name,
+            notes: notes,
+            traits: traits,
+            speechStyle: speechStyle,
+            flavor: flavor
+        )
+    }
+
+    func saveConfig(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int32,
+        thinking: ThinkingMode,
+        reasoningEffort: ReasoningEffort
+    ) {
+        environment.updateConfig(
+            baseUrl: baseUrl,
+            apiKey: apiKey,
+            model: model,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            thinking: thinking,
+            reasoningEffort: reasoningEffort
+        )
     }
 
     // MARK: - 图片
@@ -119,26 +152,6 @@ final class AppModel: ObservableObject {
 
     func image(for name: String) -> UIImage? {
         UIImage(contentsOfFile: environment.imageFilePath(name: name))
-    }
-
-    // MARK: - 设置
-
-    /// 保存连接设置。
-    ///
-    /// 只改地址 / Key / 模型这三个用户真正会动的字段，其余（采样参数等）沿用现有值，
-    /// 免得 Swift 侧去构造一个带十几个参数的 `ApiConfig`。
-    func saveConnection(baseUrl: String, apiKey: String, model: String) {
-        let trimmed = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            settingsError = "请先填写 Base URL"
-            return
-        }
-        guard let url = URL(string: trimmed), url.scheme != nil else {
-            settingsError = "Base URL 看起来不是一个合法地址"
-            return
-        }
-        settingsError = nil
-        environment.updateConnection(baseUrl: trimmed, apiKey: apiKey, model: model)
     }
 
     deinit {

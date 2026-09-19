@@ -80,12 +80,116 @@ class IosAppEnvironment {
         engine.saveSettings(engine.config.value, engine.persona.value, enabled)
     }
 
-    /** 只改角色设定的名字与补充说明；其余设定沿用现有值。 */
-    fun updatePersona(name: String, notes: String) {
+    /** 只改角色设定；其余设定沿用现有值。 */
+    fun updatePersona(
+        name: String,
+        notes: String,
+        traits: List<CatTrait>,
+        speechStyle: CatSpeechStyle,
+        flavor: CatFlavor
+    ) {
         engine.saveSettings(
             engine.config.value,
-            engine.persona.value.copy(name = name.trim(), notes = notes.trim()),
+            engine.persona.value.copy(
+                name = name.trim(),
+                notes = notes.trim(),
+                // 上限在共享代码里，界面不该自己再判一次。
+                traits = traits.take(CatPersona.MAX_TRAITS).toSet(),
+                speechStyle = speechStyle,
+                flavor = flavor
+            ),
             engine.locationEnabled.value
+        )
+    }
+
+    // ---- 设置界面需要的适配层 ----
+    // Swift 不方便对 Kotlin 的 sealed interface 做模式匹配，也不方便构造长参数的数据类，
+    // 所以把"当前模型支持什么"和"测试结果"都摊平成普通对象。
+
+    /** 数值参数的取值范围，直接驱动 SwiftUI 的 Slider / Stepper。 */
+    class NumberRange(
+        val min: Float,
+        val max: Float,
+        val step: Float,
+        val initial: Float,
+        val decimals: Int
+    )
+
+    /** 当前模型支持哪些参数——设置页据此决定渲染哪些控件、以及各参数的上下限。 */
+    class ModelCapabilities(
+        val temperature: NumberRange?,
+        val topP: NumberRange?,
+        val maxTokens: NumberRange?,
+        /** 走 `thinking.type` 开关时为 true。 */
+        val hasThinkingToggle: Boolean,
+        val thinkingDefaultOn: Boolean,
+        /** 非空表示走 `reasoning_effort`，列出可选档位。 */
+        val reasoningLevels: List<ReasoningEffort>
+    )
+
+    /**
+     * 按**草稿**里的地址与模型算能力表，而不是按已保存的配置。
+     *
+     * 设置页要在用户改完模型名、还没保存时就显示出"这个模型支持哪些参数"，
+     * 所以这里显式接收地址与模型名。服务商优先按地址反查，查不到才沿用当前预设。
+     */
+    fun capabilitiesFor(baseUrl: String, model: String): ModelCapabilities {
+        val current = engine.config.value
+        val normalized = baseUrl.trim().trimEnd('/')
+        val providerId = ModelCatalog.providerIdForBaseUrl(normalized) ?: current.providerId
+        val spec = ModelCatalog.resolve(providerId, model.trim())
+        val reasoning = spec.reasoning
+        return ModelCapabilities(
+            temperature = spec.temperature?.toRange(),
+            topP = spec.topP?.toRange(),
+            maxTokens = spec.maxTokens?.toRange(),
+            hasThinkingToggle = reasoning is ReasoningSpec.Toggle,
+            thinkingDefaultOn = (reasoning as? ReasoningSpec.Toggle)?.defaultOn ?: false,
+            reasoningLevels = (reasoning as? ReasoningSpec.Effort)?.supported ?: emptyList()
+        )
+    }
+
+    private fun NumberParam.toRange() = NumberRange(min, max, step, default, decimals)
+
+    /** 测试连接的结果，展平成一句可直接展示的话。 */
+    class ConnectionTestResult(val ok: Boolean, val message: String)
+
+    suspend fun testConnection(baseUrl: String, apiKey: String, model: String): ConnectionTestResult {
+        val candidate = engine.config.value.copy(
+            baseUrl = baseUrl.trim().trimEnd('/'),
+            apiKey = apiKey.trim(),
+            model = model.trim()
+        )
+        return engine.testConnection(candidate).fold(
+            onSuccess = { outcome ->
+                ConnectionTestResult(
+                    ok = true,
+                    message = "连接正常（${outcome.latencyMillis} ms）：" +
+                        outcome.reply.replace('\n', ' ').take(40)
+                )
+            },
+            onFailure = { error -> ConnectionTestResult(false, error.message ?: "测试失败") }
+        )
+    }
+
+    /** 拉取模型列表的结果。 */
+    class ModelListResult(val ok: Boolean, val models: List<String>, val message: String)
+
+    suspend fun fetchModels(baseUrl: String, apiKey: String): ModelListResult {
+        val candidate = engine.config.value.copy(
+            baseUrl = baseUrl.trim().trimEnd('/'),
+            apiKey = apiKey.trim()
+        )
+        return engine.listModels(candidate).fold(
+            onSuccess = { outcome ->
+                when (outcome) {
+                    is ModelListOutcome.Available ->
+                        ModelListResult(true, outcome.models, "共 ${outcome.models.size} 个模型")
+                    ModelListOutcome.NotSupported ->
+                        ModelListResult(false, emptyList(), "该服务商没有模型列表接口")
+                }
+            },
+            onFailure = { error -> ModelListResult(false, emptyList(), error.message ?: "获取失败") }
         )
     }
 
@@ -139,22 +243,34 @@ class IosAppEnvironment {
 
 
     /**
-     * 只改"连接"这三个字段并保存。
+     * 保存模型服务的全部可调字段。
      *
-     * Kotlin 的默认参数在导出到 Swift 之后会变成必填，让 Swift 去构造一个带十几个参数的
-     * `ApiConfig` 既啰嗦又容易漏字段；这里把"用户真正会动的字段"收敛成一个入口，
-     * 其余设置沿用现有值。
+     * Kotlin 的默认参数导出到 Swift 之后会变成必填，让 Swift 去构造一个带十几个参数的
+     * `ApiConfig` 既啰嗦又容易漏字段；这里把用户真正会动的字段收敛成参数。
      */
-    fun updateConnection(baseUrl: String, apiKey: String, model: String) {
-        val current = engine.config.value
+    fun updateConfig(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+        thinking: ThinkingMode,
+        reasoningEffort: ReasoningEffort
+    ) {
         val normalized = baseUrl.trim().trimEnd('/')
         engine.saveSettings(
-            current.copy(
+            engine.config.value.copy(
                 baseUrl = normalized,
                 apiKey = apiKey.trim(),
                 model = model.trim(),
                 // 换了地址之后预设也要跟着换，否则参数能力表会和实际服务商对不上。
-                providerId = ModelCatalog.providerIdForBaseUrl(normalized) ?: CUSTOM_PROVIDER_ID
+                providerId = ModelCatalog.providerIdForBaseUrl(normalized) ?: CUSTOM_PROVIDER_ID,
+                temperature = temperature,
+                topP = topP,
+                maxTokens = maxTokens,
+                thinking = thinking,
+                reasoningEffort = reasoningEffort
             ),
             engine.persona.value,
             engine.locationEnabled.value
