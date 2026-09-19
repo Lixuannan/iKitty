@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：0.4.0 · 包名：`com.codingcow.ikitty`
+- 版本：1.0.0 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）

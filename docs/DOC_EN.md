@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.4.0 · Package: `com.codingcow.ikitty`
+- Version: 1.0.0 · Package: `com.codingcow.ikitty`
 - Sources: Android `app/src/main/java/com/codingcow/ikitty/` · shared `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - Stack: Kotlin 2.4.20, Jetpack Compose (Material3), Kotlin Multiplatform (`:shared`, with iOS targets), OkHttp 4.12.0 / Ktor 3.6.0, okio 3.18.2, kotlinx-serialization 1.11.0
 - Build: AGP 8.7.3, Gradle 9.7.0, Java 17 bytecode target, minSdk 26 / targetSdk 35, iOS 17+ (Xcode 27.0)

@@ -8,7 +8,7 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 拼成 system prompt 直接发给任意 OpenAI 兼容服务。聊天记录、图片、记忆和设置全部存在本机，
 除了你自己配置的模型服务和可选的 IP 定位，不经过任何第三方服务器。
 
-- 应用名：**iKitty** · 版本：**0.4.0** · 包名：`com.codingcow.ikitty`
+- 应用名：**iKitty** · 版本：**1.0.0** · 包名：`com.codingcow.ikitty`
 - 仓库：<https://github.com/Lixuannan/iKitty>
 
 ---
