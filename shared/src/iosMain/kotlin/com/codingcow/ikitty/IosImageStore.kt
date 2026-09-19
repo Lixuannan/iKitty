@@ -25,7 +25,7 @@ class IosImageStore(
     private val imagesDir: Path,
     private val ioDispatcher: CoroutineDispatcher
 ) {
-    private val cache = LinkedHashMap<String, String>()
+    private val cache = LruCache<String, String>(CACHE_LIMIT)
 
     /** 保存一段 JPEG，返回本机文件名；写失败返回 null（调用方跳过这张图）。 */
     suspend fun save(jpegBytes: ByteArray): String? = withContext(ioDispatcher) {
@@ -68,7 +68,8 @@ class IosImageStore(
     suspend fun saveData(data: NSData): String? = save(data.toByteArray())
 
     private fun dataUrl(name: String): String? {
-        cache[name]?.let { return it }
+        // 命中就当作"最近使用"，这样长对话里反复用到的图不会被一次性的冷图挤出去。
+        cache.getAndTouch(name)?.let { return it }
         val path = imagesDir / name
         if (!fileSystem.exists(path)) return null
         val encoded = try {
@@ -76,7 +77,16 @@ class IosImageStore(
         } catch (_: okio.IOException) {
             return null
         }
-        cache[name] = encoded
+        cache.put(name, encoded)
         return encoded
     }
 }
+
+/**
+ * 数据 URL 的缓存上限。
+ *
+ * 和 Android 侧一致取 12：装配上下文时**每一条历史消息里的每一张图**都会被问一次，
+ * 不设上限的话这个缓存会一路涨到"这次会话出现过的所有图片"，成了内存泄漏。
+ * 一张 200 KB 的图 base64 之后约 270 KB，12 张约 3 MB，是一个合理的上限。
+ */
+private const val CACHE_LIMIT = 12

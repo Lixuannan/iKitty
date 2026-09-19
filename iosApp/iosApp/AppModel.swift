@@ -150,8 +150,36 @@ final class AppModel: ObservableObject {
         environment.imageFilePath(name: name)
     }
 
+    /// 缩略图缓存。
+    ///
+    /// 必须有：消息气泡在每次 SwiftUI 重绘时都会问一次图片，直接 `UIImage(contentsOfFile:)`
+    /// 会把磁盘读取与图片解码放进主线程，长对话一滚动就卡。`NSCache` 会在内存吃紧时自己回收，
+    /// 所以不需要自己算大小上限。
+    private let thumbnails: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 40
+        return cache
+    }()
+
     func image(for name: String) -> UIImage? {
-        UIImage(contentsOfFile: environment.imageFilePath(name: name))
+        if let cached = thumbnails.object(forKey: name as NSString) { return cached }
+        guard let image = UIImage(contentsOfFile: environment.imageFilePath(name: name)) else {
+            return nil
+        }
+        thumbnails.setObject(image, forKey: name as NSString)
+        return image
+    }
+
+    /// 导入备份之后必须调用：归档里的图片是按名字覆盖的，缓存里的旧图不能再用了。
+    func invalidateThumbnails() {
+        thumbnails.removeAllObjects()
+    }
+
+    /// 导入备份并让界面立刻反映归档内容。
+    func importBackup(data: Data) async throws -> String {
+        let message = try await environment.importBackup(data: data)
+        invalidateThumbnails()
+        return message
     }
 
     deinit {

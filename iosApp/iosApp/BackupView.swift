@@ -100,7 +100,8 @@ struct BackupView: View {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 do {
                     let data = try Data(contentsOf: url)
-                    model.backupMessage = try await model.environment.importBackup(data: data)
+                    // 走 AppModel 而不是直接用 environment：导入后要丢掉缩略图缓存。
+                    model.backupMessage = try await model.importBackup(data: data)
                 } catch {
                     model.backupMessage = "导入失败：\(error.localizedDescription)"
                 }
