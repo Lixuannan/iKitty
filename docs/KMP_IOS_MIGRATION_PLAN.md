@@ -9,6 +9,41 @@
 
 ---
 
+## 进度（滚动更新）
+
+| 阶段 | 状态 | 说明 |
+| --- | --- | --- |
+| Phase 0 环境与基线 | ✅ | `xcode-select` 已指向 Xcode 27.0；KGP 2.4.20 + Gradle 9.7.0；Kotlin/Native 实测能编译**并链接**arm64 framework |
+| Phase 1 Batch 1 | ✅ | CatState / CatPersona / Location / ChatModels / ModelCatalog / CatMemory 纯逻辑 + ImageNaming 进 commonMain |
+| Phase 2 JSON 层 | ✅ | kotlinx-serialization 1.11.0（只用 JsonElement）；金标准比对按**结构**而非字节顺序（两端 org.json 的键顺序本就不同） |
+| Phase 3 时间与上下文 | ✅ | kotlinx-datetime 0.8.0；`formatMoment` 与 `SimpleDateFormat` 在 3 个时区（含夏令时）逐字节一致 |
+| Phase 4 存储与设置 | ✅ | okio 3.18.2；ChatLogStore / CatMemoryStore / AppPaths / KeyValueStore / SettingsRepository |
+| Phase 5 HTTP seam | ✅ | `HttpTransport` 契约 + `ApiClient` / SSE / MemoryExtractor 进 commonMain；Android 侧 OkHttp 原样搬入 |
+| Phase 6 iosMain | ✅ | Ktor Darwin 传输 · NSFileManager 路径 · NSUserDefaults 设置 · iosSimulatorArm64 目标 |
+| Phase 7a ChatEngine | ✅ | 逐行搬出，Android ViewModel 变薄壳；新增 8 条编排测试（原本零覆盖） |
+| Phase 7b iOS UI | ✅ | 手写 xcodeproj（同步文件组）+ SwiftUI 聊天页/设置页；`xcodebuild` 对模拟器 SDK **构建成功** |
+| Phase 8–12 | ⬜ | 见下文 |
+
+**两处刻意的偏离**（都朝"更少的平台代码"）：
+
+1. **不引入 `expect/actual`**。文件系统、路径与 IO 调度器通过构造参数注入
+   （`ChatLogStore(fileSystem, path, ioDispatcher, now)`），Android 侧由
+   `androidChatLogStore(...)` 工厂传入 `Dispatchers.IO`。好处：`iosArm64`
+   在 Phase 6 之前就能持续编译，且"这一端用哪个调度器"是显式的，
+   不会像 `Dispatchers.IO` 那样漏改后静默降级（原风险 R7）。
+2. **设置不走 `expect`**，而是 commonMain 的 `KeyValueStore` 接口 +
+   两端的实现（DataStore / NSUserDefaults），键名与默认值在
+   `SettingsRepository` 里只写一遍。
+
+**尚未验证的一步**：本机**没有安装任何 iOS 模拟器 runtime**
+（`xcrun simctl list runtimes` 为空），所以 Phase 7 的验收条件
+"在模拟器里完成一次真实对话（发送 → 流式回复 → 落盘 → 重启后可见）"
+**还没有实测**。目前 iOS 侧的证据是：framework 编译并链接成功、
+`xcodebuild` 构建出 `iKitty.app`、二进制正确链接 `@rpath/Shared.framework/Shared`。
+commonTest 的逻辑验证跑在 jvm 与 android 两个 target 上。
+
+---
+
 ## 0. 环境核实（本次实测，非推测）
 
 | 项 | 实测结果 |
