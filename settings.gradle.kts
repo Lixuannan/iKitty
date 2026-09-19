@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AICatMVP"
 include(":app")
+include(":shared")

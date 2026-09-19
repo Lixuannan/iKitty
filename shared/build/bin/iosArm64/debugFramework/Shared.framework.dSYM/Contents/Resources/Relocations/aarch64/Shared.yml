@@ -1,0 +1,16 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/meizhenchen/Documents/iKitty/shared/build/bin/iosArm64/debugFramework/Shared.framework/Shared'
+relocations:
+  - { offset: 0x2C, size: 0x8, addend: 0x0, symName: '_objc2kotlin_kfun:kotlin.Any#equals(kotlin.Any?){}kotlin.Boolean', symObjAddr: 0x318, symBinAddr: 0x4318, symSize: 0x138 }
+  - { offset: 0x34, size: 0x8, addend: 0x0, symName: '_objc2kotlin_kfun:kotlin.Any#hashCode(){}kotlin.Int', symObjAddr: 0x450, symBinAddr: 0x4450, symSize: 0x118 }
+  - { offset: 0x49, size: 0x8, addend: 0x0, symName: '_objc2kotlin_kfun:kotlin.Any#hashCode(){}kotlin.Int', symObjAddr: 0x450, symBinAddr: 0x4450, symSize: 0x118 }
+  - { offset: 0x51, size: 0x8, addend: 0x0, symName: '_objc2kotlin_kfun:kotlin.Any#toString(){}kotlin.String', symObjAddr: 0x568, symBinAddr: 0x4568, symSize: 0x12C }
+  - { offset: 0x66, size: 0x8, addend: 0x0, symName: '_objc2kotlin_kfun:kotlin.Any#toString(){}kotlin.String', symObjAddr: 0x568, symBinAddr: 0x4568, symSize: 0x12C }
+  - { offset: 0x6E, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#equals(kotlin.Any?){}kotlin.Boolean', symObjAddr: 0x694, symBinAddr: 0x4694, symSize: 0x138 }
+  - { offset: 0x83, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#equals(kotlin.Any?){}kotlin.Boolean', symObjAddr: 0x694, symBinAddr: 0x4694, symSize: 0x138 }
+  - { offset: 0x8B, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#hashCode(){}kotlin.Int', symObjAddr: 0x7CC, symBinAddr: 0x47CC, symSize: 0x118 }
+  - { offset: 0xA0, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#hashCode(){}kotlin.Int', symObjAddr: 0x7CC, symBinAddr: 0x47CC, symSize: 0x118 }
+  - { offset: 0xA8, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#toString(){}kotlin.String', symObjAddr: 0x8E4, symBinAddr: 0x48E4, symSize: 0x12C }
+  - { offset: 0xBD, size: 0x8, addend: 0x0, symName: '_objc2kotlin_virtual_kfun:kotlin.Any#toString(){}kotlin.String', symObjAddr: 0x8E4, symBinAddr: 0x48E4, symSize: 0x12C }
+...
