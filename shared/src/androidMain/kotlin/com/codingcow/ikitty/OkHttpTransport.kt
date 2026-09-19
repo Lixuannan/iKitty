@@ -108,3 +108,11 @@ class OkHttpTransport(
 
 /** Android 侧的默认客户端：OkHttp 传输 + `Dispatchers.IO`。 */
 fun androidApiClient(): ApiClient = ApiClient(OkHttpTransport(), Dispatchers.IO)
+
+/**
+ * Android 侧的定位来源。
+ *
+ * 和原实现一样用一个独立的客户端：定位是可选的附加功能，不该和聊天共用连接池。
+ * 超时由 [IpLocationSource] 用 `withTimeoutOrNull` 统一控制。
+ */
+fun androidLocationSource(): LocationSource = IpLocationSource(OkHttpTransport())

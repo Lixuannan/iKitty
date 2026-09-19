@@ -17,10 +17,8 @@ import kotlin.time.ExperimentalTime
  * 作用域跑在 `Dispatchers.Main` 上：界面状态因此总是在主线程更新，SwiftUI 可以直接用。
  * 真正的文件与网络操作各自切到自己的调度器，不会占住主线程。
  *
- * 图片（Phase 8）与 IP 定位（Phase 9）在 iOS 上还没接，所以：
- * - `imageDataUrls` 返回空表 —— 历史里的图片暂时不会进请求；
- * - `locationSource` 为 null —— 「此刻」背景里不会出现城市。
- * 两处都是显式留空，不是静默降级。
+ * 图片（Phase 8）在 iOS 上还没接，所以 `imageDataUrls` 返回空表 ——
+ * 历史里的图片暂时不会进请求。这是显式留空，不是静默降级。
  */
 class IosAppEnvironment {
 
@@ -47,7 +45,7 @@ class IosAppEnvironment {
         ),
         extractor = MemoryExtractor(api),
         imageDataUrls = { emptyMap() },
-        locationSource = null,
+        locationSource = IpLocationSource(KtorTransport()),
         invalidateImageCache = {},
         scope = scope
     )

@@ -35,7 +35,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val api = androidApiClient()
     private val images = ImageStore(app)
-    private val locationSource: LocationSource = IpLocationSource()
+    private val locationSource: LocationSource = androidLocationSource()
     private val updateClient = UpdateClient()
 
     /**
