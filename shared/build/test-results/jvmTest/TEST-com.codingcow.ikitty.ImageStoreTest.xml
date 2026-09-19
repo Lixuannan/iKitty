@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="ImageStoreTest[jvm]" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.453Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
+<testsuite name="ImageStoreTest[jvm]" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:21.894Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
   <testcase name="sampling keeps the longest edge within the limit[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <testcase name="mime falls back to jpeg for the names we store[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <testcase name="sampled dimensions never exceed the limit[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
-  <testcase name="unknown exif orientation leaves the pixels untouched[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
+  <testcase name="unknown exif orientation leaves the pixels untouched[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.001"/>
   <testcase name="exif orientation maps to the expected rotation and mirroring[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <testcase name="sampling uses the longer edge[jvm]" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>

@@ -40,7 +40,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         const val UPDATE_PROGRESS_STEPS = 100L
     }
 
-    private val api = ApiClient()
+    private val api = androidApiClient()
     private val store = SettingsStore(app)
     private val log = androidChatLogStore(app)
     private val memoryStore = androidCatMemoryStore(app)

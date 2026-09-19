@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="MultimodalPayloadTest[jvm]" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.462Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
+<testsuite name="MultimodalPayloadTest[jvm]" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:21.901Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="an image-only message has no empty text part[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
+  <testcase name="an image-only message has no empty text part[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.001"/>
   <testcase name="numeric params keep the old wire formatting[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="plain text keeps a string content and no stream flag[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="images become content parts with image_url data urls[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="streaming adds the stream flag without touching the text field[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
-  <testcase name="sent params still follow the model capability table[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.001"/>
+  <testcase name="sent params still follow the model capability table[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="an unset max_tokens never reaches the wire[jvm]" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

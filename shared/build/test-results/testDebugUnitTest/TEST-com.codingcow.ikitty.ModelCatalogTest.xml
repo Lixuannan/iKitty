@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.ModelCatalogTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.776Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
+<testsuite name="com.codingcow.ikitty.ModelCatalogTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:22.216Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
   <properties/>
   <testcase name="deepseek-flash 可以调整思考深度" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.0"/>
-  <testcase name="名称启发式把 glm-5 系列也认成 reasoning_effort" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.001"/>
+  <testcase name="名称启发式把 glm-5 系列也认成 reasoning_effort" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.0"/>
   <testcase name="glm-5_3 改用 reasoning_effort 且窗口为 1M" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.0"/>
   <testcase name="应用默认使用 DeepSeek 的 deepseek-flash" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.0"/>
   <testcase name="参数格式化保留固定小数位" classname="com.codingcow.ikitty.ModelCatalogTest" time="0.001"/>

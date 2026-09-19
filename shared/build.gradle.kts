@@ -42,6 +42,11 @@ kotlin {
             // 协程类型出现在公开签名里（suspend 函数与注入的 CoroutineDispatcher）。
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
         }
+        androidMain.dependencies {
+            // Android 侧的 HttpTransport 实现。okhttp 只出现在 androidMain，
+            // 所以 iOS 侧不会被迫拖进 OkHttp。
+            implementation("com.squareup.okhttp3:okhttp:4.12.0")
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")

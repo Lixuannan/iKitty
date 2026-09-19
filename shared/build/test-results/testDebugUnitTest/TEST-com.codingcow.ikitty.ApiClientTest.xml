@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.codingcow.ikitty.ApiClientTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:22.106Z" hostname="MeizhendeMacBook-Air.local" time="0.061">
+  <properties/>
+  <testcase name="http failures carry the provider detail and our hint" classname="com.codingcow.ikitty.ApiClientTest" time="0.047"/>
+  <testcase name="a non-json error body is shown truncated" classname="com.codingcow.ikitty.ApiClientTest" time="0.002"/>
+  <testcase name="a missing models endpoint is not an error" classname="com.codingcow.ikitty.ApiClientTest" time="0.0"/>
+  <testcase name="a transport failure becomes a network error message" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="a provider that ignores stream falls back to whole body parsing" classname="com.codingcow.ikitty.ApiClientTest" time="0.002"/>
+  <testcase name="reasoning stands in when content is empty" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="model list is parsed and sorted" classname="com.codingcow.ikitty.ApiClientTest" time="0.0"/>
+  <testcase name="the request carries a bearer token and a json content type" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="an empty stream is reported as no content" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="streaming accumulates deltas and reports each one" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="a blank api key sends no authorization header" classname="com.codingcow.ikitty.ApiClientTest" time="0.0"/>
+  <testcase name="test connection reports the model, endpoint and sent params" classname="com.codingcow.ikitty.ApiClientTest" time="0.002"/>
+  <testcase name="a normal completion is parsed with usage" classname="com.codingcow.ikitty.ApiClientTest" time="0.0"/>
+  <testcase name="unparseable sse lines are skipped instead of aborting the reply" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <testcase name="streaming keeps reasoning separate from the reply" classname="com.codingcow.ikitty.ApiClientTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

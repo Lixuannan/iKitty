@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.ChatLogStoreTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.745Z" hostname="MeizhendeMacBook-Air.local" time="0.017">
+<testsuite name="com.codingcow.ikitty.ChatLogStoreTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:22.188Z" hostname="MeizhendeMacBook-Air.local" time="0.018">
   <properties/>
-  <testcase name="clear empties the log" classname="com.codingcow.ikitty.ChatLogStoreTest" time="0.001"/>
+  <testcase name="clear empties the log" classname="com.codingcow.ikitty.ChatLogStoreTest" time="0.002"/>
   <testcase name="readAfter returns only what is past the cursor" classname="com.codingcow.ikitty.ChatLogStoreTest" time="0.003"/>
   <testcase name="tail returns only the newest entries" classname="com.codingcow.ikitty.ChatLogStoreTest" time="0.006"/>
   <testcase name="append then tail round trips a message" classname="com.codingcow.ikitty.ChatLogStoreTest" time="0.001"/>
