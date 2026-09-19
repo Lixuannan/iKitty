@@ -26,7 +26,7 @@ class MemoryJsonTest {
     ) = MemoryFact(category = category, key = key, value = value, updatedAt = at, sourceSeq = seq, pinned = pinned)
 
     @Test
-    fun `parse accepts plain json, fenced json and chinese category labels`() {
+    fun `parse accepts plain json fenced json and chinese category labels`() {
         val raw = """{"facts":[{"category":"喜好","key":"火锅","value":"喜欢"}],"forget":["旧地址"]}"""
         val update = parseMemoryUpdate(raw, now = 7L)!!
         assertEquals("火锅", update.facts.single().key)

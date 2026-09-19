@@ -256,7 +256,7 @@ class ApiClientTest {
     }
 
     @Test
-    fun `test connection reports the model, endpoint and sent params`() = runTest {
+    fun `test connection reports the model endpoint and sent params`() = runTest {
         val transport = FakeTransport(HttpResponse(200, jsonCompletion("在呢")))
         val outcome = client(transport).test(config)
 

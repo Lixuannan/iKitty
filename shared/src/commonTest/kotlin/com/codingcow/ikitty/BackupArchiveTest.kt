@@ -84,7 +84,7 @@ class BackupArchiveTest {
         val fixture = Fixture()
         fixture.writeLog(message(1, StoredMessage.ROLE_USER, "本机消息"))
 
-        val error = runCatching { fixture.archive.stage("这根本不是 zip".toByteArray()) }.exceptionOrNull()
+        val error = runCatching { fixture.archive.stage("这根本不是 zip".encodeToByteArray()) }.exceptionOrNull()
 
         assertTrue(error is BackupException)
         // 失败之后本机数据必须原封不动。
@@ -94,7 +94,7 @@ class BackupArchiveTest {
     @Test
     fun `stage rejects a zip without a manifest`() = runTest {
         val fixture = Fixture()
-        val zip = buildZip("random.txt" to "hello".toByteArray())
+        val zip = buildZip("random.txt" to "hello".encodeToByteArray())
         val error = runCatching { fixture.archive.stage(zip) }.exceptionOrNull()
 
         assertTrue(error is BackupException)
@@ -104,8 +104,8 @@ class BackupArchiveTest {
     fun `stage rejects a backup made by a newer format version`() = runTest {
         val fixture = Fixture()
         val zip = buildZip(
-            ENTRY_MANIFEST_NAME to manifestJson(version = 99).toString().toByteArray(),
-            ENTRY_SETTINGS_NAME to "{}".toByteArray()
+            ENTRY_MANIFEST_NAME to manifestJson(version = 99).toString().encodeToByteArray(),
+            ENTRY_SETTINGS_NAME to "{}".encodeToByteArray()
         )
         val error = runCatching { fixture.archive.stage(zip) }.exceptionOrNull()
 
@@ -117,8 +117,8 @@ class BackupArchiveTest {
     fun `stage ignores image entries that try to escape the archive directory`() = runTest {
         val fixture = Fixture()
         val zip = buildZip(
-            ENTRY_MANIFEST_NAME to manifestJson().toString().toByteArray(),
-            ENTRY_SETTINGS_NAME to "{}".toByteArray(),
+            ENTRY_MANIFEST_NAME to manifestJson().toString().encodeToByteArray(),
+            ENTRY_SETTINGS_NAME to "{}".encodeToByteArray(),
             "chat/images/../evil.jpg" to byteArrayOf(1, 2, 3)
         )
 
@@ -137,8 +137,8 @@ class BackupArchiveTest {
         fixture.writeImage("img_old.jpg")
 
         val zip = buildZip(
-            ENTRY_MANIFEST_NAME to manifestJson().toString().toByteArray(),
-            ENTRY_SETTINGS_NAME to "{}".toByteArray()
+            ENTRY_MANIFEST_NAME to manifestJson().toString().encodeToByteArray(),
+            ENTRY_SETTINGS_NAME to "{}".encodeToByteArray()
         )
         val contents = fixture.archive.stage(zip)
         fixture.archive.commit(contents)
@@ -155,9 +155,9 @@ class BackupArchiveTest {
         fixture.writeLog(message(1, StoredMessage.ROLE_USER, "本机消息"))
 
         val zip = buildZip(
-            ENTRY_MANIFEST_NAME to manifestJson().toString().toByteArray(),
-            ENTRY_SETTINGS_NAME to "{}".toByteArray(),
-            "chat/chat_log.jsonl" to "{不是 JSON}\n".toByteArray()
+            ENTRY_MANIFEST_NAME to manifestJson().toString().encodeToByteArray(),
+            ENTRY_SETTINGS_NAME to "{}".encodeToByteArray(),
+            "chat/chat_log.jsonl" to "{不是 JSON}\n".encodeToByteArray()
         )
         val error = runCatching { fixture.archive.stage(zip) }.exceptionOrNull()
 

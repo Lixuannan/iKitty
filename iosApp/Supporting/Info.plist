@@ -40,17 +40,20 @@
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!--
-		  ip-api.com 的免费档只有明文 HTTP。Android 侧用 network_security_config 放行它，
-		  iOS 侧需要等价的例外，否则 IP 定位（Phase 9）在 iOS 上直接被 ATS 拦掉。
+		  与 Android 的 network_security_config.xml 对齐：那边全局放开明文流量，
+		  因为本地与局域网的大模型服务（Ollama、LM Studio、vLLM…）通常只提供 http。
+		  如果这里只放行 ip-api.com，用户在 iOS 上填 http://192.168.x.x:11434/v1
+		  会统一失败在 ATS 上——而同一个地址在 Android 上是能用的，属于真实的功能不对齐。
+
+		  注意：NSAllowsArbitraryLoads 与 NSAllowsLocalNetworking 同时出现时，
+		  iOS 10+ 会**忽略**前者。所以这里只用 NSAllowsArbitraryLoads，不要加 NSAllowsLocalNetworking。
+
+		  代价要说清楚：这等于关掉了 ATS。要上架 App Store 时，审核可能要求说明理由；
+		  如果只支持少数固定服务商，更稳的做法是改用 NSExceptionDomains 逐个列出，
+		  并去掉这个键。
 		-->
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>ip-api.com</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
-		</dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
 </dict>
 </plist>

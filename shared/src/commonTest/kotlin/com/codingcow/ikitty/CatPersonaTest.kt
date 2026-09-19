@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class CatPersonaTest {
 
     @Test
-    fun `default prompt carries name, traits and json contract`() {
+    fun `default prompt carries name traits and json contract`() {
         val prompt = CatPersona().systemPrompt()
         assertTrue(prompt.contains("你叫「猫猫」"))
         CatPersona.DEFAULT_TRAITS.forEach { assertTrue(prompt.contains(it.prompt), it.prompt) }

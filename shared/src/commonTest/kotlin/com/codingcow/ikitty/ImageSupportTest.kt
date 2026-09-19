@@ -27,7 +27,7 @@ class ImageSupportTest {
     }
 
     @Test
-    fun `file names are jpeg, hex and unique`() {
+    fun `file names are jpeg hex and unique`() {
         val random = Random(1234)
         val names = (1..50).map { newImageFileName(random) }
         names.forEach { name ->

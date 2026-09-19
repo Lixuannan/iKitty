@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 class AmbientContextTest {
 
     @Test
-    fun `ambient block carries time, gap and place`() {
+    fun `ambient block carries time gap and place`() {
         val now = 1_700_000_000_000L
         val block = AmbientContext.block(
             now = now,
