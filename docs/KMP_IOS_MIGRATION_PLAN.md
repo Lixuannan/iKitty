@@ -56,11 +56,40 @@ okio 的 `Inflater()` 无参构造是**带 zlib 头**的，拿它解 ZIP 的 raw
    两端的实现（DataStore / NSUserDefaults），键名与默认值在
    `SettingsRepository` 里只写一遍。
 
-**尚未验证的一步**：本机**没有安装任何 iOS 模拟器 runtime**
-（`xcrun simctl list runtimes` 为空），所以 iOS 侧**从未真正运行过**。
-目前的证据是：framework 编译并链接成功、`xcodebuild` 构建出 `iKitty.app`、
-二进制正确链接 `@rpath/Shared.framework/Shared`。
-共享逻辑（含真实网络的完整链路）跑在 jvm 与 android 两个 target 上。
+**iOS 侧已经真的跑起来了**：本机已安装 iOS 27.0 模拟器 runtime
+（`xcodebuild -downloadPlatform iOS -architectureVariant arm64`，8.05 GB）。
+`xcrun simctl list runtimes` 现在能看到它，于是：
+
+```bash
+# 共享逻辑在真的 iOS 运行时上跑（174 条：168 common + 6 平台层）
+./gradlew :shared:iosSimulatorArm64Test
+
+# 构建、安装、运行 iOS 应用
+cd iosApp && xcodebuild -project iosApp.xcodeproj -scheme iKitty \
+  -sdk iphonesimulator -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -derivedDataPath /tmp/ikitty-dd CODE_SIGNING_ALLOWED=NO build
+xcrun simctl install "iPhone 17" /tmp/ikitty-dd/Build/Products/Debug-iphonesimulator/iKitty.app
+xcrun simctl launch "iPhone 17" com.codingcow.ikitty
+```
+
+已经**实测**过的 iOS 行为：
+
+| 项 | 证据 |
+| --- | --- |
+| 共享逻辑（JSON / 时间含夏令时 / ZIP / 备份 / 设置 / 编排 / 定位） | 168 条 commonTest 在模拟器上全绿 |
+| iOS 平台层（`NSFileManager` 路径、`NSUserDefaults`、okio Native 图片落盘） | `iosTest` 6 条全绿 |
+| 应用启动与渲染 | 截图：开场白来自共享的 `CatPersona.welcome()` |
+| 落盘路径与格式 | `Library/Application Support/iKitty/chat/chat_log.jsonl`，共享 `AppPaths` + `StoredMessage` JSON |
+| 重启后读回 | 重启后仍显示同一条，且没有重复追加开场白 |
+| Ktor Darwin 传输 + ATS | 运行日志里 `http://ip-api.com/json/` 连接并 `finished successfully` |
+| 三个 sheet（设置 / 记忆 / 备份） | 截图确认渲染正常且不崩 |
+
+**还没实测**：发送一条真实回复（需要 API Key 或本地模型服务）、相册/相机选图、
+CoreGraphics 图片归一化、`fileImporter` / `ShareLink` 的完整交互。
+
+**已知环境限制**：`simctl` 不支持点击，AppleScript 也够不到 Simulator GUI，
+所以界面交互目前只能靠"临时启动参数打开某个页面 + 截图"来取证。
 
 **踩到的坑：手工配置 source set 会让默认层级模板失效。**
 加 `okhttpMain` 中间 source set 之后，`iosMain` 变成"被配置了但不属于任何编译"——
