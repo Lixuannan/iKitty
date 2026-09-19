@@ -22,7 +22,15 @@
 | Phase 6 iosMain | ✅ | Ktor Darwin 传输 · NSFileManager 路径 · NSUserDefaults 设置 · iosSimulatorArm64 目标 |
 | Phase 7a ChatEngine | ✅ | 逐行搬出，Android ViewModel 变薄壳；新增 8 条编排测试（原本零覆盖） |
 | Phase 7b iOS UI | ✅ | 手写 xcodeproj（同步文件组）+ SwiftUI 聊天页/设置页；`xcodebuild` 对模拟器 SDK **构建成功** |
-| Phase 8–12 | ⬜ | 见下文 |
+| Phase 8 图片输入 | ✅ | 相册（PHPicker，零权限）+ 相机 + 缩略图；像素管线在 Swift（CoreGraphics），共享的是尺寸/质量/文件名/数据 URL 契约 |
+| Phase 9 IP 定位 | ✅ | `IpLocationSource` 整体进 commonMain，走 `HttpTransport`；两端同一份多端点兜底逻辑 |
+| Phase 10 猫咪动画 | ⏭️ **不需要** | Android 自己**也没显示**：`CatChatScreen.kt:206` 明确写着"猫咪画布暂时不显示，只保留聊天"，`CatView` 除了自己的预览之外没有任何调用点。所以它不属于"对齐现有功能" |
+| Phase 11 备份恢复 | ⬜ | `.ikitty` 的 ZIP 编解码是最后一块 |
+| Phase 12 分发 | ⬜ | iOS 没有应用内 APK 更新，替代方案是 TestFlight / App Store |
+
+**真实网络往返已实测**：`:shared:jvmTest` 里有 4 条集成测试起一个真的 `HttpServer`，
+用**生产用的 OkHttp 传输**跑完整链路（SSE 流式、落盘、忽略 stream 的退化路径、401 错误、
+请求体契约）。这是项目里第一次真的走真实入口路径，不需要模拟器也不需要 API Key。
 
 **两处刻意的偏离**（都朝"更少的平台代码"）：
 
@@ -36,11 +44,17 @@
    `SettingsRepository` 里只写一遍。
 
 **尚未验证的一步**：本机**没有安装任何 iOS 模拟器 runtime**
-（`xcrun simctl list runtimes` 为空），所以 Phase 7 的验收条件
-"在模拟器里完成一次真实对话（发送 → 流式回复 → 落盘 → 重启后可见）"
-**还没有实测**。目前 iOS 侧的证据是：framework 编译并链接成功、
-`xcodebuild` 构建出 `iKitty.app`、二进制正确链接 `@rpath/Shared.framework/Shared`。
-commonTest 的逻辑验证跑在 jvm 与 android 两个 target 上。
+（`xcrun simctl list runtimes` 为空），所以 iOS 侧**从未真正运行过**。
+目前的证据是：framework 编译并链接成功、`xcodebuild` 构建出 `iKitty.app`、
+二进制正确链接 `@rpath/Shared.framework/Shared`。
+共享逻辑（含真实网络的完整链路）跑在 jvm 与 android 两个 target 上。
+
+**踩到的坑：手工配置 source set 会让默认层级模板失效。**
+加 `okhttpMain` 中间 source set 之后，`iosMain` 变成"被配置了但不属于任何编译"——
+Gradle 依然 `BUILD SUCCESSFUL`、framework 依然链接成功，但里面**一行 iOS 代码都没有**，
+`IosAppEnvironment` 从生成的 header 里消失。这类问题 Gradle 侧发现不了，
+只有在构建 iOS App 时（Swift 找不到符号）才会暴露。
+修法是显式 `applyDefaultHierarchyTemplate()`。
 
 ---
 
