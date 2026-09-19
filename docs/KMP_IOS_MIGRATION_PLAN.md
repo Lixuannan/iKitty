@@ -25,12 +25,24 @@
 | Phase 8 图片输入 | ✅ | 相册（PHPicker，零权限）+ 相机 + 缩略图；像素管线在 Swift（CoreGraphics），共享的是尺寸/质量/文件名/数据 URL 契约 |
 | Phase 9 IP 定位 | ✅ | `IpLocationSource` 整体进 commonMain，走 `HttpTransport`；两端同一份多端点兜底逻辑 |
 | Phase 10 猫咪动画 | ⏭️ **不需要** | Android 自己**也没显示**：`CatChatScreen.kt:206` 明确写着"猫咪画布暂时不显示，只保留聊天"，`CatView` 除了自己的预览之外没有任何调用点。所以它不属于"对齐现有功能" |
-| Phase 11 备份恢复 | ⬜ | `.ikitty` 的 ZIP 编解码是最后一块 |
+| Phase 11 备份恢复 | 🟡 **一半** | ZIP 编解码已完成并双向验证；`BackupArchive` 的编排逻辑还没搬 |
 | Phase 12 分发 | ⬜ | iOS 没有应用内 APK 更新，替代方案是 TestFlight / App Store |
 
-**真实网络往返已实测**：`:shared:jvmTest` 里有 4 条集成测试起一个真的 `HttpServer`，
+**真实网络往返已实测**：`:shared:jvmTest` 里有 5 条集成测试起一个真的 `HttpServer`，
 用**生产用的 OkHttp 传输**跑完整链路（SSE 流式、落盘、忽略 stream 的退化路径、401 错误、
-请求体契约）。这是项目里第一次真的走真实入口路径，不需要模拟器也不需要 API Key。
+请求体契约、带图片的 `image_url` 数据 URL）。这是项目里第一次真的走真实入口路径，
+不需要模拟器也不需要 API Key。
+
+**Phase 11 的进展与坑**：`ZipCodec` 已完成（commonMain，15 条测试）。
+写侧只用 STORED（无压缩依赖、输出可复现）；读侧必须支持 DEFLATE，因为
+Android 的 `ZipOutputStream` 默认就是 DEFLATE，否则读不了**已经存在的**备份。
+解压复用 okio 的 `InflaterSource`，但这里踩了一个只有互操作测试才能发现的坑：
+okio 的 `Inflater()` 无参构造是**带 zlib 头**的，拿它解 ZIP 的 raw deflate 会报
+`incorrect header check`，必须 `Inflater(true)`。自己写、自己读是永远发现不了的
+（我们写 STORED，根本不走解压）。
+
+**iOS UI 还缺**：采样参数（temperature / top_p / max_tokens / 思考深度）、
+性格与说话风格多选、测试连接、拉取模型列表。iOS 记忆页、角色设定与定位开关已完成。
 
 **两处刻意的偏离**（都朝"更少的平台代码"）：
 
