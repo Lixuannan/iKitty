@@ -25,7 +25,7 @@
 | Phase 8 图片输入 | ✅ | 相册（PHPicker，零权限）+ 相机 + 缩略图；像素管线在 Swift（CoreGraphics），共享的是尺寸/质量/文件名/数据 URL 契约 |
 | Phase 9 IP 定位 | ✅ | `IpLocationSource` 整体进 commonMain，走 `HttpTransport`；两端同一份多端点兜底逻辑 |
 | Phase 10 猫咪动画 | ⏭️ **不需要** | Android 自己**也没显示**：`CatChatScreen.kt:206` 明确写着"猫咪画布暂时不显示，只保留聊天"，`CatView` 除了自己的预览之外没有任何调用点。所以它不属于"对齐现有功能" |
-| Phase 11 备份恢复 | 🟡 **一半** | ZIP 编解码已完成并双向验证；`BackupArchive` 的编排逻辑还没搬 |
+| Phase 11 备份恢复 | ✅ | `ZipCodec`（双向互操作已验证）+ `BackupArchive` 整体进 commonMain + iOS 导出/导入界面 |
 | Phase 12 分发 | ⬜ | iOS 没有应用内 APK 更新，替代方案是 TestFlight / App Store |
 
 **真实网络往返已实测**：`:shared:jvmTest` 里有 5 条集成测试起一个真的 `HttpServer`，
