@@ -37,6 +37,9 @@ struct SettingsView: View {
     @State private var noticeIsError = false
     @State private var fetchedModels: [String] = []
 
+    /// 初始值是否已经从 `model.state` 填过。见 `loadCurrentValues`。
+    @State private var hasLoaded = false
+
     private let allTraits: [CatTrait] = [
         .gentle, .playful, .aloof, .clingy, .witty, .calm, .curious, .lazy
     ]
@@ -73,6 +76,7 @@ struct SettingsView: View {
                 }
             }
             .onAppear(perform: loadCurrentValues)
+            .onChange(of: model.state != nil) { _, _ in loadCurrentValues() }
         }
     }
 
@@ -230,7 +234,12 @@ struct SettingsView: View {
     // MARK: - 行为
 
     private func loadCurrentValues() {
-        guard let state = model.state else { return }
+        // 只在第一次拿到状态时填一遍：`state` 会随着聊天不断变化，每次都重填会把用户的
+        // 编辑冲掉。而它也可能在 sheet 刚出现时还没准备好（观察者的第一份快照还没到），
+        // 那时不能就这么算了——否则界面是空的，一保存就把已有配置清成了空值。
+        guard !hasLoaded, let state = model.state else { return }
+        hasLoaded = true
+
         baseUrl = state.config.baseUrl
         apiKey = state.config.apiKey
         modelName = state.config.model
