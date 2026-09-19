@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.codingcow.ikitty.SettingsRepositoryTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:23:50.185Z" hostname="MeizhendeMacBook-Air.local" time="0.007">
+  <properties/>
+  <testcase name="a missing provider id is inferred from the base url" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.003"/>
+  <testcase name="an unknown base url falls back to the custom provider" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.001"/>
+  <testcase name="settings are written under the canonical key names" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.001"/>
+  <testcase name="an empty store yields the built-in defaults" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.0"/>
+  <testcase name="an unrecognised enum name falls back instead of throwing" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.001"/>
+  <testcase name="location can be turned off and stays off" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.0"/>
+  <testcase name="persona survives a save and reload" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.001"/>
+  <testcase name="config survives a save and reload" classname="com.codingcow.ikitty.SettingsRepositoryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

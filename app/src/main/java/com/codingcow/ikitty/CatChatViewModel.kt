@@ -41,7 +41,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val api = androidApiClient()
-    private val store = SettingsStore(app)
+    private val store = androidSettingsRepository(app)
     private val log = androidChatLogStore(app)
     private val memoryStore = androidCatMemoryStore(app)
     private val images = ImageStore(app)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.PromptTimeTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:20:22.220Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
+<testsuite name="com.codingcow.ikitty.PromptTimeTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:23:50.183Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
   <properties/>
-  <testcase name="moment matches the original SimpleDateFormat output" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
+  <testcase name="moment matches the original SimpleDateFormat output" classname="com.codingcow.ikitty.PromptTimeTest" time="0.001"/>
   <testcase name="elapsed is rendered coarsely" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
   <testcase name="moment respects daylight saving transitions" classname="com.codingcow.ikitty.PromptTimeTest" time="0.001"/>
   <testcase name="moment pads every numeric field" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>

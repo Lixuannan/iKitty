@@ -17,8 +17,15 @@ kotlin {
     // 纯 JVM target 只为了让 commonTest 能跑得最快（./gradlew :shared:jvmTest）。
     jvm()
 
-    // iOS 真机目标。模拟器目标（iosSimulatorArm64）在 Phase 6 补齐。
+    // iOS 真机与模拟器。两个目标共用 iosMain，平台层只写一份。
     iosArm64 {
+        binaries {
+            framework {
+                baseName = "Shared"
+            }
+        }
+    }
+    iosSimulatorArm64 {
         binaries {
             framework {
                 baseName = "Shared"
@@ -46,6 +53,13 @@ kotlin {
             // Android 侧的 HttpTransport 实现。okhttp 只出现在 androidMain，
             // 所以 iOS 侧不会被迫拖进 OkHttp。
             implementation("com.squareup.okhttp3:okhttp:4.12.0")
+            implementation("androidx.datastore:datastore-preferences:1.1.1")
+        }
+        iosMain.dependencies {
+            // iOS 侧的 HttpTransport。Ktor Darwin 直接封装 NSURLSession，
+            // 自己做 cinterop 实现 NSURLSessionDataDelegate 的成本高得多。
+            implementation("io.ktor:ktor-client-core:3.6.0")
+            implementation("io.ktor:ktor-client-darwin:3.6.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
