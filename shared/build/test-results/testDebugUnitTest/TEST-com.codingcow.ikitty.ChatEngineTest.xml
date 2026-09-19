@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.codingcow.ikitty.ChatEngineTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:27:26.362Z" hostname="MeizhendeMacBook-Air.local" time="0.022">
+  <properties/>
+  <testcase name="a blank send is ignored" classname="com.codingcow.ikitty.ChatEngineTest" time="0.008"/>
+  <testcase name="a successful memory extraction merges facts and advances the cursor" classname="com.codingcow.ikitty.ChatEngineTest" time="0.003"/>
+  <testcase name="an empty log gets a welcome message on start" classname="com.codingcow.ikitty.ChatEngineTest" time="0.001"/>
+  <testcase name="clearing the log restarts the sequence and re-adds the welcome" classname="com.codingcow.ikitty.ChatEngineTest" time="0.004"/>
+  <testcase name="a failing stream keeps the partial reply and adds an error line" classname="com.codingcow.ikitty.ChatEngineTest" time="0.002"/>
+  <testcase name="sending appends the user message and the streamed reply" classname="com.codingcow.ikitty.ChatEngineTest" time="0.002"/>
+  <testcase name="a failed memory extraction records the error without advancing the cursor" classname="com.codingcow.ikitty.ChatEngineTest" time="0.001"/>
+  <testcase name="input changes drive the listening mood" classname="com.codingcow.ikitty.ChatEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

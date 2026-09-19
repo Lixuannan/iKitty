@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ChatEngineTest[jvm]" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:27:21.590Z" hostname="MeizhendeMacBook-Air.local" time="0.112">
+  <properties/>
+  <testcase name="a blank send is ignored[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.078"/>
+  <testcase name="a successful memory extraction merges facts and advances the cursor[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.016"/>
+  <testcase name="an empty log gets a welcome message on start[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.001"/>
+  <testcase name="clearing the log restarts the sequence and re-adds the welcome[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.007"/>
+  <testcase name="a failing stream keeps the partial reply and adds an error line[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.003"/>
+  <testcase name="sending appends the user message and the streamed reply[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.002"/>
+  <testcase name="a failed memory extraction records the error without advancing the cursor[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.002"/>
+  <testcase name="input changes drive the listening mood[jvm]" classname="com.codingcow.ikitty.ChatEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

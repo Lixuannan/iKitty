@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.StoredMessageTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:23:50.193Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
+<testsuite name="com.codingcow.ikitty.StoredMessageTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:27:26.418Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
   <testcase name="a message with neither text nor images is rejected" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
   <testcase name="images survive a json round trip" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>

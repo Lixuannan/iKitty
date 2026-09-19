@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="PromptTimeTest[jvm]" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:23:49.807Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
+<testsuite name="PromptTimeTest[jvm]" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:27:21.750Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
   <testcase name="moment matches the original SimpleDateFormat output[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.001"/>
   <testcase name="elapsed is rendered coarsely[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
-  <testcase name="moment respects daylight saving transitions[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.001"/>
+  <testcase name="moment respects daylight saving transitions[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
   <testcase name="moment pads every numeric field[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
   <testcase name="moment follows the requested time zone[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>
   <testcase name="elapsed boundaries sit where the comment says[jvm]" classname="com.codingcow.ikitty.PromptTimeTest" time="0.0"/>

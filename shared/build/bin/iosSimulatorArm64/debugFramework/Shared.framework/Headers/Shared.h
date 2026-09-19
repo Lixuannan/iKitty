@@ -6,9 +6,9 @@
 #import <Foundation/NSString.h>
 #import <Foundation/NSValue.h>
 
-@class NSData, NSUserDefaults, SharedAmbientContext, SharedApiClient, SharedApiConfig, SharedAppPaths, SharedAppPathsCompanion, SharedBuiltRequest, SharedCatAnimation, SharedCatAnimationCompanion, SharedCatFlavor, SharedCatMemory, SharedCatMemoryRender, SharedCatMemoryRules, SharedCatMood, SharedCatPersona, SharedCatPersonaCompanion, SharedCatReply, SharedCatSpeechStyle, SharedCatTrait, SharedChatCompletion, SharedChatMessage, SharedContextAssembler, SharedContextPlan, SharedExifTransform, SharedHttpResponse, SharedKotlinAbstractCoroutineContextElement, SharedKotlinAbstractCoroutineContextKey<B, E>, SharedKotlinArray<T>, SharedKotlinByteArray, SharedKotlinByteIterator, SharedKotlinCancellationException, SharedKotlinEnum<E>, SharedKotlinEnumCompanion, SharedKotlinException, SharedKotlinIllegalStateException, SharedKotlinInstant, SharedKotlinInstantCompanion, SharedKotlinKTypeProjection, SharedKotlinKTypeProjectionCompanion, SharedKotlinKVariance, SharedKotlinNothing, SharedKotlinRuntimeException, SharedKotlinThrowable, SharedKotlinUnit, SharedKotlinx_coroutines_coreCoroutineDispatcher, SharedKotlinx_coroutines_coreCoroutineDispatcherKey, SharedKotlinx_datetimeDayOfWeek, SharedKotlinx_datetimeDayOfWeekNames, SharedKotlinx_datetimeDayOfWeekNamesCompanion, SharedKotlinx_datetimeFixedOffsetTimeZone, SharedKotlinx_datetimeFixedOffsetTimeZoneCompanion, SharedKotlinx_datetimeLocalDate, SharedKotlinx_datetimeLocalDateCompanion, SharedKotlinx_datetimeLocalDateProgression, SharedKotlinx_datetimeLocalDateProgressionCompanion, SharedKotlinx_datetimeLocalDateRange, SharedKotlinx_datetimeLocalDateRangeCompanion, SharedKotlinx_datetimeLocalDateTime, SharedKotlinx_datetimeLocalDateTimeCompanion, SharedKotlinx_datetimeLocalTime, SharedKotlinx_datetimeLocalTimeCompanion, SharedKotlinx_datetimeMonth, SharedKotlinx_datetimeMonthNames, SharedKotlinx_datetimeMonthNamesCompanion, SharedKotlinx_datetimeOverloadMarker, SharedKotlinx_datetimePadding, SharedKotlinx_datetimeTimeZone, SharedKotlinx_datetimeTimeZoneCompanion, SharedKotlinx_datetimeUtcOffset, SharedKotlinx_datetimeUtcOffsetCompanion, SharedKotlinx_io_coreBuffer, SharedKotlinx_serialization_coreSerialKind, SharedKotlinx_serialization_coreSerializersModule, SharedKotlinx_serialization_jsonJsonElement, SharedKotlinx_serialization_jsonJsonElementCompanion, SharedKotlinx_serialization_jsonJsonPrimitive, SharedKotlinx_serialization_jsonJsonPrimitiveCompanion, SharedKtorTransportCompanion, SharedKtor_client_coreHttpClient, SharedKtor_client_coreHttpClientCall, SharedKtor_client_coreHttpClientCallCompanion, SharedKtor_client_coreHttpClientConfig<T>, SharedKtor_client_coreHttpClientEngineConfig, SharedKtor_client_coreHttpReceivePipeline, SharedKtor_client_coreHttpReceivePipelinePhases, SharedKtor_client_coreHttpRequestBuilder, SharedKtor_client_coreHttpRequestBuilderCompanion, SharedKtor_client_coreHttpRequestData, SharedKtor_client_coreHttpRequestPipeline, SharedKtor_client_coreHttpRequestPipelinePhases, SharedKtor_client_coreHttpResponse, SharedKtor_client_coreHttpResponseContainer, SharedKtor_client_coreHttpResponseData, SharedKtor_client_coreHttpResponsePipeline, SharedKtor_client_coreHttpResponsePipelinePhases, SharedKtor_client_coreHttpSendPipeline, SharedKtor_client_coreHttpSendPipelinePhases, SharedKtor_client_coreProxyConfig, SharedKtor_eventsEventDefinition<T>, SharedKtor_eventsEvents, SharedKtor_httpContentType, SharedKtor_httpContentTypeCompanion, SharedKtor_httpHeaderValueParam, SharedKtor_httpHeaderValueWithParameters, SharedKtor_httpHeaderValueWithParametersCompanion, SharedKtor_httpHeadersBuilder, SharedKtor_httpHttpMethod, SharedKtor_httpHttpMethodCompanion, SharedKtor_httpHttpProtocolVersion, SharedKtor_httpHttpProtocolVersionCompanion, SharedKtor_httpHttpStatusCode, SharedKtor_httpHttpStatusCodeCompanion, SharedKtor_httpOutgoingContent, SharedKtor_httpURLBuilder, SharedKtor_httpURLBuilderCompanion, SharedKtor_httpURLProtocol, SharedKtor_httpURLProtocolCompanion, SharedKtor_httpUrl, SharedKtor_httpUrlCompanion, SharedKtor_utilsAttributeKey<T>, SharedKtor_utilsGMTDate, SharedKtor_utilsGMTDateCompanion, SharedKtor_utilsMonth, SharedKtor_utilsMonthCompanion, SharedKtor_utilsPipeline<TSubject, TContext>, SharedKtor_utilsPipelinePhase, SharedKtor_utilsStringValuesBuilderImpl, SharedKtor_utilsTypeInfo, SharedKtor_utilsWeekDay, SharedKtor_utilsWeekDayCompanion, SharedMemoryCategory, SharedMemoryCategoryCompanion, SharedMemoryFact, SharedMemoryStatus, SharedMemoryUpdate, SharedModelCatalog, SharedModelListOutcomeAvailable, SharedModelListOutcomeNotSupported, SharedModelSpec, SharedNumberParam, SharedOkioBuffer, SharedOkioBufferUnsafeCursor, SharedOkioByteString, SharedOkioByteStringCompanion, SharedOkioFileHandle, SharedOkioFileMetadata, SharedOkioFileSystem, SharedOkioFileSystemCompanion, SharedOkioLock, SharedOkioLockCompanion, SharedOkioPath, SharedOkioPathCompanion, SharedOkioTimeout, SharedOkioTimeoutCompanion, SharedPlace, SharedProviderSpec, SharedReasoningEffort, SharedReasoningEffortCompanion, SharedReasoningSpecAlwaysOn, SharedReasoningSpecEffort, SharedReasoningSpecToggle, SharedReasoningSpecUnsupported, SharedResolvedParams, SharedSettingValueFlag, SharedSettingValueIntValue, SharedSettingValueNum, SharedSettingValueStr, SharedSettingsKeys, SharedSettingsRepository, SharedStoredMessage, SharedStoredMessageCompanion, SharedTestOutcome, SharedThinkingMode, SharedThinkingModeCompanion, SharedTokenEstimator;
+@class NSData, NSUserDefaults, SharedAmbientContext, SharedApiClient, SharedApiConfig, SharedAppPaths, SharedAppPathsCompanion, SharedBuiltRequest, SharedCatAnimation, SharedCatAnimationCompanion, SharedCatFlavor, SharedCatMemory, SharedCatMemoryRender, SharedCatMemoryRules, SharedCatMemoryStore, SharedCatMood, SharedCatPersona, SharedCatPersonaCompanion, SharedCatReply, SharedCatSpeechStyle, SharedCatTrait, SharedChatCompletion, SharedChatEngineCompanion, SharedChatLogStore, SharedChatMessage, SharedContextAssembler, SharedContextPlan, SharedExifTransform, SharedHttpResponse, SharedKotlinAbstractCoroutineContextElement, SharedKotlinAbstractCoroutineContextKey<B, E>, SharedKotlinArray<T>, SharedKotlinByteArray, SharedKotlinByteIterator, SharedKotlinCancellationException, SharedKotlinEnum<E>, SharedKotlinEnumCompanion, SharedKotlinException, SharedKotlinIllegalStateException, SharedKotlinInstant, SharedKotlinInstantCompanion, SharedKotlinKTypeProjection, SharedKotlinKTypeProjectionCompanion, SharedKotlinKVariance, SharedKotlinNothing, SharedKotlinRuntimeException, SharedKotlinThrowable, SharedKotlinUnit, SharedKotlinx_coroutines_coreCoroutineDispatcher, SharedKotlinx_coroutines_coreCoroutineDispatcherKey, SharedKotlinx_datetimeDayOfWeek, SharedKotlinx_datetimeDayOfWeekNames, SharedKotlinx_datetimeDayOfWeekNamesCompanion, SharedKotlinx_datetimeFixedOffsetTimeZone, SharedKotlinx_datetimeFixedOffsetTimeZoneCompanion, SharedKotlinx_datetimeLocalDate, SharedKotlinx_datetimeLocalDateCompanion, SharedKotlinx_datetimeLocalDateProgression, SharedKotlinx_datetimeLocalDateProgressionCompanion, SharedKotlinx_datetimeLocalDateRange, SharedKotlinx_datetimeLocalDateRangeCompanion, SharedKotlinx_datetimeLocalDateTime, SharedKotlinx_datetimeLocalDateTimeCompanion, SharedKotlinx_datetimeLocalTime, SharedKotlinx_datetimeLocalTimeCompanion, SharedKotlinx_datetimeMonth, SharedKotlinx_datetimeMonthNames, SharedKotlinx_datetimeMonthNamesCompanion, SharedKotlinx_datetimeOverloadMarker, SharedKotlinx_datetimePadding, SharedKotlinx_datetimeTimeZone, SharedKotlinx_datetimeTimeZoneCompanion, SharedKotlinx_datetimeUtcOffset, SharedKotlinx_datetimeUtcOffsetCompanion, SharedKotlinx_io_coreBuffer, SharedKotlinx_serialization_coreSerialKind, SharedKotlinx_serialization_coreSerializersModule, SharedKotlinx_serialization_jsonJsonElement, SharedKotlinx_serialization_jsonJsonElementCompanion, SharedKotlinx_serialization_jsonJsonPrimitive, SharedKotlinx_serialization_jsonJsonPrimitiveCompanion, SharedKtorTransportCompanion, SharedKtor_client_coreHttpClient, SharedKtor_client_coreHttpClientCall, SharedKtor_client_coreHttpClientCallCompanion, SharedKtor_client_coreHttpClientConfig<T>, SharedKtor_client_coreHttpClientEngineConfig, SharedKtor_client_coreHttpReceivePipeline, SharedKtor_client_coreHttpReceivePipelinePhases, SharedKtor_client_coreHttpRequestBuilder, SharedKtor_client_coreHttpRequestBuilderCompanion, SharedKtor_client_coreHttpRequestData, SharedKtor_client_coreHttpRequestPipeline, SharedKtor_client_coreHttpRequestPipelinePhases, SharedKtor_client_coreHttpResponse, SharedKtor_client_coreHttpResponseContainer, SharedKtor_client_coreHttpResponseData, SharedKtor_client_coreHttpResponsePipeline, SharedKtor_client_coreHttpResponsePipelinePhases, SharedKtor_client_coreHttpSendPipeline, SharedKtor_client_coreHttpSendPipelinePhases, SharedKtor_client_coreProxyConfig, SharedKtor_eventsEventDefinition<T>, SharedKtor_eventsEvents, SharedKtor_httpContentType, SharedKtor_httpContentTypeCompanion, SharedKtor_httpHeaderValueParam, SharedKtor_httpHeaderValueWithParameters, SharedKtor_httpHeaderValueWithParametersCompanion, SharedKtor_httpHeadersBuilder, SharedKtor_httpHttpMethod, SharedKtor_httpHttpMethodCompanion, SharedKtor_httpHttpProtocolVersion, SharedKtor_httpHttpProtocolVersionCompanion, SharedKtor_httpHttpStatusCode, SharedKtor_httpHttpStatusCodeCompanion, SharedKtor_httpOutgoingContent, SharedKtor_httpURLBuilder, SharedKtor_httpURLBuilderCompanion, SharedKtor_httpURLProtocol, SharedKtor_httpURLProtocolCompanion, SharedKtor_httpUrl, SharedKtor_httpUrlCompanion, SharedKtor_utilsAttributeKey<T>, SharedKtor_utilsGMTDate, SharedKtor_utilsGMTDateCompanion, SharedKtor_utilsMonth, SharedKtor_utilsMonthCompanion, SharedKtor_utilsPipeline<TSubject, TContext>, SharedKtor_utilsPipelinePhase, SharedKtor_utilsStringValuesBuilderImpl, SharedKtor_utilsTypeInfo, SharedKtor_utilsWeekDay, SharedKtor_utilsWeekDayCompanion, SharedMemoryCategory, SharedMemoryCategoryCompanion, SharedMemoryExtractor, SharedMemoryFact, SharedMemoryStatus, SharedMemoryUpdate, SharedModelCatalog, SharedModelListOutcomeAvailable, SharedModelListOutcomeNotSupported, SharedModelSpec, SharedNumberParam, SharedOkioBuffer, SharedOkioBufferUnsafeCursor, SharedOkioByteString, SharedOkioByteStringCompanion, SharedOkioFileHandle, SharedOkioFileMetadata, SharedOkioFileSystem, SharedOkioFileSystemCompanion, SharedOkioLock, SharedOkioLockCompanion, SharedOkioPath, SharedOkioPathCompanion, SharedOkioTimeout, SharedOkioTimeoutCompanion, SharedPlace, SharedProviderSpec, SharedReasoningEffort, SharedReasoningEffortCompanion, SharedReasoningSpecAlwaysOn, SharedReasoningSpecEffort, SharedReasoningSpecToggle, SharedReasoningSpecUnsupported, SharedResolvedParams, SharedSettingValueFlag, SharedSettingValueIntValue, SharedSettingValueNum, SharedSettingValueStr, SharedSettingsKeys, SharedSettingsRepository, SharedStoredMessage, SharedStoredMessageCompanion, SharedTestOutcome, SharedThinkingMode, SharedThinkingModeCompanion, SharedTokenEstimator;
 
-@protocol SharedHttpTransport, SharedKeyValueStore, SharedKotlinAnnotation, SharedKotlinAppendable, SharedKotlinAutoCloseable, SharedKotlinClosedRange, SharedKotlinCollection, SharedKotlinComparable, SharedKotlinContinuation, SharedKotlinContinuationInterceptor, SharedKotlinCoroutineContext, SharedKotlinCoroutineContextElement, SharedKotlinCoroutineContextKey, SharedKotlinFunction, SharedKotlinIterable, SharedKotlinIterator, SharedKotlinKAnnotatedElement, SharedKotlinKClass, SharedKotlinKClassifier, SharedKotlinKDeclarationContainer, SharedKotlinKType, SharedKotlinMapEntry, SharedKotlinOpenEndRange, SharedKotlinSequence, SharedKotlinSuspendFunction2, SharedKotlinx_coroutines_coreChildHandle, SharedKotlinx_coroutines_coreChildJob, SharedKotlinx_coroutines_coreCoroutineScope, SharedKotlinx_coroutines_coreDisposableHandle, SharedKotlinx_coroutines_coreFlow, SharedKotlinx_coroutines_coreFlowCollector, SharedKotlinx_coroutines_coreJob, SharedKotlinx_coroutines_coreParentJob, SharedKotlinx_coroutines_coreRunnable, SharedKotlinx_coroutines_coreSelectClause, SharedKotlinx_coroutines_coreSelectClause0, SharedKotlinx_coroutines_coreSelectInstance, SharedKotlinx_datetimeDateTimeFormat, SharedKotlinx_datetimeDateTimeFormatBuilder, SharedKotlinx_datetimeDateTimeFormatBuilderWithDate, SharedKotlinx_datetimeDateTimeFormatBuilderWithDateTime, SharedKotlinx_datetimeDateTimeFormatBuilderWithTime, SharedKotlinx_datetimeDateTimeFormatBuilderWithUtcOffset, SharedKotlinx_datetimeDateTimeFormatBuilderWithYearMonth, SharedKotlinx_io_coreRawSink, SharedKotlinx_io_coreRawSource, SharedKotlinx_io_coreSink, SharedKotlinx_io_coreSource, SharedKotlinx_serialization_coreCompositeDecoder, SharedKotlinx_serialization_coreCompositeEncoder, SharedKotlinx_serialization_coreDecoder, SharedKotlinx_serialization_coreDeserializationStrategy, SharedKotlinx_serialization_coreEncoder, SharedKotlinx_serialization_coreKSerializer, SharedKotlinx_serialization_coreSerialDescriptor, SharedKotlinx_serialization_coreSerializationStrategy, SharedKotlinx_serialization_coreSerializersModuleCollector, SharedKtor_client_coreHttpClientEngine, SharedKtor_client_coreHttpClientEngineCapability, SharedKtor_client_coreHttpClientPlugin, SharedKtor_client_coreHttpRequest, SharedKtor_httpHeaders, SharedKtor_httpHttpMessage, SharedKtor_httpHttpMessageBuilder, SharedKtor_httpParameters, SharedKtor_httpParametersBuilder, SharedKtor_ioByteReadChannel, SharedKtor_ioCloseable, SharedKtor_ioJvmSerializable, SharedKtor_utilsAttributes, SharedKtor_utilsStringValues, SharedKtor_utilsStringValuesBuilder, SharedModelListOutcome, SharedOkioBufferedSink, SharedOkioBufferedSource, SharedOkioCloseable, SharedOkioSink, SharedOkioSource, SharedReasoningSpec, SharedSettingValue;
+@protocol SharedHttpTransport, SharedKeyValueStore, SharedKotlinAnnotation, SharedKotlinAppendable, SharedKotlinAutoCloseable, SharedKotlinClosedRange, SharedKotlinCollection, SharedKotlinComparable, SharedKotlinContinuation, SharedKotlinContinuationInterceptor, SharedKotlinCoroutineContext, SharedKotlinCoroutineContextElement, SharedKotlinCoroutineContextKey, SharedKotlinFunction, SharedKotlinIterable, SharedKotlinIterator, SharedKotlinKAnnotatedElement, SharedKotlinKClass, SharedKotlinKClassifier, SharedKotlinKDeclarationContainer, SharedKotlinKType, SharedKotlinMapEntry, SharedKotlinOpenEndRange, SharedKotlinSequence, SharedKotlinSuspendFunction1, SharedKotlinSuspendFunction2, SharedKotlinx_coroutines_coreChildHandle, SharedKotlinx_coroutines_coreChildJob, SharedKotlinx_coroutines_coreCoroutineScope, SharedKotlinx_coroutines_coreDisposableHandle, SharedKotlinx_coroutines_coreFlow, SharedKotlinx_coroutines_coreFlowCollector, SharedKotlinx_coroutines_coreJob, SharedKotlinx_coroutines_coreParentJob, SharedKotlinx_coroutines_coreRunnable, SharedKotlinx_coroutines_coreSelectClause, SharedKotlinx_coroutines_coreSelectClause0, SharedKotlinx_coroutines_coreSelectInstance, SharedKotlinx_coroutines_coreSharedFlow, SharedKotlinx_coroutines_coreStateFlow, SharedKotlinx_datetimeDateTimeFormat, SharedKotlinx_datetimeDateTimeFormatBuilder, SharedKotlinx_datetimeDateTimeFormatBuilderWithDate, SharedKotlinx_datetimeDateTimeFormatBuilderWithDateTime, SharedKotlinx_datetimeDateTimeFormatBuilderWithTime, SharedKotlinx_datetimeDateTimeFormatBuilderWithUtcOffset, SharedKotlinx_datetimeDateTimeFormatBuilderWithYearMonth, SharedKotlinx_io_coreRawSink, SharedKotlinx_io_coreRawSource, SharedKotlinx_io_coreSink, SharedKotlinx_io_coreSource, SharedKotlinx_serialization_coreCompositeDecoder, SharedKotlinx_serialization_coreCompositeEncoder, SharedKotlinx_serialization_coreDecoder, SharedKotlinx_serialization_coreDeserializationStrategy, SharedKotlinx_serialization_coreEncoder, SharedKotlinx_serialization_coreKSerializer, SharedKotlinx_serialization_coreSerialDescriptor, SharedKotlinx_serialization_coreSerializationStrategy, SharedKotlinx_serialization_coreSerializersModuleCollector, SharedKtor_client_coreHttpClientEngine, SharedKtor_client_coreHttpClientEngineCapability, SharedKtor_client_coreHttpClientPlugin, SharedKtor_client_coreHttpRequest, SharedKtor_httpHeaders, SharedKtor_httpHttpMessage, SharedKtor_httpHttpMessageBuilder, SharedKtor_httpParameters, SharedKtor_httpParametersBuilder, SharedKtor_ioByteReadChannel, SharedKtor_ioCloseable, SharedKtor_ioJvmSerializable, SharedKtor_utilsAttributes, SharedKtor_utilsStringValues, SharedKtor_utilsStringValuesBuilder, SharedLocationSource, SharedModelListOutcome, SharedOkioBufferedSink, SharedOkioBufferedSource, SharedOkioCloseable, SharedOkioSink, SharedOkioSource, SharedReasoningSpec, SharedSettingValue;
 
 NS_ASSUME_NONNULL_BEGIN
 #pragma clang diagnostic push
@@ -743,6 +743,120 @@ __attribute__((swift_name("ChatCompletion")))
 @property (readonly) NSString *reasoning __attribute__((swift_name("reasoning")));
 @property (readonly) NSString *text __attribute__((swift_name("text")));
 @property (readonly) SharedInt * _Nullable totalTokens __attribute__((swift_name("totalTokens")));
+@end
+
+
+/**
+ * 聊天的编排逻辑：状态、一次发送的完整生命周期、记忆整理、情绪与动作。
+ *
+ * 这是从 Android 的 `CatChatViewModel` **逐行搬过来**的（移动，不是重写）：
+ * 行为、错误措辞、状态迁移都保持一致。搬出来之后 iOS 与 Android 共用同一份编排，
+ * 不需要各写一套"什么时候发请求、失败怎么补提示、游标怎么前进"。
+ *
+ * 平台差异全部由构造参数注入，类本身不引用任何平台 API：
+ * - [scope]：由调用方提供（Android 是 `viewModelScope`，iOS 是应用级作用域）；
+ * - [imageDataUrls]：把本机图片文件名编成数据 URL（Android 用 `ImageStore`）；
+ * - [locationSource]：可选的 IP 定位；为 null 时"此刻"背景里就没有地点这一行；
+ * - [invalidateImageCache]：备份导入后要丢弃图片编码缓存。
+ */
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("ChatEngine")))
+@interface SharedChatEngine : SharedBase
+- (instancetype)initWithApi:(SharedApiClient *)api settings:(SharedSettingsRepository *)settings log:(SharedChatLogStore *)log memoryStore:(SharedCatMemoryStore *)memoryStore extractor:(SharedMemoryExtractor *)extractor imageDataUrls:(id<SharedKotlinSuspendFunction1>)imageDataUrls locationSource:(id<SharedLocationSource> _Nullable)locationSource invalidateImageCache:(void (^)(void))invalidateImageCache scope:(id<SharedKotlinx_coroutines_coreCoroutineScope>)scope __attribute__((swift_name("init(api:settings:log:memoryStore:extractor:imageDataUrls:locationSource:invalidateImageCache:scope:)"))) __attribute__((objc_designated_initializer));
+@property (class, readonly, getter=companion) SharedChatEngineCompanion *companion __attribute__((swift_name("companion")));
+
+/** 清空记忆但保留提取游标：用户要求忘掉的事不该被下一次整理重新学回来。 */
+- (void)clearMemory __attribute__((swift_name("clearMemory()")));
+
+/** 清空聊天记录但保留记忆。 */
+- (void)clearMessages __attribute__((swift_name("clearMessages()")));
+- (void)deleteFactKey:(NSString *)key __attribute__((swift_name("deleteFact(key:)")));
+
+/** 用户在记忆页手动点「现在整理」。 */
+- (void)extractMemoryNow __attribute__((swift_name("extractMemoryNow()")));
+
+/** 拉取服务商支持的模型列表。
+ *
+ * @note This method converts instances of CancellationException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (void)listModelsCandidate:(SharedApiConfig *)candidate completionHandler:(void (^)(id _Nullable_result, NSError * _Nullable))completionHandler __attribute__((swift_name("listModels(candidate:completionHandler:)")));
+
+/**
+ * 输入框内容变化：有内容就是 LISTENING，清空就回到 IDLE。
+ * 正在等回复或刚回复完时不会覆盖当前情绪。
+ */
+- (void)onInputChangedText:(NSString *)text __attribute__((swift_name("onInputChanged(text:)")));
+
+/**
+ * 备份导入之后重新读盘。
+ *
+ * 这里再抄一遍是为了让界面立刻反映备份里的内容。
+ *
+ * @note This method converts instances of CancellationException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (void)reloadFromDiskWithCompletionHandler:(void (^)(NSError * _Nullable))completionHandler __attribute__((swift_name("reloadFromDisk(completionHandler:)")));
+- (void)saveSettingsNewConfig:(SharedApiConfig *)newConfig newPersona:(SharedCatPersona *)newPersona locationEnabled:(BOOL)locationEnabled __attribute__((swift_name("saveSettings(newConfig:newPersona:locationEnabled:)")));
+
+/**
+ * 发送一条消息。
+ *
+ * [imageNames] 是已复制进本机存储的图片文件名；文字和图片可以同时存在，也可以只有其中一种。
+ */
+- (void)sendText:(NSString *)text imageNames:(NSArray<NSString *> *)imageNames __attribute__((swift_name("send(text:imageNames:)")));
+
+/**
+ * 开始工作：订阅设置、载入记忆与历史。
+ *
+ * 由调用方显式调用而不是放在 init 里：这样构造与"开始跑"分开，
+ * 调用方可以先把自己接好再启动，也不会在构造期间就漏掉一次发射。
+ */
+- (void)start __attribute__((swift_name("start()")));
+
+/** 测试连接，返回本次请求的完整结果或错误信息。
+ *
+ * @note This method converts instances of CancellationException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (void)testConnectionCandidate:(SharedApiConfig *)candidate completionHandler:(void (^)(id _Nullable_result, NSError * _Nullable))completionHandler __attribute__((swift_name("testConnection(candidate:completionHandler:)")));
+- (void)toggleFactPinKey:(NSString *)key __attribute__((swift_name("toggleFactPin(key:)")));
+- (void)upsertFactOriginalKey:(NSString * _Nullable)originalKey category:(SharedMemoryCategory *)category key:(NSString *)key value:(NSString *)value __attribute__((swift_name("upsertFact(originalKey:category:key:value:)")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> animation __attribute__((swift_name("animation")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> busy __attribute__((swift_name("busy")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> config __attribute__((swift_name("config")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> contextPlan __attribute__((swift_name("contextPlan")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> locationEnabled __attribute__((swift_name("locationEnabled")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> memory __attribute__((swift_name("memory")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> memoryStatus __attribute__((swift_name("memoryStatus")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> messages __attribute__((swift_name("messages")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> mood __attribute__((swift_name("mood")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> persona __attribute__((swift_name("persona")));
+@property (readonly) id<SharedKotlinx_coroutines_coreStateFlow> streamingReply __attribute__((swift_name("streamingReply")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("ChatEngine.Companion")))
+@interface SharedChatEngineCompanion : SharedBase
++ (instancetype)alloc __attribute__((unavailable));
++ (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
++ (instancetype)companion __attribute__((swift_name("init()")));
+@property (class, readonly, getter=shared) SharedChatEngineCompanion *shared __attribute__((swift_name("shared")));
+
+/** 动作结束后多留一点时间，避免界面在动画最后一帧就被切回待机。 */
+@property (readonly) int64_t ANIMATION_TAIL_MILLIS __attribute__((swift_name("ANIMATION_TAIL_MILLIS")));
+
+/** 启动时最多载入多少条历史（内存里的会话上限）。 */
+@property (readonly) int32_t LOAD_LIMIT __attribute__((swift_name("LOAD_LIMIT")));
+
+/** 攒够多少条新消息就整理一次记忆。 */
+@property (readonly) int32_t MEMORY_BATCH __attribute__((swift_name("MEMORY_BATCH")));
+
+/** 一次记忆整理最多读多少条消息。 */
+@property (readonly) int32_t MEMORY_WINDOW __attribute__((swift_name("MEMORY_WINDOW")));
+
+/** 情绪自动回落的等待时间。 */
+@property (readonly) int64_t MOOD_RESET_MILLIS __attribute__((swift_name("MOOD_RESET_MILLIS")));
 @end
 
 
@@ -2978,244 +3092,20 @@ __attribute__((swift_name("OkioFileSystem")))
 - (id _Nullable)writeFile:(SharedOkioPath *)file mustCreate:(BOOL)mustCreate error:(NSError * _Nullable * _Nullable)error writerAction:(id _Nullable (^)(id<SharedOkioBufferedSink>))writerAction __attribute__((swift_name("write(file:mustCreate:writerAction:)"))) __attribute__((swift_error(nonnull_error)));
 @end
 
-__attribute__((swift_name("OkioSink")))
-@protocol SharedOkioSink <SharedOkioCloseable>
+__attribute__((swift_name("KotlinFunction")))
+@protocol SharedKotlinFunction
 @required
-
-/**
- * @note This method converts instances of IOException to errors.
- * Other uncaught Kotlin exceptions are fatal.
-*/
-- (BOOL)flushAndReturnError:(NSError * _Nullable * _Nullable)error __attribute__((swift_name("flush()")));
-- (SharedOkioTimeout *)timeout __attribute__((swift_name("timeout()")));
-
-/**
- * @note This method converts instances of IOException to errors.
- * Other uncaught Kotlin exceptions are fatal.
-*/
-- (BOOL)writeSource:(SharedOkioBuffer *)source byteCount:(int64_t)byteCount error:(NSError * _Nullable * _Nullable)error __attribute__((swift_name("write(source:byteCount_:)")));
 @end
 
-__attribute__((swift_name("OkioBufferedSink")))
-@protocol SharedOkioBufferedSink <SharedOkioSink>
-@required
-- (id<SharedOkioBufferedSink>)emit __attribute__((swift_name("emit()")));
-- (id<SharedOkioBufferedSink>)emitCompleteSegments __attribute__((swift_name("emitCompleteSegments()")));
-- (id<SharedOkioBufferedSink>)writeSource:(SharedKotlinByteArray *)source __attribute__((swift_name("write(source:)")));
-- (id<SharedOkioBufferedSink>)writeByteString:(SharedOkioByteString *)byteString __attribute__((swift_name("write(byteString:)")));
-- (id<SharedOkioBufferedSink>)writeSource:(id<SharedOkioSource>)source byteCount:(int64_t)byteCount __attribute__((swift_name("write(source:byteCount:)")));
-- (id<SharedOkioBufferedSink>)writeSource:(SharedKotlinByteArray *)source offset:(int32_t)offset byteCount:(int32_t)byteCount __attribute__((swift_name("write(source:offset:byteCount:)")));
-- (id<SharedOkioBufferedSink>)writeByteString:(SharedOkioByteString *)byteString offset:(int32_t)offset byteCount:(int32_t)byteCount __attribute__((swift_name("write(byteString:offset:byteCount:)")));
-- (int64_t)writeAllSource:(id<SharedOkioSource>)source __attribute__((swift_name("writeAll(source:)")));
-- (id<SharedOkioBufferedSink>)writeByteB:(int32_t)b __attribute__((swift_name("writeByte(b:)")));
-- (id<SharedOkioBufferedSink>)writeDecimalLongV:(int64_t)v __attribute__((swift_name("writeDecimalLong(v:)")));
-- (id<SharedOkioBufferedSink>)writeHexadecimalUnsignedLongV:(int64_t)v __attribute__((swift_name("writeHexadecimalUnsignedLong(v:)")));
-- (id<SharedOkioBufferedSink>)writeIntI:(int32_t)i __attribute__((swift_name("writeInt(i:)")));
-- (id<SharedOkioBufferedSink>)writeIntLeI:(int32_t)i __attribute__((swift_name("writeIntLe(i:)")));
-- (id<SharedOkioBufferedSink>)writeLongV:(int64_t)v __attribute__((swift_name("writeLong(v:)")));
-- (id<SharedOkioBufferedSink>)writeLongLeV:(int64_t)v __attribute__((swift_name("writeLongLe(v:)")));
-- (id<SharedOkioBufferedSink>)writeShortS:(int32_t)s __attribute__((swift_name("writeShort(s:)")));
-- (id<SharedOkioBufferedSink>)writeShortLeS:(int32_t)s __attribute__((swift_name("writeShortLe(s:)")));
-- (id<SharedOkioBufferedSink>)writeUtf8String:(NSString *)string __attribute__((swift_name("writeUtf8(string:)")));
-- (id<SharedOkioBufferedSink>)writeUtf8String:(NSString *)string beginIndex:(int32_t)beginIndex endIndex:(int32_t)endIndex __attribute__((swift_name("writeUtf8(string:beginIndex:endIndex:)")));
-- (id<SharedOkioBufferedSink>)writeUtf8CodePointCodePoint:(int32_t)codePoint __attribute__((swift_name("writeUtf8CodePoint(codePoint:)")));
-@property (readonly) SharedOkioBuffer *buffer __attribute__((swift_name("buffer")));
-@end
-
-
-/**
- * An asynchronous data stream that sequentially emits values and completes normally or with an exception.
- *
- * _Intermediate operators_ on the flow such as [map], [filter], [take], [zip], etc are functions that are
- * applied to the _upstream_ flow or flows and return a _downstream_ flow where further operators can be applied to.
- * Intermediate operations do not execute any code in the flow and are not suspending functions themselves.
- * They only set up a chain of operations for future execution and quickly return.
- * This is known as a _cold flow_ property.
- *
- * _Terminal operators_ on the flow are either suspending functions such as [collect], [single], [reduce], [toList], etc.
- * or [launchIn] operator that starts collection of the flow in the given scope.
- * They are applied to the upstream flow and trigger execution of all operations.
- * Execution of the flow is also called _collecting the flow_  and is always performed in a suspending manner
- * without actual blocking. Terminal operators complete normally or exceptionally depending on successful or failed
- * execution of all the flow operations in the upstream. The most basic terminal operator is [collect], for example:
- *
- * ```
- * try {
- *     flow.collect { value ->
- *         println("Received $value")
- *     }
- * } catch (e: Exception) {
- *     println("The flow has thrown an exception: $e")
- * }
- * ```
- *
- * By default, flows are _sequential_ and all flow operations are executed sequentially in the same coroutine,
- * with an exception for a few operations specifically designed to introduce concurrency into flow
- * execution such as [buffer] and [flatMapMerge]. See their documentation for details.
- *
- * The `Flow` interface does not carry information whether a flow is a _cold_ stream that can be collected repeatedly and
- * triggers execution of the same code every time it is collected, or if it is a _hot_ stream that emits different
- * values from the same running source on each collection. Usually flows represent _cold_ streams, but
- * there is a [SharedFlow] subtype that represents _hot_ streams. In addition to that, any flow can be turned
- * into a _hot_ one by the [stateIn] and [shareIn] operators, or by converting the flow into a hot channel
- * via the [produceIn] operator.
- *
- * ### Flow builders
- *
- * There are the following basic ways to create a flow:
- *
- * - [flowOf(...)][flowOf] functions to create a flow from a fixed set of values.
- * - [asFlow()][asFlow] extension functions on various types to convert them into flows.
- * - [flow { ... }][flow] builder function to construct arbitrary flows from
- *   sequential calls to [emit][FlowCollector.emit] function.
- * - [channelFlow { ... }][channelFlow] builder function to construct arbitrary flows from
- *   potentially concurrent calls to the [send][kotlinx.coroutines.channels.SendChannel.send] function.
- * - [MutableStateFlow] and [MutableSharedFlow] define the corresponding constructor functions to create
- *   a _hot_ flow that can be directly updated.
- *
- * ### Flow constraints
- *
- * All implementations of the `Flow` interface must adhere to two key properties described in detail below:
- *
- * - Context preservation.
- * - Exception transparency.
- *
- * These properties ensure the ability to perform local reasoning about the code with flows and modularize the code
- * in such a way that upstream flow emitters can be developed separately from downstream flow collectors.
- * A user of a flow does not need to be aware of implementation details of the upstream flows it uses.
- *
- * ### Context preservation
- *
- * The flow has a context preservation property: it encapsulates its own execution context and never propagates or leaks
- * it downstream, thus making reasoning about the execution context of particular transformations or terminal
- * operations trivial.
- *
- * There is only one way to change the context of a flow: the [flowOn][Flow.flowOn] operator
- * that changes the upstream context ("everything above the `flowOn` operator").
- * For additional information refer to its documentation.
- *
- * This reasoning can be demonstrated in practice:
- *
- * ```
- * val flowA = flowOf(1, 2, 3)
- *     .map { it + 1 } // Will be executed in ctxA
- *     .flowOn(ctxA) // Changes the upstream context: flowOf and map
- *
- * // Now we have a context-preserving flow: it is executed somewhere but this information is encapsulated in the flow itself
- *
- * val filtered = flowA // ctxA is encapsulated in flowA
- *    .filter { it == 3 } // Pure operator without a context yet
- *
- * withContext(Dispatchers.Main) {
- *     // All non-encapsulated operators will be executed in Main: filter and single
- *     val result = filtered.single()
- *     myUi.text = result
- * }
- * ```
- *
- * From the implementation point of view, it means that all flow implementations should
- * only emit from the same coroutine context.
- * This constraint is efficiently enforced by the default [flow] builder.
- * The [flow] builder should be used if the flow implementation does not start any coroutines.
- * Its implementation prevents most of the development mistakes:
- *
- * ```
- * val myFlow = flow {
- *     // GlobalScope.launch { // is prohibited
- *     // launch(Dispatchers.IO) { // is prohibited
- *     // withContext(CoroutineName("myFlow")) { // is prohibited
- *     emit(1) // OK
- *     coroutineScope {
- *         emit(2) // OK -- still the same coroutine
- *     }
- * }
- * ```
- *
- * Use [channelFlow] if the collection and emission of a flow are to be separated into multiple coroutines.
- * It encapsulates all the context preservation work and allows you to focus on your
- * domain-specific problem, rather than invariant implementation details.
- * It is possible to use any combination of coroutine builders from within [channelFlow].
- *
- * If you are looking for performance and are sure that no concurrent emits and context jumps will happen,
- * the [flow] builder can be used alongside a [coroutineScope] or [supervisorScope] instead:
- * - Scoped primitive should be used to provide a [CoroutineScope].
- * - Changing the context of emission is prohibited, no matter whether it is `withContext(ctx)` or
- *   a builder argument (e.g. `launch(ctx)`).
- * - Collecting another flow from a separate context is allowed, but it has the same effect as
- *   applying the [flowOn] operator to that flow, which is more efficient.
- *
- * ### Exception transparency
- *
- * When `emit` or `emitAll` throws, the Flow implementations must immediately stop emitting new values and finish with an exception.
- * For diagnostics or application-specific purposes, the exception may be different from the one thrown by the emit operation,
- * suppressing the original exception as discussed below.
- * If there is a need to emit values after the downstream failed, please use the [catch][Flow.catch] operator.
- *
- * The [catch][Flow.catch] operator only catches upstream exceptions, but passes
- * all downstream exceptions. Similarly, terminal operators like [collect][Flow.collect]
- * throw any unhandled exceptions that occur in their code or in upstream flows, for example:
- *
- * ```
- * flow { emitData() }
- *     .map { computeOne(it) }
- *     .catch { ... } // catches exceptions in emitData and computeOne
- *     .map { computeTwo(it) }
- *     .collect { process(it) } // throws exceptions from process and computeTwo
- * ```
- * The same reasoning can be applied to the [onCompletion] operator that is a declarative replacement for the `finally` block.
- *
- * All exception-handling Flow operators follow the principle of exception suppression:
- *
- * If the upstream flow throws an exception during its completion when the downstream exception has been thrown,
- * the downstream exception becomes superseded and suppressed by the upstream exception, being a semantic
- * equivalent of throwing from `finally` block. However, this doesn't affect the operation of the exception-handling operators,
- * which consider the downstream exception to be the root cause and behave as if the upstream didn't throw anything.
- *
- * Failure to adhere to the exception transparency requirement can lead to strange behaviors which make
- * it hard to reason about the code because an exception in the `collect { ... }` could be somehow "caught"
- * by an upstream flow, limiting the ability of local reasoning about the code.
- *
- * Flow machinery enforces exception transparency at runtime and throws [IllegalStateException] on any attempt to emit a value,
- * if an exception has been thrown on previous attempt.
- *
- * ### Reactive streams
- *
- * Flow is [Reactive Streams](http://www.reactive-streams.org/) compliant, you can safely interop it with
- * reactive streams using `Flow.asPublisher` and `Publisher.asFlow` from `kotlinx-coroutines-reactive` module.
- *
- * ### Not stable for inheritance
- *
- * **The `Flow` interface is not stable for inheritance in 3rd party libraries**, as new methods
- * might be added to this interface in the future, but is stable for use.
- *
- * Use the `flow { ... }` builder function to create an implementation, or extend [AbstractFlow].
- * These implementations ensure that the context preservation property is not violated, and prevent most
- * of the developer mistakes related to concurrency, inconsistent flow dispatchers, and cancellation.
- */
-__attribute__((swift_name("Kotlinx_coroutines_coreFlow")))
-@protocol SharedKotlinx_coroutines_coreFlow
+__attribute__((swift_name("KotlinSuspendFunction1")))
+@protocol SharedKotlinSuspendFunction1 <SharedKotlinFunction>
 @required
 
 /**
- * Accepts the given [collector] and [emits][FlowCollector.emit] values into it.
- *
- * This method can be used along with SAM-conversion of [FlowCollector]:
- * ```
- * myFlow.collect { value -> println("Collected $value") }
- * ```
- *
- * ### Method inheritance
- *
- * To ensure the context preservation property, it is not recommended implementing this method directly.
- * Instead, [AbstractFlow] can be used as the base type to properly ensure flow's properties.
- *
- * All default flow implementations ensure context preservation and exception transparency properties on a best-effort basis
- * and throw [IllegalStateException] if a violation was detected.
- *
  * @note This method converts instances of CancellationException to errors.
  * Other uncaught Kotlin exceptions are fatal.
 */
-- (void)collectCollector:(id<SharedKotlinx_coroutines_coreFlowCollector>)collector completionHandler:(void (^)(NSError * _Nullable))completionHandler __attribute__((swift_name("collect(collector:completionHandler:)")));
+- (void)invokeP1:(id _Nullable)p1 completionHandler:(void (^)(id _Nullable_result, NSError * _Nullable))completionHandler __attribute__((swift_name("invoke(p1:completionHandler:)")));
 @end
 
 
@@ -3662,6 +3552,509 @@ __attribute__((swift_name("Kotlinx_coroutines_coreCoroutineScope")))
  * except accessing the [Job] instance for advanced usages.
  */
 @property (readonly) id<SharedKotlinCoroutineContext> coroutineContext __attribute__((swift_name("coroutineContext")));
+@end
+
+
+/**
+ * An asynchronous data stream that sequentially emits values and completes normally or with an exception.
+ *
+ * _Intermediate operators_ on the flow such as [map], [filter], [take], [zip], etc are functions that are
+ * applied to the _upstream_ flow or flows and return a _downstream_ flow where further operators can be applied to.
+ * Intermediate operations do not execute any code in the flow and are not suspending functions themselves.
+ * They only set up a chain of operations for future execution and quickly return.
+ * This is known as a _cold flow_ property.
+ *
+ * _Terminal operators_ on the flow are either suspending functions such as [collect], [single], [reduce], [toList], etc.
+ * or [launchIn] operator that starts collection of the flow in the given scope.
+ * They are applied to the upstream flow and trigger execution of all operations.
+ * Execution of the flow is also called _collecting the flow_  and is always performed in a suspending manner
+ * without actual blocking. Terminal operators complete normally or exceptionally depending on successful or failed
+ * execution of all the flow operations in the upstream. The most basic terminal operator is [collect], for example:
+ *
+ * ```
+ * try {
+ *     flow.collect { value ->
+ *         println("Received $value")
+ *     }
+ * } catch (e: Exception) {
+ *     println("The flow has thrown an exception: $e")
+ * }
+ * ```
+ *
+ * By default, flows are _sequential_ and all flow operations are executed sequentially in the same coroutine,
+ * with an exception for a few operations specifically designed to introduce concurrency into flow
+ * execution such as [buffer] and [flatMapMerge]. See their documentation for details.
+ *
+ * The `Flow` interface does not carry information whether a flow is a _cold_ stream that can be collected repeatedly and
+ * triggers execution of the same code every time it is collected, or if it is a _hot_ stream that emits different
+ * values from the same running source on each collection. Usually flows represent _cold_ streams, but
+ * there is a [SharedFlow] subtype that represents _hot_ streams. In addition to that, any flow can be turned
+ * into a _hot_ one by the [stateIn] and [shareIn] operators, or by converting the flow into a hot channel
+ * via the [produceIn] operator.
+ *
+ * ### Flow builders
+ *
+ * There are the following basic ways to create a flow:
+ *
+ * - [flowOf(...)][flowOf] functions to create a flow from a fixed set of values.
+ * - [asFlow()][asFlow] extension functions on various types to convert them into flows.
+ * - [flow { ... }][flow] builder function to construct arbitrary flows from
+ *   sequential calls to [emit][FlowCollector.emit] function.
+ * - [channelFlow { ... }][channelFlow] builder function to construct arbitrary flows from
+ *   potentially concurrent calls to the [send][kotlinx.coroutines.channels.SendChannel.send] function.
+ * - [MutableStateFlow] and [MutableSharedFlow] define the corresponding constructor functions to create
+ *   a _hot_ flow that can be directly updated.
+ *
+ * ### Flow constraints
+ *
+ * All implementations of the `Flow` interface must adhere to two key properties described in detail below:
+ *
+ * - Context preservation.
+ * - Exception transparency.
+ *
+ * These properties ensure the ability to perform local reasoning about the code with flows and modularize the code
+ * in such a way that upstream flow emitters can be developed separately from downstream flow collectors.
+ * A user of a flow does not need to be aware of implementation details of the upstream flows it uses.
+ *
+ * ### Context preservation
+ *
+ * The flow has a context preservation property: it encapsulates its own execution context and never propagates or leaks
+ * it downstream, thus making reasoning about the execution context of particular transformations or terminal
+ * operations trivial.
+ *
+ * There is only one way to change the context of a flow: the [flowOn][Flow.flowOn] operator
+ * that changes the upstream context ("everything above the `flowOn` operator").
+ * For additional information refer to its documentation.
+ *
+ * This reasoning can be demonstrated in practice:
+ *
+ * ```
+ * val flowA = flowOf(1, 2, 3)
+ *     .map { it + 1 } // Will be executed in ctxA
+ *     .flowOn(ctxA) // Changes the upstream context: flowOf and map
+ *
+ * // Now we have a context-preserving flow: it is executed somewhere but this information is encapsulated in the flow itself
+ *
+ * val filtered = flowA // ctxA is encapsulated in flowA
+ *    .filter { it == 3 } // Pure operator without a context yet
+ *
+ * withContext(Dispatchers.Main) {
+ *     // All non-encapsulated operators will be executed in Main: filter and single
+ *     val result = filtered.single()
+ *     myUi.text = result
+ * }
+ * ```
+ *
+ * From the implementation point of view, it means that all flow implementations should
+ * only emit from the same coroutine context.
+ * This constraint is efficiently enforced by the default [flow] builder.
+ * The [flow] builder should be used if the flow implementation does not start any coroutines.
+ * Its implementation prevents most of the development mistakes:
+ *
+ * ```
+ * val myFlow = flow {
+ *     // GlobalScope.launch { // is prohibited
+ *     // launch(Dispatchers.IO) { // is prohibited
+ *     // withContext(CoroutineName("myFlow")) { // is prohibited
+ *     emit(1) // OK
+ *     coroutineScope {
+ *         emit(2) // OK -- still the same coroutine
+ *     }
+ * }
+ * ```
+ *
+ * Use [channelFlow] if the collection and emission of a flow are to be separated into multiple coroutines.
+ * It encapsulates all the context preservation work and allows you to focus on your
+ * domain-specific problem, rather than invariant implementation details.
+ * It is possible to use any combination of coroutine builders from within [channelFlow].
+ *
+ * If you are looking for performance and are sure that no concurrent emits and context jumps will happen,
+ * the [flow] builder can be used alongside a [coroutineScope] or [supervisorScope] instead:
+ * - Scoped primitive should be used to provide a [CoroutineScope].
+ * - Changing the context of emission is prohibited, no matter whether it is `withContext(ctx)` or
+ *   a builder argument (e.g. `launch(ctx)`).
+ * - Collecting another flow from a separate context is allowed, but it has the same effect as
+ *   applying the [flowOn] operator to that flow, which is more efficient.
+ *
+ * ### Exception transparency
+ *
+ * When `emit` or `emitAll` throws, the Flow implementations must immediately stop emitting new values and finish with an exception.
+ * For diagnostics or application-specific purposes, the exception may be different from the one thrown by the emit operation,
+ * suppressing the original exception as discussed below.
+ * If there is a need to emit values after the downstream failed, please use the [catch][Flow.catch] operator.
+ *
+ * The [catch][Flow.catch] operator only catches upstream exceptions, but passes
+ * all downstream exceptions. Similarly, terminal operators like [collect][Flow.collect]
+ * throw any unhandled exceptions that occur in their code or in upstream flows, for example:
+ *
+ * ```
+ * flow { emitData() }
+ *     .map { computeOne(it) }
+ *     .catch { ... } // catches exceptions in emitData and computeOne
+ *     .map { computeTwo(it) }
+ *     .collect { process(it) } // throws exceptions from process and computeTwo
+ * ```
+ * The same reasoning can be applied to the [onCompletion] operator that is a declarative replacement for the `finally` block.
+ *
+ * All exception-handling Flow operators follow the principle of exception suppression:
+ *
+ * If the upstream flow throws an exception during its completion when the downstream exception has been thrown,
+ * the downstream exception becomes superseded and suppressed by the upstream exception, being a semantic
+ * equivalent of throwing from `finally` block. However, this doesn't affect the operation of the exception-handling operators,
+ * which consider the downstream exception to be the root cause and behave as if the upstream didn't throw anything.
+ *
+ * Failure to adhere to the exception transparency requirement can lead to strange behaviors which make
+ * it hard to reason about the code because an exception in the `collect { ... }` could be somehow "caught"
+ * by an upstream flow, limiting the ability of local reasoning about the code.
+ *
+ * Flow machinery enforces exception transparency at runtime and throws [IllegalStateException] on any attempt to emit a value,
+ * if an exception has been thrown on previous attempt.
+ *
+ * ### Reactive streams
+ *
+ * Flow is [Reactive Streams](http://www.reactive-streams.org/) compliant, you can safely interop it with
+ * reactive streams using `Flow.asPublisher` and `Publisher.asFlow` from `kotlinx-coroutines-reactive` module.
+ *
+ * ### Not stable for inheritance
+ *
+ * **The `Flow` interface is not stable for inheritance in 3rd party libraries**, as new methods
+ * might be added to this interface in the future, but is stable for use.
+ *
+ * Use the `flow { ... }` builder function to create an implementation, or extend [AbstractFlow].
+ * These implementations ensure that the context preservation property is not violated, and prevent most
+ * of the developer mistakes related to concurrency, inconsistent flow dispatchers, and cancellation.
+ */
+__attribute__((swift_name("Kotlinx_coroutines_coreFlow")))
+@protocol SharedKotlinx_coroutines_coreFlow
+@required
+
+/**
+ * Accepts the given [collector] and [emits][FlowCollector.emit] values into it.
+ *
+ * This method can be used along with SAM-conversion of [FlowCollector]:
+ * ```
+ * myFlow.collect { value -> println("Collected $value") }
+ * ```
+ *
+ * ### Method inheritance
+ *
+ * To ensure the context preservation property, it is not recommended implementing this method directly.
+ * Instead, [AbstractFlow] can be used as the base type to properly ensure flow's properties.
+ *
+ * All default flow implementations ensure context preservation and exception transparency properties on a best-effort basis
+ * and throw [IllegalStateException] if a violation was detected.
+ *
+ * @note This method converts instances of CancellationException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (void)collectCollector:(id<SharedKotlinx_coroutines_coreFlowCollector>)collector completionHandler:(void (^)(NSError * _Nullable))completionHandler __attribute__((swift_name("collect(collector:completionHandler:)")));
+@end
+
+
+/**
+ * A _hot_ [Flow] that shares emitted values among all its collectors in a broadcast fashion, so that all collectors
+ * get all emitted values. A shared flow is called _hot_ because its active instance exists independently of the
+ * presence of collectors. This is opposed to a regular [Flow], such as defined by the [`flow { ... }`][flow] function,
+ * which is _cold_ and is started separately for each collector.
+ *
+ * **Shared flow never completes**. A call to [Flow.collect] on a shared flow never completes normally, and
+ * neither does a coroutine started by the [Flow.launchIn] function. An active collector of a shared flow is called a _subscriber_.
+ *
+ * A subscriber of a shared flow can be cancelled. This usually happens when the scope in which the coroutine is running
+ * is cancelled. A subscriber to a shared flow is always [cancellable][Flow.cancellable], and checks for
+ * cancellation before each emission. Note that most terminal operators like [Flow.toList] would also not complete,
+ * when applied to a shared flow, but flow-truncating operators like [Flow.take] and [Flow.takeWhile] can be used on a
+ * shared flow to turn it into a completing one.
+ *
+ * A [mutable shared flow][MutableSharedFlow] is created using the [MutableSharedFlow(...)] constructor function.
+ * Its state can be updated by [emitting][MutableSharedFlow.emit] values to it and performing other operations.
+ * See the [MutableSharedFlow] documentation for details.
+ *
+ * [SharedFlow] is useful for broadcasting events that happen inside an application to subscribers that can come and go.
+ * For example, the following class encapsulates an event bus that distributes events to all subscribers
+ * in a _rendezvous_ manner, suspending until all subscribers receive emitted event:
+ *
+ * ```
+ * class EventBus {
+ *     private val _events = MutableSharedFlow<Event>() // private mutable shared flow
+ *     val events = _events.asSharedFlow() // publicly exposed as read-only shared flow
+ *
+ *     suspend fun produceEvent(event: Event) {
+ *         _events.emit(event) // suspends until all subscribers receive it
+ *     }
+ * }
+ * ```
+ *
+ * As an alternative to the above usage with the `MutableSharedFlow(...)` constructor function,
+ * any _cold_ [Flow] can be converted to a shared flow using the [shareIn] operator.
+ *
+ * There is a specialized implementation of shared flow for the case where the most recent state value needs
+ * to be shared. See [StateFlow] for details.
+ *
+ * ### Replay cache and buffer
+ *
+ * A shared flow keeps a specific number of the most recent values in its _replay cache_. Every new subscriber first
+ * gets the values from the replay cache and then gets new emitted values. The maximum size of the replay cache is
+ * specified when the shared flow is created by the `replay` parameter. A snapshot of the current replay cache
+ * is available via the [replayCache] property and it can be reset with the [MutableSharedFlow.resetReplayCache] function.
+ *
+ * A replay cache also provides buffer for emissions to the shared flow, allowing slow subscribers to
+ * get values from the buffer without suspending emitters. The buffer space determines how much slow subscribers
+ * can lag from the fast ones. When creating a shared flow, additional buffer capacity beyond replay can be reserved
+ * using the `extraBufferCapacity` parameter.
+ *
+ * A shared flow with a buffer can be configured to avoid suspension of emitters on buffer overflow using
+ * the `onBufferOverflow` parameter, which is equal to one of the entries of the [BufferOverflow] enum. When a strategy other
+ * than [SUSPENDED][BufferOverflow.SUSPEND] is configured, emissions to the shared flow never suspend.
+ *
+ * **Buffer overflow condition can happen only when there is at least one subscriber that is not ready to accept
+ * the new value.**  In the absence of subscribers only the most recent `replay` values are stored and the buffer
+ * overflow behavior is never triggered and has no effect. In particular, in the absence of subscribers emitter never
+ * suspends despite [BufferOverflow.SUSPEND] option and [BufferOverflow.DROP_LATEST] option does not have effect either.
+ * Essentially, the behavior in the absence of subscribers is always similar to [BufferOverflow.DROP_OLDEST],
+ * but the buffer is just of `replay` size (without any `extraBufferCapacity`).
+ *
+ * ### Unbuffered shared flow
+ *
+ * A default implementation of a shared flow that is created with `MutableSharedFlow()` constructor function
+ * without parameters has no replay cache nor additional buffer.
+ * [emit][MutableSharedFlow.emit] call to such a shared flow suspends until all subscribers receive the emitted value
+ * and returns immediately if there are no subscribers.
+ * Thus, [tryEmit][MutableSharedFlow.tryEmit] call succeeds and returns `true` only if
+ * there are no subscribers (in which case the emitted value is immediately lost).
+ *
+ * ### SharedFlow vs BroadcastChannel
+ *
+ * Conceptually shared flow is similar to [BroadcastChannel][BroadcastChannel]
+ * and is designed to completely replace it.
+ * It has the following important differences:
+ *
+ * - `SharedFlow` is simpler, because it does not have to implement all the [Channel] APIs, which allows
+ *   for faster and simpler implementation.
+ * - `SharedFlow` supports configurable replay and buffer overflow strategy.
+ * - `SharedFlow` has a clear separation into a read-only `SharedFlow` interface and a [MutableSharedFlow].
+ * - `SharedFlow` cannot be closed like `BroadcastChannel` and can never represent a failure.
+ *   All errors and completion signals should be explicitly _materialized_ if needed.
+ *
+ * To migrate [BroadcastChannel] usage to [SharedFlow], start by replacing usages of the `BroadcastChannel(capacity)`
+ * constructor with `MutableSharedFlow(0, extraBufferCapacity=capacity)` (broadcast channel does not replay
+ * values to new subscribers). Replace [send][BroadcastChannel.send] and [trySend][BroadcastChannel.trySend] calls
+ * with [emit][MutableStateFlow.emit] and [tryEmit][MutableStateFlow.tryEmit], and convert subscribers' code to flow operators.
+ *
+ * ### Concurrency
+ *
+ * All methods of shared flow are **thread-safe** and can be safely invoked from concurrent coroutines without
+ * external synchronization.
+ *
+ * ### Operator fusion
+ *
+ * Application of [flowOn][Flow.flowOn], [buffer] with [RENDEZVOUS][Channel.RENDEZVOUS] capacity,
+ * or [cancellable] operators to a shared flow has no effect.
+ *
+ * ### Implementation notes
+ *
+ * Shared flow implementation uses a lock to ensure thread-safety, but suspending collector and emitter coroutines are
+ * resumed outside of this lock to avoid deadlocks when using unconfined coroutines. Adding new subscribers
+ * has `O(1)` amortized cost, but emitting has `O(N)` cost, where `N` is the number of subscribers.
+ *
+ * ### Not stable for inheritance
+ *
+ * **The `SharedFlow` interface is not stable for inheritance in 3rd party libraries**, as new methods
+ * might be added to this interface in the future, but is stable for use.
+ * Use the `MutableSharedFlow(replay, ...)` constructor function to create an implementation.
+ *
+ * @note annotations
+ *   kotlin.SubclassOptInRequired(markerClass=[NormalClass(value=kotlinx/coroutines/ExperimentalForInheritanceCoroutinesApi)])
+*/
+__attribute__((swift_name("Kotlinx_coroutines_coreSharedFlow")))
+@protocol SharedKotlinx_coroutines_coreSharedFlow <SharedKotlinx_coroutines_coreFlow>
+@required
+
+/**
+ * A snapshot of the replay cache.
+ */
+@property (readonly) NSArray<id> *replayCache __attribute__((swift_name("replayCache")));
+@end
+
+
+/**
+ * A [SharedFlow] that represents a read-only state with a single updatable data [value] that emits updates
+ * to the value to its collectors. A state flow is a _hot_ flow because its active instance exists independently
+ * of the presence of collectors. Its current value can be retrieved via the [value] property.
+ *
+ * **State flow never completes**. A call to [Flow.collect] on a state flow never completes normally, and
+ * neither does a coroutine started by the [Flow.launchIn] function. An active collector of a state flow is called a _subscriber_.
+ *
+ * A [mutable state flow][MutableStateFlow] is created using `MutableStateFlow(value)` constructor function with
+ * the initial value. The value of mutable state flow can be updated by setting its [value] property.
+ * Updates to the [value] are always [conflated][Flow.conflate]. So a slow collector skips fast updates,
+ * but always collects the most recently emitted value.
+ *
+ * [StateFlow] is useful as a data-model class to represent any kind of state.
+ * Derived values can be defined using various operators on the flows, with [combine] operator being especially
+ * useful to combine values from multiple state flows using arbitrary functions.
+ *
+ * For example, the following class encapsulates an integer state and increments its value on each call to `inc`:
+ *
+ * ```
+ * class CounterModel {
+ *     private val _counter = MutableStateFlow(0) // private mutable state flow
+ *     val counter = _counter.asStateFlow() // publicly exposed as read-only state flow
+ *
+ *     fun inc() {
+ *         _counter.update { count -> count + 1 } // atomic, safe for concurrent use
+ *     }
+ * }
+ * ```
+ *
+ * Having two instances of the above `CounterModel` class one can define the sum of their counters like this:
+ *
+ * ```
+ * val aModel = CounterModel()
+ * val bModel = CounterModel()
+ * val sumFlow: Flow<Int> = aModel.counter.combine(bModel.counter) { a, b -> a + b }
+ * ```
+ *
+ * As an alternative to the above usage with the `MutableStateFlow(...)` constructor function,
+ * any _cold_ [Flow] can be converted to a state flow using the [stateIn] operator.
+ *
+ * ### Strong equality-based conflation
+ *
+ * Values in state flow are conflated using [Any.equals] comparison in a similar way to
+ * [distinctUntilChanged] operator. It is used to conflate incoming updates
+ * to [value][MutableStateFlow.value] in [MutableStateFlow] and to suppress emission of the values to collectors
+ * when new value is equal to the previously emitted one. State flow behavior with classes that violate
+ * the contract for [Any.equals] is unspecified.
+ *
+ * ### State flow is a shared flow
+ *
+ * State flow is a special-purpose, high-performance, and efficient implementation of [SharedFlow] for the narrow,
+ * but widely used case of sharing a state. See the [SharedFlow] documentation for the basic rules,
+ * constraints, and operators that are applicable to all shared flows.
+ *
+ * State flow always has an initial value, replays one most recent value to new subscribers, does not buffer any
+ * more values, but keeps the last emitted one, and does not support [resetReplayCache][MutableSharedFlow.resetReplayCache].
+ * A state flow behaves identically to a shared flow when it is created
+ * with the following parameters and the [distinctUntilChanged] operator is applied to it:
+ *
+ * ```
+ * // MutableStateFlow(initialValue) is a shared flow with the following parameters:
+ * val shared = MutableSharedFlow(
+ *     replay = 1,
+ *     onBufferOverflow = BufferOverflow.DROP_OLDEST
+ * )
+ * shared.tryEmit(initialValue) // emit the initial value
+ * val state = shared.distinctUntilChanged() // get StateFlow-like behavior
+ * ```
+ *
+ * Use [SharedFlow] when you need a [StateFlow] with tweaks in its behavior such as extra buffering, replaying more
+ * values, or omitting the initial value.
+ *
+ * ### StateFlow vs ConflatedBroadcastChannel
+ *
+ * Conceptually, state flow is similar to [ConflatedBroadcastChannel]
+ * and is designed to completely replace it.
+ * It has the following important differences:
+ *
+ * - `StateFlow` is simpler, because it does not have to implement all the [Channel] APIs, which allows
+ *   for faster, garbage-free implementation, unlike `ConflatedBroadcastChannel` implementation that
+ *   allocates objects on each emitted value.
+ * - `StateFlow` always has a value which can be safely read at any time via [value] property.
+ *   Unlike `ConflatedBroadcastChannel`, there is no way to create a state flow without a value.
+ * - `StateFlow` has a clear separation into a read-only `StateFlow` interface and a [MutableStateFlow].
+ * - `StateFlow` conflation is based on equality like [distinctUntilChanged] operator,
+ *   unlike conflation in `ConflatedBroadcastChannel` that is based on reference identity.
+ * - `StateFlow` cannot be closed like `ConflatedBroadcastChannel` and can never represent a failure.
+ *   All errors and completion signals should be explicitly _materialized_ if needed.
+ *
+ * `StateFlow` is designed to better cover typical use-cases of keeping track of state changes in time, taking
+ * more pragmatic design choices for the sake of convenience.
+ *
+ * To migrate [ConflatedBroadcastChannel] usage to [StateFlow], start by replacing usages of the `ConflatedBroadcastChannel()`
+ * constructor with `MutableStateFlow(initialValue)`, using `null` as an initial value if you don't have one.
+ * Replace [send][ConflatedBroadcastChannel.send] and [trySend][ConflatedBroadcastChannel.trySend] calls
+ * with updates to the state flow's [MutableStateFlow.value], and convert subscribers' code to flow operators.
+ * You can use the [filterNotNull] operator to mimic behavior of a `ConflatedBroadcastChannel` without initial value.
+ *
+ * ### Concurrency
+ *
+ * All methods of state flow are **thread-safe** and can be safely invoked from concurrent coroutines without
+ * external synchronization.
+ *
+ * ### Operator fusion
+ *
+ * Application of [flowOn][Flow.flowOn], [conflate][Flow.conflate],
+ * [buffer] with [CONFLATED][Channel.CONFLATED] or [RENDEZVOUS][Channel.RENDEZVOUS] capacity,
+ * [distinctUntilChanged][Flow.distinctUntilChanged], or [cancellable] operators to a state flow has no effect.
+ *
+ * ### Implementation notes
+ *
+ * State flow implementation is optimized for memory consumption and allocation-freedom. It uses a lock to ensure
+ * thread-safety, but suspending collector coroutines are resumed outside of this lock to avoid dead-locks when
+ * using unconfined coroutines. Adding new subscribers has `O(1)` amortized cost, but updating a [value] has `O(N)`
+ * cost, where `N` is the number of active subscribers.
+ *
+ * ### Not stable for inheritance
+ *
+ * **`The StateFlow` interface is not stable for inheritance in 3rd party libraries**, as new methods
+ * might be added to this interface in the future, but is stable for use.
+ * Use the `MutableStateFlow(value)` constructor function to create an implementation.
+ *
+ * @note annotations
+ *   kotlin.SubclassOptInRequired(markerClass=[NormalClass(value=kotlinx/coroutines/ExperimentalForInheritanceCoroutinesApi)])
+*/
+__attribute__((swift_name("Kotlinx_coroutines_coreStateFlow")))
+@protocol SharedKotlinx_coroutines_coreStateFlow <SharedKotlinx_coroutines_coreSharedFlow>
+@required
+
+/**
+ * The current value of this state flow.
+ */
+@property (readonly) id _Nullable value __attribute__((swift_name("value")));
+@end
+
+__attribute__((swift_name("OkioSink")))
+@protocol SharedOkioSink <SharedOkioCloseable>
+@required
+
+/**
+ * @note This method converts instances of IOException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (BOOL)flushAndReturnError:(NSError * _Nullable * _Nullable)error __attribute__((swift_name("flush()")));
+- (SharedOkioTimeout *)timeout __attribute__((swift_name("timeout()")));
+
+/**
+ * @note This method converts instances of IOException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (BOOL)writeSource:(SharedOkioBuffer *)source byteCount:(int64_t)byteCount error:(NSError * _Nullable * _Nullable)error __attribute__((swift_name("write(source:byteCount_:)")));
+@end
+
+__attribute__((swift_name("OkioBufferedSink")))
+@protocol SharedOkioBufferedSink <SharedOkioSink>
+@required
+- (id<SharedOkioBufferedSink>)emit __attribute__((swift_name("emit()")));
+- (id<SharedOkioBufferedSink>)emitCompleteSegments __attribute__((swift_name("emitCompleteSegments()")));
+- (id<SharedOkioBufferedSink>)writeSource:(SharedKotlinByteArray *)source __attribute__((swift_name("write(source:)")));
+- (id<SharedOkioBufferedSink>)writeByteString:(SharedOkioByteString *)byteString __attribute__((swift_name("write(byteString:)")));
+- (id<SharedOkioBufferedSink>)writeSource:(id<SharedOkioSource>)source byteCount:(int64_t)byteCount __attribute__((swift_name("write(source:byteCount:)")));
+- (id<SharedOkioBufferedSink>)writeSource:(SharedKotlinByteArray *)source offset:(int32_t)offset byteCount:(int32_t)byteCount __attribute__((swift_name("write(source:offset:byteCount:)")));
+- (id<SharedOkioBufferedSink>)writeByteString:(SharedOkioByteString *)byteString offset:(int32_t)offset byteCount:(int32_t)byteCount __attribute__((swift_name("write(byteString:offset:byteCount:)")));
+- (int64_t)writeAllSource:(id<SharedOkioSource>)source __attribute__((swift_name("writeAll(source:)")));
+- (id<SharedOkioBufferedSink>)writeByteB:(int32_t)b __attribute__((swift_name("writeByte(b:)")));
+- (id<SharedOkioBufferedSink>)writeDecimalLongV:(int64_t)v __attribute__((swift_name("writeDecimalLong(v:)")));
+- (id<SharedOkioBufferedSink>)writeHexadecimalUnsignedLongV:(int64_t)v __attribute__((swift_name("writeHexadecimalUnsignedLong(v:)")));
+- (id<SharedOkioBufferedSink>)writeIntI:(int32_t)i __attribute__((swift_name("writeInt(i:)")));
+- (id<SharedOkioBufferedSink>)writeIntLeI:(int32_t)i __attribute__((swift_name("writeIntLe(i:)")));
+- (id<SharedOkioBufferedSink>)writeLongV:(int64_t)v __attribute__((swift_name("writeLong(v:)")));
+- (id<SharedOkioBufferedSink>)writeLongLeV:(int64_t)v __attribute__((swift_name("writeLongLe(v:)")));
+- (id<SharedOkioBufferedSink>)writeShortS:(int32_t)s __attribute__((swift_name("writeShort(s:)")));
+- (id<SharedOkioBufferedSink>)writeShortLeS:(int32_t)s __attribute__((swift_name("writeShortLe(s:)")));
+- (id<SharedOkioBufferedSink>)writeUtf8String:(NSString *)string __attribute__((swift_name("writeUtf8(string:)")));
+- (id<SharedOkioBufferedSink>)writeUtf8String:(NSString *)string beginIndex:(int32_t)beginIndex endIndex:(int32_t)endIndex __attribute__((swift_name("writeUtf8(string:beginIndex:endIndex:)")));
+- (id<SharedOkioBufferedSink>)writeUtf8CodePointCodePoint:(int32_t)codePoint __attribute__((swift_name("writeUtf8CodePoint(codePoint:)")));
+@property (readonly) SharedOkioBuffer *buffer __attribute__((swift_name("buffer")));
 @end
 
 
@@ -4747,6 +5140,43 @@ __attribute__((swift_name("OkioBufferedSource")))
 @property (readonly) SharedOkioBuffer *buffer __attribute__((swift_name("buffer")));
 @end
 
+
+/**
+ * [FlowCollector] is used as an intermediate or a terminal collector of the flow and represents
+ * an entity that accepts values emitted by the [Flow].
+ *
+ * This interface should usually not be implemented directly, but rather used as a receiver in a [flow] builder when implementing a custom operator,
+ * or with SAM-conversion.
+ * Implementations of this interface are not thread-safe.
+ *
+ * Example of usage:
+ *
+ * ```
+ * val flow = getMyEvents()
+ * try {
+ *     flow.collect { value ->
+ *         println("Received $value")
+ *     }
+ *     println("My events are consumed successfully")
+ * } catch (e: Throwable) {
+ *     println("Exception from the flow: $e")
+ * }
+ * ```
+ */
+__attribute__((swift_name("Kotlinx_coroutines_coreFlowCollector")))
+@protocol SharedKotlinx_coroutines_coreFlowCollector
+@required
+
+/**
+ * Collects the value emitted by the upstream.
+ * This method is not thread-safe and should not be invoked concurrently.
+ *
+ * @note This method converts instances of CancellationException to errors.
+ * Other uncaught Kotlin exceptions are fatal.
+*/
+- (void)emitValue:(id _Nullable)value completionHandler:(void (^)(NSError * _Nullable))completionHandler __attribute__((swift_name("emit(value:completionHandler:)")));
+@end
+
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("KotlinByteArray")))
 @interface SharedKotlinByteArray : SharedBase
@@ -4891,43 +5321,6 @@ __attribute__((swift_name("OkioTimeout")))
 - (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
 + (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
 @property (class, readonly, getter=companion) SharedOkioTimeoutCompanion *companion __attribute__((swift_name("companion")));
-@end
-
-
-/**
- * [FlowCollector] is used as an intermediate or a terminal collector of the flow and represents
- * an entity that accepts values emitted by the [Flow].
- *
- * This interface should usually not be implemented directly, but rather used as a receiver in a [flow] builder when implementing a custom operator,
- * or with SAM-conversion.
- * Implementations of this interface are not thread-safe.
- *
- * Example of usage:
- *
- * ```
- * val flow = getMyEvents()
- * try {
- *     flow.collect { value ->
- *         println("Received $value")
- *     }
- *     println("My events are consumed successfully")
- * } catch (e: Throwable) {
- *     println("Exception from the flow: $e")
- * }
- * ```
- */
-__attribute__((swift_name("Kotlinx_coroutines_coreFlowCollector")))
-@protocol SharedKotlinx_coroutines_coreFlowCollector
-@required
-
-/**
- * Collects the value emitted by the upstream.
- * This method is not thread-safe and should not be invoked concurrently.
- *
- * @note This method converts instances of CancellationException to errors.
- * Other uncaught Kotlin exceptions are fatal.
-*/
-- (void)emitValue:(id _Nullable)value completionHandler:(void (^)(NSError * _Nullable))completionHandler __attribute__((swift_name("emit(value:completionHandler:)")));
 @end
 
 
@@ -6321,11 +6714,6 @@ __attribute__((swift_name("Ktor_utilsPipelinePhase")))
 - (instancetype)initWithName:(NSString *)name __attribute__((swift_name("init(name:)"))) __attribute__((objc_designated_initializer));
 - (NSString *)description __attribute__((swift_name("description()")));
 @property (readonly) NSString *name __attribute__((swift_name("name")));
-@end
-
-__attribute__((swift_name("KotlinFunction")))
-@protocol SharedKotlinFunction
-@required
 @end
 
 __attribute__((swift_name("KotlinSuspendFunction2")))
