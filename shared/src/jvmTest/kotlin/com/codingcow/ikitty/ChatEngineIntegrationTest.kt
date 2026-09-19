@@ -101,12 +101,23 @@ class ChatEngineIntegrationTest {
             log = ChatLogStore(fileSystem, paths.chatLog, Dispatchers.IO) { NOW },
             memoryStore = CatMemoryStore(fileSystem, paths.catMemory, Dispatchers.IO),
             extractor = MemoryExtractor(api),
-            imageDataUrls = { emptyMap() },
+            imageDataUrls = { names -> imageDataUrls(names) },
             locationSource = null,
             invalidateImageCache = {},
             scope = scope
         )
     }
+
+    /**
+     * 和 `IosImageStore` / Android 的 `ImageStore` 做同一件事：按文件名读本机图片，
+     * 编成数据 URL。放进集成测试是为了让"选图 → 装配 → 请求体"这条链路也走真实网络。
+     */
+    private fun imageDataUrls(names: Collection<String>): Map<String, String> =
+        names.distinct().mapNotNull { name ->
+            val path = paths.imagesDir / name
+            if (!fileSystem.exists(path)) return@mapNotNull null
+            name to jpegDataUrl(fileSystem.read(path) { readByteArray() })
+        }.toMap()
 
     /** 发出一次真实请求，等到对话进入稳定状态（不再忙、且已有回复）。 */
     private fun sendAndWait(engine: ChatEngine): List<StoredMessage> = runBlocking {
@@ -194,6 +205,46 @@ class ChatEngineIntegrationTest {
         val first = messages.first() as JsonObject
         assertEquals("system", first.stringOrEmpty("role"))
         assertTrue(first.stringOrEmpty("content").contains("你叫"), first.stringOrEmpty("content").take(80))
+    }
+
+    /**
+     * 带图片发送：请求体里必须走标准的 `image_url` 数据 URL，而不是某家服务商的私有字段。
+     * 这是 Phase 8 在共享层的验收条件。
+     */
+    @Test
+    fun `an attached image reaches the wire as a data url`() {
+        startServer { respondSse(it, listOf("好看")) }
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0x00, 0x11)
+        runBlocking {
+            fileSystem.createDirectories(paths.imagesDir)
+            fileSystem.write(paths.imagesDir / "img_test.jpg") { write(jpeg) }
+        }
+
+        val engine = engine()
+        runBlocking {
+            engine.start()
+            waitFor("开场白") { engine.messages.value.isNotEmpty() }
+            engine.send("看图", listOf("img_test.jpg"))
+            waitFor("回复") { !engine.busy.value && engine.messages.value.size >= 3 }
+        }
+
+        val body = lastRequestBody ?: error("服务端没有收到请求")
+        val json = parseJsonObjectOrNull(body) ?: error("请求体不是合法 JSON：$body")
+        val messages = json.arrayOrNull("messages") ?: error("缺少 messages")
+        val userMessage = messages.map { it as JsonObject }.first { it.stringOrEmpty("role") == "user" }
+
+        val parts = userMessage["content"] as? kotlinx.serialization.json.JsonArray
+            ?: error("带图片的消息 content 应该是数组，实际是 ${userMessage["content"]}")
+        assertEquals(2, parts.size, "应当有 text + image_url 两段")
+        assertEquals("text", (parts[0] as JsonObject).stringOrEmpty("type"))
+        assertEquals("看图", (parts[0] as JsonObject).stringOrEmpty("text"))
+        val imageUrl = (parts[1] as JsonObject).stringOrEmpty("type")
+        assertEquals("image_url", imageUrl)
+        val url = ((parts[1] as JsonObject)["image_url"] as JsonObject).stringOrEmpty("url")
+        assertEquals(jpegDataUrl(jpeg), url)
+        // 落盘契约：图片名要跟着消息存下来，重启后才找得回来。
+        val persistedUser = persistedLog().last { it.role == StoredMessage.ROLE_USER }
+        assertEquals(listOf("img_test.jpg"), persistedUser.images)
     }
 
     private companion object {
