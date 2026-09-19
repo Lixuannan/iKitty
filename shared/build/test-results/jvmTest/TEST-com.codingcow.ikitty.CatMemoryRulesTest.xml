@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="CatMemoryRulesTest[jvm]" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:11:31.012Z" hostname="MeizhendeMacBook-Air.local" time="0.005">
+<testsuite name="CatMemoryRulesTest[jvm]" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:14:55.836Z" hostname="MeizhendeMacBook-Air.local" time="0.022">
   <properties/>
-  <testcase name="an unchanged fact keeps its old timestamp so eviction stays fair[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.001"/>
+  <testcase name="an unchanged fact keeps its old timestamp so eviction stays fair[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.009"/>
   <testcase name="same key overwrites instead of piling up[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
-  <testcase name="over the cap the least recently updated unpinned fact is dropped[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.003"/>
-  <testcase name="forget removes a fact but never a pinned one[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
+  <testcase name="over the cap the least recently updated unpinned fact is dropped[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.005"/>
+  <testcase name="forget removes a fact but never a pinned one[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.004"/>
   <testcase name="render groups by category and is empty without facts[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.001"/>
   <testcase name="upsert clamps runaway values instead of rejecting them[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
   <testcase name="upsert renames a key without leaving the old one behind[jvm]" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>

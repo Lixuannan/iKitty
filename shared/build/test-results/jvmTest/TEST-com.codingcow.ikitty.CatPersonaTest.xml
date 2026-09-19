@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="CatPersonaTest[jvm]" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:11:31.018Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
+<testsuite name="CatPersonaTest[jvm]" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:14:55.859Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
   <properties/>
   <testcase name="human flavor drops cat greeting[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.001"/>
   <testcase name="only non-human flavors suggest cat actions[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
   <testcase name="default prompt carries name, traits and json contract[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
-  <testcase name="enum lookup rejects unknown names[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
-  <testcase name="traits survive a storage round trip[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.001"/>
+  <testcase name="enum lookup rejects unknown names[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.001"/>
+  <testcase name="traits survive a storage round trip[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
   <testcase name="notes are appended only when present[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
   <testcase name="blank name falls back to default[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>
   <testcase name="traits render in declaration order and can be empty[jvm]" classname="com.codingcow.ikitty.CatPersonaTest" time="0.0"/>

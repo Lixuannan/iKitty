@@ -1,8 +1,5 @@
 package com.codingcow.ikitty
 
-import org.json.JSONException
-import org.json.JSONObject
-
 /**
  * AI 回复解析结果。
  *
@@ -55,17 +52,10 @@ private val ANIMATION_TABLE: Map<String, CatAnimation> = mapOf(
 fun parseCatReply(raw: String): CatReply {
     val plain = stripCodeFence(raw)
     val json = extractJsonObject(plain) ?: return CatReply(plain, null, null)
-    return try {
-        val obj = JSONObject(json)
-        val text = obj.optString("reply").trim()
-        if (text.isEmpty()) {
-            CatReply(plain, null, null)
-        } else {
-            CatReply(text, moodOf(obj.optString("emotion")), animationOf(obj.optString("animation")))
-        }
-    } catch (_: JSONException) {
-        CatReply(plain, null, null)
-    }
+    val obj = parseJsonObjectOrNull(json) ?: return CatReply(plain, null, null)
+    val text = obj.optString("reply").trim()
+    if (text.isEmpty()) return CatReply(plain, null, null)
+    return CatReply(text, moodOf(obj.optString("emotion")), animationOf(obj.optString("animation")))
 }
 
 /** 空字符串表示模型没给这个字段。 */

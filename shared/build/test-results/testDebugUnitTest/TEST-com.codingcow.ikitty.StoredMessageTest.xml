@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.codingcow.ikitty.StoredMessageTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:14:56.152Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
+  <properties/>
+  <testcase name="a message with neither text nor images is rejected" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="images survive a json round trip" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="blank image names are dropped" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="a text-only message omits the images field" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="json shape is the on-disk contract" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="a plain text message keeps a plain wire content" classname="com.codingcow.ikitty.StoredMessageTest" time="0.001"/>
+  <testcase name="an image-only message is valid and round trips" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="toWire resolves images and drops the ones that are gone" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="unparseable lines return null instead of throwing" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

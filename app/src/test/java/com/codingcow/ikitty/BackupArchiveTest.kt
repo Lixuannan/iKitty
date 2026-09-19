@@ -1,7 +1,6 @@
 package com.codingcow.ikitty
 
 import kotlinx.coroutines.runBlocking
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -270,12 +269,11 @@ class BackupArchiveTest {
 
         fun writeMemory(vararg facts: MemoryFact, lastExtractedSeq: Long = 0L) {
             memory.parentFile?.mkdirs()
+            // 直接用生产代码的编码器，夹具才不会和真实落盘格式漂移。
             memory.writeText(
-                JSONObject().apply {
-                    put("version", 1)
-                    put("lastExtractedSeq", lastExtractedSeq)
-                    put("facts", JSONArray().apply { facts.forEach { put(it.toJson()) } })
-                }.toString()
+                encodeCatMemory(
+                    CatMemory(facts = facts.toList(), lastExtractedSeq = lastExtractedSeq)
+                ).toString()
             )
         }
 

@@ -11,14 +11,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-
-/** 服务端或网络层错误；[message] 已经是可以直接展示给用户的中文描述。 */
-class ApiException(message: String) : Exception(message)
 
 /** 一次模型回复。[reasoning] 是推理模型单独返回的思考过程，普通模型为空串。 */
 data class ChatCompletion(
@@ -324,100 +320,3 @@ class ApiClient {
 }
 
 private fun ApiConfig.endpointFor(path: String): String = normalizedBaseUrl() + path
-
-/** 字段值为 null 时 optString 会返回字符串 "null"，这里统一收敛成空串。 */
-internal fun JSONObject.stringOrEmpty(key: String): String =
-    if (isNull(key)) "" else optString(key).trim()
-
-/** 待发送的请求体，以及本次实际写入的参数名（供"测试连接"展示）。 */
-internal class BuiltRequest(val payload: JSONObject, val sentParams: List<String>)
-
-/**
- * 按模型能力拼请求体：只有 [ModelSpec] 声明支持的参数才会出现。
- *
- * 图片走标准的 OpenAI 兼容多模态结构（`content` 数组里的 `image_url` + data URL），
- * 不针对任何一家服务商做特殊处理；纯文本消息的 `content` 仍然是普通字符串，
- * 与加入图片功能之前完全一致。
- *
- * 独立成顶层函数是为了能在纯 JVM 单元测试里直接验证请求体结构。
- */
-internal fun buildChatPayload(
-    config: ApiConfig,
-    spec: ModelSpec,
-    messages: List<ChatMessage>,
-    stream: Boolean
-): BuiltRequest {
-    val model = config.model.trim()
-    if (model.isEmpty()) throw ApiException("请先填写模型名称")
-
-    val resolved = config.resolvedFor(spec)
-    val sent = mutableListOf<String>()
-    val payload = JSONObject().apply { put("model", model) }
-
-    resolved.temperature?.let { value ->
-        payload.put("temperature", spec.temperature?.jsonNumber(value) ?: value.toDouble())
-        sent += "temperature"
-    }
-    resolved.topP?.let { value ->
-        payload.put("top_p", spec.topP?.jsonNumber(value) ?: value.toDouble())
-        sent += "top_p"
-    }
-    resolved.maxTokens?.let {
-        payload.put("max_tokens", it)
-        sent += "max_tokens"
-    }
-
-    when (spec.reasoning) {
-        is ReasoningSpec.Toggle -> when (resolved.thinking) {
-            ThinkingMode.AUTO -> Unit
-            ThinkingMode.ON -> {
-                payload.put("thinking", JSONObject().put("type", "enabled"))
-                sent += "thinking"
-            }
-            ThinkingMode.OFF -> {
-                payload.put("thinking", JSONObject().put("type", "disabled"))
-                sent += "thinking"
-            }
-        }
-        is ReasoningSpec.Effort -> resolved.reasoningEffort.wireValue?.let {
-            payload.put("reasoning_effort", it)
-            sent += "reasoning_effort"
-        }
-        ReasoningSpec.AlwaysOn, ReasoningSpec.Unsupported -> Unit
-    }
-
-    if (stream) payload.put("stream", true)
-
-    payload.put("messages", JSONArray().apply {
-        messages.forEach { message ->
-            put(JSONObject().apply {
-                put("role", message.role)
-                put("content", chatContent(message))
-            })
-        }
-    })
-
-    return BuiltRequest(payload, sent)
-}
-
-/**
- * 一条消息在 `content` 字段里的取值。
- *
- * 没有图片时是纯字符串；有图片时是 `[{type:"text"},{type:"image_url"}]`。
- * 只有图片、没有文字时不写空 text 段——部分服务商会拒绝空的文本块。
- */
-internal fun chatContent(message: ChatMessage): Any {
-    if (message.images.isEmpty()) return message.content
-    return JSONArray().apply {
-        if (message.content.isNotBlank()) {
-            put(JSONObject().put("type", "text").put("text", message.content))
-        }
-        message.images.forEach { url ->
-            put(
-                JSONObject()
-                    .put("type", "image_url")
-                    .put("image_url", JSONObject().put("url", url))
-            )
-        }
-    }
-}

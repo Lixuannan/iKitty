@@ -3,9 +3,6 @@ package com.codingcow.ikitty
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -15,6 +12,8 @@ import java.nio.charset.StandardCharsets
  * 记忆是一小份有界数据（最多 [CatMemoryRules.MAX_FACTS] 条），所以整个文件重写就够了，
  * 不需要数据库。写法是"先写临时文件再改名"：改名是原子的，进程在写一半时被杀
  * 也不会留下半个 JSON。
+ *
+ * 文件的**内容**由 `:shared` 的 [encodeCatMemory] / [parseCatMemory] 决定，这里只管落盘。
  */
 class CatMemoryStore(private val file: File) {
     constructor(context: Context) : this(File(context.applicationContext.filesDir, FILE_PATH))
@@ -26,13 +25,7 @@ class CatMemoryStore(private val file: File) {
     }
 
     suspend fun save(memory: CatMemory) = withContext(Dispatchers.IO) {
-        val payload = JSONObject().apply {
-            put("version", VERSION)
-            put("lastExtractedSeq", memory.lastExtractedSeq)
-            put("lastExtractedAt", memory.lastExtractedAt)
-            put("facts", JSONArray().apply { memory.facts.forEach { put(it.toJson()) } })
-        }
-        val text = payload.toString()
+        val text = encodeCatMemory(memory).toString()
         file.parentFile?.mkdirs()
         val temp = File(file.parentFile, file.name + ".tmp")
         temp.writeText(text, StandardCharsets.UTF_8)
@@ -46,26 +39,5 @@ class CatMemoryStore(private val file: File) {
     companion object {
         /** 相对 `filesDir` 的落盘路径；备份归档按这条路径取文件。 */
         internal const val FILE_PATH = "chat/cat_memory.json"
-
-        private const val VERSION = 1
     }
-}
-
-/** 解析记忆文件的正文；文件损坏（不是 JSON）返回 null，由调用方决定回退策略。 */
-internal fun parseCatMemory(text: String): CatMemory? = try {
-    val obj = JSONObject(text)
-    val facts = buildList {
-        val array = obj.optJSONArray("facts") ?: JSONArray()
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            parseMemoryFact(item)?.let { add(it) }
-        }
-    }
-    CatMemory(
-        facts = facts,
-        lastExtractedSeq = obj.optLong("lastExtractedSeq"),
-        lastExtractedAt = obj.optLong("lastExtractedAt")
-    )
-} catch (_: JSONException) {
-    null
 }

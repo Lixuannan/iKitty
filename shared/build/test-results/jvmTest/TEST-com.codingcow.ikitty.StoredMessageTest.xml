@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="StoredMessageTest[jvm]" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:14:55.893Z" hostname="MeizhendeMacBook-Air.local" time="0.003">
+  <properties/>
+  <testcase name="a message with neither text nor images is rejected[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.001"/>
+  <testcase name="images survive a json round trip[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="blank image names are dropped[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="a text-only message omits the images field[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="json shape is the on-disk contract[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="a plain text message keeps a plain wire content[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="an image-only message is valid and round trips[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="toWire resolves images and drops the ones that are gone[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.0"/>
+  <testcase name="unparseable lines return null instead of throwing[jvm]" classname="com.codingcow.ikitty.StoredMessageTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

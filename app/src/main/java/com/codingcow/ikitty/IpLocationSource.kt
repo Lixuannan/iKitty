@@ -4,8 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONException
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
@@ -82,26 +80,4 @@ class IpLocationSource(
             .callTimeout(8, TimeUnit.SECONDS)
             .build()
     }
-}
-
-/**
- * 解析 IP 定位接口的返回。
- *
- * 两家的字段名不一样（`regionName` / `region`、`country` / `country_name`），
- * 这里一次兼容；失败状态、出错标记和不认识的返回体都返回 null。
- */
-internal fun parseIpPlace(body: String, now: Long): Place? {
-    val json = try {
-        JSONObject(body)
-    } catch (_: JSONException) {
-        return null
-    }
-    if (json.optString("status").equals("fail", ignoreCase = true)) return null
-    if (json.optBoolean("error", false)) return null
-    return Place(
-        city = json.stringOrEmpty("city"),
-        region = json.stringOrEmpty("regionName").ifEmpty { json.stringOrEmpty("region") },
-        country = json.stringOrEmpty("country").ifEmpty { json.stringOrEmpty("country_name") },
-        fetchedAt = now
-    )
 }

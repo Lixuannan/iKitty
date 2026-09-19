@@ -27,6 +27,13 @@ kotlin {
     }
 
     sourceSets {
+        commonMain.dependencies {
+            // 只用 JsonElement API（buildJsonObject / JsonObject 读写），刻意不用 @Serializable，
+            // 因此不需要 serialization 编译器插件。
+            // 用 api 而不是 implementation：JsonObject 出现在 shared 的公开签名里
+            //（StoredMessage.toJson 等），:app 的编译类路径必须能看到它。
+            api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
