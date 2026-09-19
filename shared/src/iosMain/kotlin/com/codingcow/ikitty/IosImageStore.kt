@@ -67,15 +67,6 @@ class IosImageStore(
     @OptIn(ExperimentalForeignApi::class)
     suspend fun saveData(data: NSData): String? = save(data.toByteArray())
 
-    @OptIn(ExperimentalForeignApi::class)
-    private fun NSData.toByteArray(): ByteArray {
-        val size = length.toInt()
-        if (size == 0) return ByteArray(0)
-        val copy = ByteArray(size)
-        copy.usePinned { pinned -> memcpy(pinned.addressOf(0), bytes, length) }
-        return copy
-    }
-
     private fun dataUrl(name: String): String? {
         cache[name]?.let { return it }
         val path = imagesDir / name

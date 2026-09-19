@@ -4,10 +4,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import okio.Path.Companion.toPath
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
-import okio.Path.Companion.toPath
 
 /**
  * iOS 侧的依赖装配。
@@ -88,6 +89,54 @@ class IosAppEnvironment {
         )
     }
 
+    // ---- 备份与恢复 ----
+
+    private val archive = BackupArchive(
+        fileSystem = fileSystem,
+        paths = paths,
+        appVersion = appVersion(),
+        ioDispatcher = ioDispatcher
+    ) { nowMillis() }
+
+    /**
+     * 导出到应用私有目录里的一个临时文件，返回它的绝对路径。
+     *
+     * 返回路径而不是字节：Swift 用 `ShareLink` 直接分享这个文件即可，
+     * 不必把整份归档在 Kotlin 与 Swift 之间来回拷一遍。
+     */
+    suspend fun exportBackupToFile(): String {
+        val export = archive.export(
+            BackupSettings(engine.config.value, engine.persona.value, engine.locationEnabled.value)
+        )
+        val dir = paths.root / "export"
+        if (fileSystem.exists(dir)) fileSystem.deleteRecursively(dir)
+        fileSystem.createDirectories(dir)
+        val target = dir / defaultBackupFileName(nowMillis())
+        fileSystem.write(target) { write(export.bytes) }
+        return target.toString()
+    }
+
+    /**
+     * 用一份归档整体覆盖本机数据，返回可以直接展示的结果文案。
+     *
+     * 校验通过之前不会动本机任何数据；设置也跟着归档一起恢复，然后整体重读。
+     */
+    suspend fun importBackup(data: NSData): String {
+        val contents = archive.stage(data.toByteArray())
+        val failedImages = archive.commit(contents)
+        engine.saveSettings(
+            contents.settings.config,
+            contents.settings.persona,
+            contents.settings.locationEnabled
+        )
+        engine.reloadFromDisk()
+
+        val summary = contents.summary
+        val warning = if (failedImages > 0) "有 $failedImages 张图片写入失败，可能存储空间不足。" else ""
+        return "已导入 ${summary.messageCount} 条消息、${summary.imageCount} 张图片、" +
+            "${summary.factCount} 条记忆和设置。$warning"
+    }
+
 
     /**
      * 只改"连接"这三个字段并保存。
@@ -120,3 +169,9 @@ class IosAppEnvironment {
 
 @OptIn(ExperimentalTime::class)
 private fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
+
+/** 应用版本名，写进备份清单里，方便日后排查"这份备份是谁导出的"。 */
+private fun appVersion(): String =
+    (NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String)
+        ?.takeIf { it.isNotBlank() }
+        ?: "0.0.0"

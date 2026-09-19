@@ -19,6 +19,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var pendingImages: [String] = []
     @Published var imageError: String?
 
+    /// 备份/恢复的结果文案，展示在备份页里。
+    @Published var backupMessage: String?
+
     let environment = IosAppEnvironment()
 
     private var unsubscribe: (() -> Void)?

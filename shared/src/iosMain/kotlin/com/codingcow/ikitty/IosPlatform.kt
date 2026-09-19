@@ -1,14 +1,18 @@
 package com.codingcow.ikitty
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import platform.Foundation.NSApplicationSupportDirectory
+import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
+import platform.posix.memcpy
 
 /**
  * iOS 侧的私有目录根。
@@ -51,3 +55,19 @@ fun iosFileSystem(): FileSystem = FileSystem.SYSTEM
  * "这一端用什么调度器"只在一处决定，而不是散落在各个构造点。
  */
 fun iosIoDispatcher(): CoroutineDispatcher = Dispatchers.Default
+
+/**
+ * `NSData` → `ByteArray`。
+ *
+ * Swift 传过来的是 `Data`（在 Kotlin 侧就是 `NSData`），一次 `memcpy` 取出来即可。
+ * 不逐元素拷贝，也不做成 `ByteArray` 参数让 Swift 去构造 `KotlinByteArray`——
+ * 那两边都要绕一圈，而且更慢。
+ */
+@OptIn(ExperimentalForeignApi::class)
+fun NSData.toByteArray(): ByteArray {
+    val size = length.toInt()
+    if (size == 0) return ByteArray(0)
+    val copy = ByteArray(size)
+    copy.usePinned { pinned -> memcpy(pinned.addressOf(0), bytes, length) }
+    return copy
+}

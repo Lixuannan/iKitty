@@ -9,6 +9,7 @@ struct ChatView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var isShowingCamera = false
     @State private var isShowingMemory = false
+    @State private var isShowingBackup = false
 
     var body: some View {
         NavigationStack {
@@ -31,6 +32,7 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button("记忆…") { isShowingMemory = true }
+                        Button("备份与恢复…") { isShowingBackup = true }
                         Button("清空聊天记录", role: .destructive) { model.clearMessages() }
                         Button("现在整理记忆") { model.extractMemoryNow() }
                     } label: {
@@ -45,6 +47,7 @@ struct ChatView: View {
             }
             .sheet(isPresented: $model.isShowingSettings) { SettingsView(model: model) }
             .sheet(isPresented: $isShowingMemory) { MemoryView(model: model) }
+            .sheet(isPresented: $isShowingBackup) { BackupView(model: model) }
             .fullScreenCover(isPresented: $isShowingCamera) {
                 CameraPicker(isPresented: $isShowingCamera) { image in
                     Task { await model.attach(image: image) }
