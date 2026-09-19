@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -32,6 +33,11 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
 
         /** 下载进度最多按总量的 1/100 上报一次，避免每 64KB 就重写一次界面状态。 */
         const val UPDATE_PROGRESS_STEPS = 100L
+
+        const val COPY_BUFFER_BYTES = 64 * 1024
+
+        /** 读进来的备份文件上限；超过它就不是一份正常备份。 */
+        const val MAX_BACKUP_FILE_BYTES = 256L * 1024 * 1024
     }
 
     private val api = okHttpApiClient()
@@ -280,7 +286,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _backupStatus.value = try {
                 // 归档整份读进内存：格式是先解包校验、再整体覆盖，所以不能边读边改本机数据。
-                val contents = archive.stage(openInput(uri).use { it.readBytes() })
+                val contents = archive.stage(readBackupBytes(uri))
                 val failedImages = archive.commit(contents)
                 // 设置也要跟着归档一起落地；写完之后再整体重读，界面立刻反映备份内容。
                 saveSettings(
@@ -311,6 +317,29 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun openInput(uri: Uri): InputStream {
         val resolver = getApplication<Application>().contentResolver
         return resolver.openInputStream(uri) ?: throw IOException("无法读取所选文件")
+    }
+
+    /**
+     * 把选中的文件读进内存，并且**带上限**。
+     *
+     * 归档现在是整份读进内存再校验的，所以不能直接 `readBytes()`：用户完全可能选到一个
+     * 几百 MB 的无关文件，那样会先把内存吃光，而不是给出一句"这不是备份"。
+     * 上限与 [BackupArchive] 解压后的上限一致，正常备份远达不到。
+     */
+    private fun readBackupBytes(uri: Uri): ByteArray = openInput(uri).use { input ->
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_BACKUP_FILE_BYTES) {
+                throw BackupException("文件超过 256 MB，不像是 iKitty 的备份")
+            }
+            out.write(buffer, 0, read)
+        }
+        out.toByteArray()
     }
 
     /**
