@@ -44,4 +44,25 @@ class ImageStoreTest {
         assertEquals("image/webp", mimeFor("a.webp"))
         assertEquals("image/jpeg", mimeFor("noextension"))
     }
+
+    @Test
+    fun `exif orientation maps to the expected rotation and mirroring`() {
+        // 1 正常、2 左右镜像、3 旋转 180、4 上下镜像（= 旋转 180 再镜像）。
+        assertEquals(ExifTransform(0, false), exifTransformFor(1))
+        assertEquals(ExifTransform(0, true), exifTransformFor(2))
+        assertEquals(ExifTransform(180, false), exifTransformFor(3))
+        assertEquals(ExifTransform(180, true), exifTransformFor(4))
+        // 5/6/7/8：竖拍照片最常见的是 6，转 90 度。
+        assertEquals(ExifTransform(90, true), exifTransformFor(5))
+        assertEquals(ExifTransform(90, false), exifTransformFor(6))
+        assertEquals(ExifTransform(270, true), exifTransformFor(7))
+        assertEquals(ExifTransform(270, false), exifTransformFor(8))
+    }
+
+    @Test
+    fun `unknown exif orientation leaves the pixels untouched`() {
+        // 0 是 UNDEFINED，其余取值同样按「不认识就不转」处理。
+        assertEquals(ExifTransform(0, false), exifTransformFor(0))
+        assertEquals(ExifTransform(0, false), exifTransformFor(99))
+    }
 }

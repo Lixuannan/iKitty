@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **0.3.0** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **0.4.0** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -87,6 +87,10 @@ You can also open the repository root directly in Android Studio and run after t
 2. Pick a provider (or enter a custom Base URL), fill in the API key, and choose or type a model name.
 3. Tap **Test connection** to verify the whole path works.
 4. Tap **Save** and return to the chat screen.
+
+> The app ships with **DeepSeek** as the default provider and `deepseek-flash` as the default model: fill in
+> an API key and it works. Its thinking depth is adjusted through `reasoning_effort` under
+> **Generation parameters → Thinking depth** (low / medium / high; "off" sends no such field).
 
 ## Configuring a model service
 
@@ -288,7 +292,8 @@ the settings screen and the request body are driven by it:
 | --- | --- | --- | --- | --- | --- | --- |
 | Zhipu GLM / Z.AI | glm-5.3 | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 1M |
 | Zhipu GLM / Z.AI | glm-5.3-flash | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 200K |
-| DeepSeek | deepseek-v4-pro / deepseek-flash | 0–2 | 0.01–1 | ≤8192 | Not supported | 128K |
+| DeepSeek | deepseek-flash (app default) | 0–2 | 0.01–1 | ≤8192 | `reasoning_effort` | 128K |
+| DeepSeek | deepseek-v4-pro | 0–2 | 0.01–1 | ≤8192 | Not supported | 128K |
 | OpenAI | gpt-5.5 / gpt-5.3-codex | Not sent | Not sent | ≤32768 | `reasoning_effort` | 400K |
 | Anthropic | claude-opus-4.7 / claude-sonnet-4.6 | 0–1 | 0.01–1 | ≤8192 | Not supported | 200K |
 | Google | gemini-3.1-pro / gemini-3-flash | 0–2 | 0.01–1 | ≤8192 | Not supported | 1M |
@@ -326,6 +331,7 @@ iKitty/
 │   ├── CatMemoryScreen.kt         Memory screen UI
 │   ├── CatView.kt                 Canvas cat and avatar
 │   ├── ChatImage.kt               Local image thumbnails
+│   ├── ImageViewer.kt             Full-screen viewer for chat images
 │   ├── CatState.kt                Mood / animation enums
 │   ├── CatReply.kt                Model reply parsing
 │   ├── CatPersona.kt              Persona -> system prompt
@@ -344,7 +350,7 @@ iKitty/
 │   ├── AmbientContext.kt          "Right now" background block
 │   ├── Location.kt / IpLocationSource.kt  IP city geolocation
 │   └── TimeFormat.kt              Time and interval formatting
-├── app/src/test/java/com/codingcow/ikitty/   94 plain-JVM unit tests
+├── app/src/test/java/com/codingcow/ikitty/   101 plain-JVM unit tests
 ├── design/cat_v1/                 Layered cat character assets and spec
 └── docs/DOC_EN.md                 Detailed design document
 ```
@@ -355,12 +361,12 @@ iKitty/
 ./gradlew testDebugUnitTest
 ```
 
-The 94 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
+The 101 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
 persistence and round-trip, memory merge and parsing, context assembly (including image tokens and image
-resolution), multimodal request-body structure, persona prompt, image sampling ratio and MIME, IP response
-parsing, the “right now” block, and `.ikitty` export/import round-trips, settings serialization, and
-rejection of corrupt files and out-of-bounds entries. UI, real network requests, and image
-decoding/compression are outside unit-test scope. See
+resolution), multimodal request-body structure, persona prompt, image sampling ratio, EXIF orientation
+mapping and viewer pan clamping, IP response parsing, the “right now” block, and `.ikitty` export/import
+round-trips, settings serialization, and rejection of corrupt files and out-of-bounds entries. UI, real
+network requests, and image decoding/compression are outside unit-test scope. See
 [the design document](docs/DOC_EN.md#14-testing-strategy) for details.
 
 ## Known limitations and roadmap
@@ -377,12 +383,12 @@ decoding/compression are outside unit-test scope. See
 9. Images are downscaled and re-encoded as JPEG: lossy, with transparent areas flattened to white, and at
    most 9 per message.
 10. Historical images are re-sent every turn, so many images noticeably enlarge the request body and traffic.
-11. Images can only be viewed inside the app — no full-screen viewer, save-to-gallery, or zoom.
+11. Images open to a full-screen in-app viewer with pinch-to-zoom, but cannot be saved to the gallery or shared.
 
 Planned work: put the cat canvas back (optionally toggled), move to Rive/Lottie animation, save per-provider
 configurations, paginate history upwards, record the timezone offset at write time, add a system-location
-`LocationSource` implementation (runtime permissions and failure fallback required), add a full-screen image
-viewer, and add retrieval (message chunking + vectors) when “never forget” is genuinely needed.
+`LocationSource` implementation (runtime permissions and failure fallback required), add save-to-gallery and
+sharing for images, and add retrieval (message chunking + vectors) when “never forget” is genuinely needed.
 
 ## Related documents
 

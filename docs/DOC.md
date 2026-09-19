@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：0.3.0 · 包名：`com.codingcow.ikitty` · 源码根目录：`app/src/main/java/com/codingcow/ikitty/`
+- 版本：0.4.0 · 包名：`com.codingcow.ikitty` · 源码根目录：`app/src/main/java/com/codingcow/ikitty/`
 - 技术栈：Kotlin 2.0.21、Jetpack Compose（Material3）、OkHttp 4.12.0、DataStore Preferences 1.1.1
 - 构建：AGP 8.7.3、Gradle 9.7.1、Java 17 字节码目标、minSdk 26 / targetSdk 35
 
@@ -56,6 +56,8 @@ MainActivity (ComponentActivity + MaterialTheme)
 | `AmbientContext` | 「此刻」背景块 |
 | `parseLatestRelease` / `compareVersions` | release JSON 解析与版本比较 |
 | `BackupArchive` / `settingsToJson` / `settingsFromJson` / `parseCatMemory` | 备份归档的读写、设置序列化、记忆解析 |
+| `exifTransformFor` | EXIF 方向标签 → 旋转角度与是否镜像 |
+| `clampPan` | 大图放大后的拖动范围钳制 |
 
 Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Context` 构造函数）、
 `SettingsStore`（DataStore）、`IpLocationSource`（OkHttp）、`CatChatViewModel`（`AndroidViewModel`）、
@@ -137,6 +139,9 @@ ViewModel 在动作时长 + 200ms 缓冲后把 `animation` 清回 `NONE`，使�
 
 `ApiConfig` 保存 `providerId`、`baseUrl`、`apiKey`、`model`、`temperature`、`topP`、
 `maxTokens`（0 = 不限制）、`thinking`、`reasoningEffort`。
+
+默认值是 DeepSeek 的 `deepseek-flash`（`providerId = "deepseek"`、`baseUrl = https://api.deepseek.com/v1`）：
+首次安装没有存过任何设置时，填个 API Key 就能直接对话。`SettingsStore` 读不到偏好时落到同一组默认值。
 
 `ApiConfig.resolvedFor(spec)` 是「配置值 → 实际发送值」的唯一收敛点：
 
@@ -507,7 +512,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 - Header：名字、当前情绪文案、`服务商 · 模型`、记忆按钮（心形，带数量）、设置按钮。
 - 消息列表：`LazyColumn`，key 用 `msg.seq`；时间只在「首条 / 说话人变化 / 间隔 ≥5 分钟」时显示。
   用户气泡靠右用主色，猫猫靠左带小猫头像；`localError` 用错误色。
-  带图片的消息在气泡内用 `FlowRow` 每行两张显示缩略图，纯图片消息不渲染空文本。
+  带图片的消息在气泡内用 `FlowRow` 每行两张显示缩略图，纯图片消息不渲染空文本；
+  点缩略图打开全屏大图（`ImagePreviewDialog`，见 [20. 大图查看](#20-大图查看imageviewerkt)）。
 - 等待回复时追加一个三点跳动的 `ThinkingBubble`；开始流式输出后由 `StreamingBubble` 取代，
   内容是 `streamingReply` 的当前值。
 - 输入栏：左侧「+」弹出「从相册选择 / 拍照」，中间多行输入框（≤5 行，IME 动作是发送）。
@@ -572,7 +578,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | 接入系统定位 | 实现 `LocationSource`，在 ViewModel 里替换 `IpLocationSource` |
 | 换聊天记录存储 | 替换 `ChatLogStore`（保持 `append` / `tail` / `readAfter` / `clear`） |
 | 改图片压缩或存储位置 | 只改 `ImageStore` 的导入管线与常量 |
-| 改图片在界面上的呈现 | 只改 `ChatImage` 与 `CatChatScreen` 的气泡、附件条 |
+| 改图片在界面上的呈现 | 只改 `ChatImage`、`ImageViewer` 与 `CatChatScreen` 的气泡、附件条 |
 | 改历史图片的携带策略 | 只改 `ContextAssembler` 的 `imageUrl` 解析器与图片成本计算 |
 | 换更新来源 | 改 `UpdateModels.kt` 的 `RELEASE_API_URL` 与 `parseLatestRelease` |
 | 改更新包的下载/校验/安装 | `UpdateClient`（下载）/ `ApkInstaller`（校验与安装）/ ViewModel 的 `UPDATE_DIR` |
@@ -587,7 +593,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ./gradlew testDebugUnitTest
 ```
 
-94 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
+101 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -598,10 +604,11 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `StoredMessageTest` | 7 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、纯文字 wire 不带图片 |
 | `MultimodalPayloadTest` | 5 | 纯文本仍是字符串 content 且无 `stream`、图片转成 `image_url` content 数组、纯图片不写空 text 段、流式只加 `stream` 不改 content、发送参数仍受能力表约束 |
 | `ContextAssemblerTest` | 13 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、附加块按存在拼接、稳定块在易变块前、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块计入预算、每张图片固定开销、图片解析进 wire、图片挤占历史预算 |
-| `ImageStoreTest` | 4 | 采样倍率落在上限内、按长边采样、采样后尺寸不超上限、数据 URL 的 MIME 兜底 |
+| `ImageStoreTest` | 6 | 采样倍率落在上限内、按长边采样、采样后尺寸不超上限、数据 URL 的 MIME 兜底、EXIF 八个方向值的旋转/镜像映射、认不出的方向不转 |
+| `ImageViewerTest` | 3 | 未放大时不接受拖动、放大后拖动被钳制在溢出范围内、钳制范围随倍数增长 |
 | `LocationTest` | 10 | ip-api/ipapi.co/ipwho.is 三种返回解析、JSON null 不成字符串、失败与垃圾拒绝、`display` 回退、背景块含时间/间隔/城市且标注「可能不准」、缺信息时不输出 |
 | `UpdateModelsTest` | 9 | release JSON 解析版本/说明/APK 地址/大小/发布时间、多 APK 时优先同名、无 APK 返回 null、预发布不算更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、预发布更旧、`v` 前缀归一化 |
-| `ModelCatalogTest` | 8 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 reasoning_effort 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 不发送采样参数、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底 |
+| `ModelCatalogTest` | 10 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 reasoning_effort 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 不发送采样参数、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底、默认模型是 deepseek-flash、deepseek-flash 可调思考深度 |
 | `BackupArchiveTest` | 11 | 导出/导入往返还原消息、记忆、图片与设置、覆盖时删掉旧图片与旧记忆、非 zip 与缺清单被拒、格式版本过新被拒、越界图片条目被忽略、空备份清空本机历史、聊天记录损坏时拒绝覆盖、设置序列化全字段往返、缺字段回退默认值、记忆解析容忍垃圾、默认文件名带后缀 |
 
 `testImplementation("org.json:json:20240303")` 是刻意的：单元测试跑在 JVM 上，
@@ -645,10 +652,10 @@ DataStore Preferences，文件名 `cat_settings`。键：
 8. 界面文案未做多语言资源。
 9. 图片统一降采样到最长边 1280 并转 JPEG：画质有损、透明区域填白，单条消息上限 9 张。
 10. 历史图片每轮都会重新编码并重发（`dataUrls` 只有内存缓存），图片多时请求体与内存压力明显。
-11. 图片没有查看大图、保存、缩放手势。
+11. 图片可以在应用内点开查看大图并缩放，但不能保存到相册或分享出去。
 12. 更新包只校验长度、包名与签名，没有 release 提供的校验和；也没有后台自动检查更新。
 13. 新一批内置模型的上下文窗口多为同系列上一代的保守值（只有 GLM-5.3 / MiniMax M3 的 1M 已核实），
-    且除 GPT-5.x、GLM-5.3 外没有为其它新模型声明推理控制方式；两者都只影响参数与预算，不影响能否请求。
+    且只为 GPT-5.x、GLM-5.3 与 deepseek-flash 声明了推理控制方式；两者都只影响参数与预算，不影响能否请求。
 14. 备份是明文 ZIP，没有密码或加密；导入只能整体覆盖，不能只挑其中几项恢复；
     也没有自动/定时备份，导出会带走 API Key。
 15. 内存中只载入最近 400 条而备份是全量的：导入一份很长的备份后，界面依然只显示末尾 400 条。
@@ -659,17 +666,23 @@ DataStore Preferences，文件名 `cat_settings`。键：
 只在本次进程内可读，不复制的话重启后记录里的图片会变成空白。
 
 - 目录：`filesDir/chat/images/`；拍照临时文件在 `cacheDir/chat_camera/`。
-- 导入：读边界 → 按 `sampleSizeFor` 采样解码 → 缩放到最长边 `MAX_DIMENSION = 1280` →
-  有透明通道先铺白底 → 压缩成 JPEG（质量 85）写入 `img_<uuid>.jpg`。
+- 导入：读边界 → 读 EXIF 方向 → 按 `sampleSizeFor` 采样解码 →
+  缩放到最长边 `MAX_DIMENSION = 1280` → 按方向把像素转正 → 有透明通道先铺白底 →
+  压缩成 JPEG（质量 85）写入 `img_<uuid>.jpg`。
   任一步失败返回 `null`，由调用方跳过这张图，而不是让发送整体失败。
   注意 `inJustDecodeBounds` 模式下 `decodeStream` 返回 `null` 是正常行为（尺寸只写进 Options），
   只有「流打不开」才代表失败。
+- EXIF 方向：`BitmapFactory` **不会**按 `TAG_ORIENTATION` 摆正像素——竖拍照片的像素其实是横的，
+  方向只写在标签里。重新编码成 JPEG 会把标签抹掉，所以必须在导入时按 `exifTransformFor`
+  把像素转正，否则缩略图、查看大图与发给模型的原图都会躺倒。
+  `exifTransformFor` 把标签 1–8 译成「旋转 N 度 + 可选左右镜像」，读不出或认不出的取值一律不转。
 - 数据 URL：`dataUrl` / `dataUrls` 把文件编码成 `data:image/jpeg;base64,...`，
   结果按文件名缓存在一个上限 12 条的 LRU 里（文件不会被改写，缓存永远有效）。
 - 相机：`newCameraTarget()` 用 `FileProvider`（authority `${applicationId}.fileprovider`，
   路径配置 `res/xml/file_paths.xml`）生成可写 URI；`commitCamera` 成功后走同一条导入管线，
   取消则删除临时文件。
-- 缩略图：`decodeSampledBitmap` 按最长边 512 采样，供 `ChatImage` 显示，避免整图进内存。
+- 缩略图：`decodeSampledBitmap` 按最长边 512 采样，供 `ChatImage` 显示，避免整图进内存；
+  查看大图时同一条解码路径改按 2048 采样（见 [20. 大图查看](#20-大图查看imageviewerkt)）。
 
 ---
 
@@ -792,5 +805,23 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
   `.ikitty` 没有注册 MIME）；
 - `BackupStatus` 四态（`Idle` / `Working` / `Done` / `Failed`）驱动进度与结果文案；
   有动作在跑或正在等模型回复时不允许再发起导入。
+
+---
+
+## 20. 大图查看（`ImageViewer.kt`）
+
+聊天记录里的缩略图点击后由 `CatChatScreen` 的 `previewImage` 状态打开
+`ImagePreviewDialog(name, onDismiss)`：一个全屏 `Dialog`（`usePlatformDefaultWidth = false`），
+黑底、`ContentScale.Fit`，点右上角或按返回键关闭（返回键由 `Dialog` 的 `onDismissRequest` 接管）。
+
+- 解码：`decodeSampledBitmap(file, PREVIEW_PIXELS = 2048)`，比列表缩略图的 512 更清楚，
+  又不至于把 1280px 的原图整张原样读进内存；解码在 IO 线程，完成前显示转圈。
+- 三种状态：`Loading` / `Missing`（文件已被删除或解不出来，显示「这张图片已经找不到了」）/
+  `Ready`。区分 `Missing` 是为了不让占位圈永远转下去。
+- 手势：`rememberTransformableState` + `transformable` 做双指缩放（1–5 倍）与拖动；
+  未放大时忽略平移，放大后由纯函数 `clampPan` 把位移钳制在溢出范围内，避免把图片拖出屏幕找不回来。
+- 只有消息气泡里的缩略图传 `onClick`；输入栏待发送的附件条不打开大图。
+- 兼容性：EXIF 修复只作用于**新导入**的图片。修复前导入的竖拍照片在导入时就已经丢掉了方向标签，
+  文件本身就是横的，显示阶段无法还原；备份里的图片按原样搬运，同样是修复前就躺倒的仍旧躺倒。
 
 

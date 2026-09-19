@@ -8,7 +8,7 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 拼成 system prompt 直接发给任意 OpenAI 兼容服务。聊天记录、图片、记忆和设置全部存在本机，
 除了你自己配置的模型服务和可选的 IP 定位，不经过任何第三方服务器。
 
-- 应用名：**iKitty** · 版本：**0.3.0** · 包名：`com.codingcow.ikitty`
+- 应用名：**iKitty** · 版本：**0.4.0** · 包名：`com.codingcow.ikitty`
 - 仓库：<https://github.com/Lixuannan/iKitty>
 
 ---
@@ -75,6 +75,10 @@ cd iKitty
 2. 选择服务商（或直接填自定义 Base URL），填 API Key，选择或输入模型名；
 3. 点「测试连接」确认整条链路可用；
 4. 点「保存」，回到聊天页开始对话。
+
+> 应用预置的默认服务商是 **DeepSeek**，默认模型是 `deepseek-flash`：填好 API Key 就能直接用。
+> 它的「思考深度」在设置页「生成参数 → 思考深度」里用 `reasoning_effort` 调整
+> （低 / 中 / 高，选「关闭」则不发送该字段）。
 
 ## 配置模型服务
 
@@ -237,7 +241,8 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 | --- | --- | --- | --- | --- | --- | --- |
 | 智谱 GLM / Z.AI | glm-5.3 | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 1M |
 | 智谱 GLM / Z.AI | glm-5.3-flash | 0–1 | 0.01–1 | ≤32768 | `reasoning_effort` | 200K |
-| DeepSeek | deepseek-v4-pro / deepseek-flash | 0–2 | 0.01–1 | ≤8192 | 不支持 | 128K |
+| DeepSeek | deepseek-flash（应用默认） | 0–2 | 0.01–1 | ≤8192 | `reasoning_effort` | 128K |
+| DeepSeek | deepseek-v4-pro | 0–2 | 0.01–1 | ≤8192 | 不支持 | 128K |
 | OpenAI | gpt-5.5 / gpt-5.3-codex | 不发送 | 不发送 | ≤32768 | `reasoning_effort` | 400K |
 | Anthropic | claude-opus-4.7 / claude-sonnet-4.6 | 0–1 | 0.01–1 | ≤8192 | 不支持 | 200K |
 | Google | gemini-3.1-pro / gemini-3-flash | 0–2 | 0.01–1 | ≤8192 | 不支持 | 1M |
@@ -273,6 +278,7 @@ iKitty/
 │   ├── CatMemoryScreen.kt         记忆页 UI
 │   ├── CatView.kt                 Canvas 猫咪与头像
 │   ├── ChatImage.kt               本机图片缩略图
+│   ├── ImageViewer.kt             聊天记录的全屏大图查看
 │   ├── CatState.kt                情绪 / 动作枚举
 │   ├── CatReply.kt                模型回复解析
 │   ├── CatPersona.kt              角色设定 → system prompt
@@ -291,7 +297,7 @@ iKitty/
 │   ├── AmbientContext.kt          「此刻」背景块
 │   ├── Location.kt / IpLocationSource.kt  IP 城市定位
 │   └── TimeFormat.kt              时间与间隔格式化
-├── app/src/test/java/com/codingcow/ikitty/   94 个纯 JVM 单元测试
+├── app/src/test/java/com/codingcow/ikitty/   101 个纯 JVM 单元测试
 ├── design/cat_v1/                 分层猫咪角色素材与规范
 └── docs/DOC.md                    详细设计文档
 ```
@@ -302,9 +308,9 @@ iKitty/
 ./gradlew testDebugUnitTest
 ```
 
-当前 94 个用例覆盖纯逻辑契约：聊天记录的读写与坏行容错、带图片消息的落盘与还原、
+当前 101 个用例覆盖纯逻辑契约：聊天记录的读写与坏行容错、带图片消息的落盘与还原、
 记忆合并与解析、上下文装配（含图片 token 与图片解析）、多模态请求体结构、
-角色 prompt、图片采样倍率与 MIME、IP 返回解析与「此刻」背景块，
+角色 prompt、图片采样倍率、EXIF 方向映射与大图拖动钳制、IP 返回解析与「此刻」背景块，
 以及 `.ikitty` 备份的导出/导入往返、设置序列化、坏文件与越界条目的拒绝。
 UI、真实网络请求和图片解码压缩不在单元测试范围内。
 详见[详细设计文档](docs/DOC.md#14-测试策略)。
@@ -321,12 +327,12 @@ UI、真实网络请求和图片解码压缩不在单元测试范围内。
 8. 界面文案目前只有中文，没有做多语言资源；
 9. 图片统一降采样并转成 JPEG：画质有损，透明区域会被填白，单条消息最多 9 张；
 10. 上下文里的历史图片每轮都会重发，图片多时请求体和流量明显变大；
-11. 图片只能在本应用内查看，没有点开大图、保存到相册或缩放。
+11. 图片点开可以在应用内看大图并双指缩放，但不能保存到相册或分享。
 
 后续可做：把猫咪画布放回聊天页或做成可开关、换 Rive/Lottie 动画、
 按服务商分别保存配置、聊天记录向上分页、写入时记录时区偏移、
 给 `LocationSource` 增加系统定位实现（需运行时权限与失败降级）、
-图片点击查看大图、需要「永不遗忘」时再上检索（消息切块 + 向量）。
+图片保存到相册与分享、需要「永不遗忘」时再上检索（消息切块 + 向量）。
 
 ## 相关文档
 

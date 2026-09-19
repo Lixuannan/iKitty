@@ -2,6 +2,7 @@ package com.codingcow.ikitty
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -23,12 +24,14 @@ import kotlinx.coroutines.withContext
  *
  * 图片来自应用私有目录，按 [maxPixels] 采样解码，不会把整张原图读进内存。
  * 解码完成前保持一个浅色占位块，避免列表在滚动时跳动。
+ * 传了 [onClick] 的缩略图可以点开大图（见 [ImagePreviewDialog]）。
  */
 @Composable
 fun ChatImage(
     name: String,
     modifier: Modifier = Modifier,
-    maxPixels: Int = THUMBNAIL_PIXELS
+    maxPixels: Int = THUMBNAIL_PIXELS,
+    onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val file = remember(name) { ImageStore(context).file(name) }
@@ -39,7 +42,9 @@ fun ChatImage(
     }
 
     Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         bitmap?.let {

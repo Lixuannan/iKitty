@@ -212,8 +212,8 @@ object ModelCatalog {
             name = "DeepSeek",
             baseUrl = "https://api.deepseek.com/v1",
             keyHint = "sk-...",
-            models = listOf("deepseek-v4-pro", "deepseek-flash"),
-            note = "V4 Pro 偏推理与编码，Flash 偏速度与成本。"
+            models = listOf("deepseek-flash", "deepseek-v4-pro"),
+            note = "Flash 是应用默认的低成本快速档，可用 reasoning_effort 调思考深度；V4 Pro 偏推理与编码。"
         ),
         ProviderSpec(
             id = "openai",
@@ -431,17 +431,18 @@ object ModelCatalog {
     private fun deepSeekSpecs(): List<ModelSpec> = listOf(
         builtIn(
             providerId = "deepseek",
+            modelId = "deepseek-flash",
+            label = "DeepSeek Flash",
+            window = 128_000,
+            reasoning = ReasoningSpec.Effort(EFFORT_LEVELS),
+            note = "应用默认模型；用 reasoning_effort 调整思考深度，保持「关闭」时不发送该字段。"
+        ),
+        builtIn(
+            providerId = "deepseek",
             modelId = "deepseek-v4-pro",
             label = "DeepSeek V4 Pro",
             window = 128_000,
             note = "面向推理与编码。"
-        ),
-        builtIn(
-            providerId = "deepseek",
-            modelId = "deepseek-flash",
-            label = "DeepSeek Flash",
-            window = 128_000,
-            note = "低成本的快速档。"
         )
     )
 

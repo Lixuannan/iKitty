@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -99,13 +101,18 @@ class ImageStore(context: Context) {
         probe.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
+        // BitmapFactory 不会按 EXIF 自动摆正像素：竖拍照片的像素是横的，方向只写在标签里。
+        // 不在这里转正，重新编码后标签就丢了，缩略图和发给模型的原图都会躺倒。
+        val orientation = open()?.use { readOrientation(it) } ?: ExifInterface.ORIENTATION_NORMAL
+
         val decodeOptions = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, MAX_DIMENSION)
         }
         val decoded = open()?.use { BitmapFactory.decodeStream(it, null, decodeOptions) } ?: return null
 
         val scaled = scaleDown(decoded, MAX_DIMENSION)
-        val flat = flattenAlpha(scaled)
+        val upright = applyExifOrientation(scaled, orientation)
+        val flat = flattenAlpha(upright)
         dir.mkdirs()
         val name = "img_${UUID.randomUUID()}.jpg"
         return try {
@@ -117,7 +124,8 @@ class ImageStore(context: Context) {
                 null
             }
         } finally {
-            if (flat !== scaled) flat.recycle()
+            if (flat !== upright) flat.recycle()
+            if (upright !== scaled) upright.recycle()
             if (scaled !== decoded) scaled.recycle()
             decoded.recycle()
         }
@@ -182,4 +190,44 @@ internal fun decodeSampledBitmap(file: File, maxPixels: Int): Bitmap? {
         inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, maxPixels)
     }
     return BitmapFactory.decodeFile(file.absolutePath, options)
+}
+
+/**
+ * EXIF 方向标签要做的几何变换。
+ *
+ * 单独抽出来是为了能在纯 JVM 测试里验证 1–8 八个取值的映射；
+ * 真正调用 [Bitmap.createBitmap] 的那一步只能在设备上验证。
+ */
+internal data class ExifTransform(val degrees: Int, val mirrored: Boolean)
+
+/** 把 EXIF 方向取值翻译成「先顺时针旋转 [ExifTransform.degrees] 度，再左右镜像」。 */
+internal fun exifTransformFor(orientation: Int): ExifTransform = when (orientation) {
+    ExifInterface.ORIENTATION_ROTATE_90 -> ExifTransform(90, false)
+    ExifInterface.ORIENTATION_ROTATE_180 -> ExifTransform(180, false)
+    ExifInterface.ORIENTATION_ROTATE_270 -> ExifTransform(270, false)
+    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifTransform(0, true)
+    ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifTransform(180, true)
+    ExifInterface.ORIENTATION_TRANSPOSE -> ExifTransform(90, true)
+    ExifInterface.ORIENTATION_TRANSVERSE -> ExifTransform(270, true)
+    // 含 ORIENTATION_NORMAL / ORIENTATION_UNDEFINED 与认不出的取值：原样返回。
+    else -> ExifTransform(0, false)
+}
+
+/** 读取流里的 EXIF 方向；读不出来（非图片、截断、不支持的格式）一律当作「不用转」。 */
+private fun readOrientation(stream: InputStream): Int = runCatching {
+    ExifInterface(stream).getAttributeInt(
+        ExifInterface.TAG_ORIENTATION,
+        ExifInterface.ORIENTATION_NORMAL
+    )
+}.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+/** 按 [orientation] 把像素摆正；不需要变换时直接返回原图，避免多复制一份。 */
+private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    val transform = exifTransformFor(orientation)
+    if (transform.degrees == 0 && !transform.mirrored) return bitmap
+    val matrix = Matrix().apply {
+        if (transform.degrees != 0) postRotate(transform.degrees.toFloat())
+        if (transform.mirrored) postScale(-1f, 1f)
+    }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 }

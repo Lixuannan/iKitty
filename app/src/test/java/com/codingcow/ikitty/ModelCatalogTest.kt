@@ -86,6 +86,40 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun `应用默认使用 DeepSeek 的 deepseek-flash`() {
+        val defaults = ApiConfig()
+        assertEquals("deepseek", defaults.providerId)
+        assertEquals("deepseek-flash", defaults.model)
+        assertEquals(ModelCatalog.provider("deepseek").baseUrl, defaults.baseUrl)
+        // 预设清单第一条就是默认模型，切回该服务商时不会跳回另一个模型。
+        assertEquals("deepseek-flash", ModelCatalog.provider("deepseek").defaultModel)
+    }
+
+    @Test
+    fun `deepseek-flash 可以调整思考深度`() {
+        val spec = ModelCatalog.resolve("deepseek", "deepseek-flash")
+        assertTrue(spec.reasoning is ReasoningSpec.Effort)
+        assertTrue(spec.supportedParamNames.contains("reasoning_effort"))
+        assertEquals(
+            listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH),
+            (spec.reasoning as ReasoningSpec.Effort).supported
+        )
+
+        val config = ApiConfig()
+        // 默认档位是「关闭」，请求里不出现 reasoning_effort。
+        assertEquals(ReasoningEffort.OFF, config.resolvedFor(spec).reasoningEffort)
+        // 三档都照发。
+        ReasoningEffort.entries
+            .filter { it != ReasoningEffort.OFF }
+            .forEach { level ->
+                assertEquals(
+                    level,
+                    config.copy(reasoningEffort = level).resolvedFor(spec).reasoningEffort
+                )
+            }
+    }
+
+    @Test
     fun `旧模型没有内置条目时仍然能解析出可用参数`() {
         val spec = ModelCatalog.resolve("openai", "gpt-4o-mini")
         assertNotNull(spec.temperature)

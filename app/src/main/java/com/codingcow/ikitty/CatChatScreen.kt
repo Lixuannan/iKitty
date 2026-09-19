@@ -95,6 +95,8 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
     var input by remember { mutableStateOf("") }
     /** 已选好、等待发送的图片文件名。 */
     var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
+    /** 正在全屏查看的聊天记录图片名；`null` 表示没有打开大图。 */
+    var previewImage by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showMemory by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -210,7 +212,11 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             itemsIndexed(messages, key = { _, msg -> msg.seq }) { index, msg ->
-                MessageBubble(msg = msg, showTime = shouldShowTime(messages, index))
+                MessageBubble(
+                    msg = msg,
+                    showTime = shouldShowTime(messages, index),
+                    onImageClick = { name -> previewImage = name }
+                )
             }
             if (busy && streamingReply.isNullOrEmpty()) {
                 item { ThinkingBubble() }
@@ -241,6 +247,11 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             },
             sendEnabled = (input.isNotBlank() || attachments.isNotEmpty()) && !busy
         )
+    }
+
+    // 大图用全屏 Dialog 盖在聊天页上：它自己处理返回键，不影响上面的页面切换。
+    previewImage?.let { name ->
+        ImagePreviewDialog(name = name, onDismiss = { previewImage = null })
     }
 }
 
@@ -317,7 +328,7 @@ private val BubbleShape = RoundedCornerShape(20.dp)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MessageBubble(msg: StoredMessage, showTime: Boolean) {
+private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (String) -> Unit) {
     val isUser = msg.role == StoredMessage.ROLE_USER
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -371,7 +382,8 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean) {
                                     name = name,
                                     modifier = Modifier
                                         .size(126.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    onClick = { onImageClick(name) }
                                 )
                             }
                         }

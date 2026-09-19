@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.3.0 · Package: `com.codingcow.ikitty` · Source root: `app/src/main/java/com/codingcow/ikitty/`
+- Version: 0.4.0 · Package: `com.codingcow.ikitty` · Source root: `app/src/main/java/com/codingcow/ikitty/`
 - Stack: Kotlin 2.0.21, Jetpack Compose (Material3), OkHttp 4.12.0, DataStore Preferences 1.1.1
 - Build: AGP 8.7.3, Gradle 9.7.1, Java 17 bytecode target, minSdk 26 / targetSdk 35
 
@@ -57,6 +57,8 @@ The following objects reference no Android API and are therefore callable direct
 | `AmbientContext` | "Right now" background block |
 | `parseLatestRelease` / `compareVersions` | Release JSON parsing and version comparison |
 | `BackupArchive` / `settingsToJson` / `settingsFromJson` / `parseCatMemory` | Backup archive read/write, settings serialization, memory parsing |
+| `exifTransformFor` | EXIF orientation tag → rotation angle and mirroring |
+| `clampPan` | Pan-range clamping for the zoomed viewer image |
 
 The Android adapters are: `ChatLogStore`, `CatMemoryStore` (files + a `Context` constructor),
 `SettingsStore` (DataStore), `IpLocationSource` (OkHttp), `CatChatViewModel` (`AndroidViewModel`),
@@ -144,6 +146,10 @@ same animation can be triggered again.
 
 `ApiConfig` holds `providerId`, `baseUrl`, `apiKey`, `model`, `temperature`, `topP`, `maxTokens`
 (0 = unlimited), `thinking`, and `reasoningEffort`.
+
+The defaults are DeepSeek's `deepseek-flash` (`providerId = "deepseek"`,
+`baseUrl = https://api.deepseek.com/v1`): on a fresh install with nothing stored yet, an API key is all it
+takes to start chatting. `SettingsStore` falls back to the same defaults when no preference is stored.
 
 `ApiConfig.resolvedFor(spec)` is the single convergence point from configured values to sent values:
 
@@ -551,7 +557,8 @@ comes with a navigation migration.
 - Message list: a `LazyColumn` keyed by `msg.seq`; time is shown only on the first message, when the
   speaker changes, or when the gap is ≥ 5 minutes. User bubbles sit right in the primary color; cat bubbles
   sit left with a small cat avatar; `localError` uses the error color. Messages with images render thumbnails
-  inside the bubble as a `FlowRow` two per row; image-only messages render no empty text.
+  inside the bubble as a `FlowRow` two per row; image-only messages render no empty text. Tapping a thumbnail
+  opens the full-screen viewer (`ImagePreviewDialog`, see [20. Full-screen viewer](#20-full-screen-viewer-imageviewerkt)).
 - A three-dot `ThinkingBubble` is appended while awaiting a reply; once streaming starts it is replaced by a
   `StreamingBubble` showing the current `streamingReply`.
 - Input bar: a leading "+" opens "choose from gallery / take photo", and a multiline field (≤ 5 lines, IME
@@ -625,7 +632,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | Integrate system location | Implement `LocationSource` and swap it for `IpLocationSource` in the ViewModel |
 | Replace chat-log storage | Replace `ChatLogStore` (keep `append` / `tail` / `readAfter` / `clear`) |
 | Change image compression or storage location | Change only `ImageStore`'s import pipeline and constants |
-| Change how images look in the UI | Change only `ChatImage` and the bubble/attachment strip in `CatChatScreen` |
+| Change how images look in the UI | Change only `ChatImage`, `ImageViewer`, and the bubble/attachment strip in `CatChatScreen` |
 | Change how historical images are carried | Change only `ContextAssembler`'s `imageUrl` resolver and image cost |
 | Change the update source | Change `RELEASE_API_URL` and `parseLatestRelease` in `UpdateModels.kt` |
 | Change update download/verification/install | `UpdateClient` (download) / `ApkInstaller` (check and install) / the ViewModel's `UPDATE_DIR` |
@@ -640,7 +647,7 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 ./gradlew testDebugUnitTest
 ```
 
-94 cases, all plain JVM tests (no device or emulator):
+101 cases, all plain JVM tests (no device or emulator):
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -651,10 +658,11 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 | `StoredMessageTest` | 7 | Image message JSON round trip, image-only message valid, text-only omits `images`, neither text nor images rejected, blank image names dropped, `toWire` resolving and skipping missing images, plain-text wire carrying no images |
 | `MultimodalPayloadTest` | 5 | Plain text stays a string content with no `stream`, images become `image_url` content parts, image-only writes no empty text part, streaming only adds `stream`, sent params still follow the capability table |
 | `ContextAssemblerTest` | 13 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, extra blocks joined only when present, stable blocks before volatile, non-negative budget, Chinese costing more than equal-length ASCII, window in the model name, ambient block counted against the budget, fixed per-image cost, images resolved into the wire, images eating history budget |
-| `ImageStoreTest` | 4 | Sampling ratio within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs |
+| `ImageStoreTest` | 6 | Sampling ratio within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs, EXIF orientation values 1–8 mapped to the right rotation/mirroring, unknown orientations left untouched |
+| `ImageViewerTest` | 3 | Pan ignored while not zoomed, pan clamped to the zoomed overflow, clamping growing with the zoom level |
 | `LocationTest` | 10 | Three provider response shapes, JSON null not becoming the string "null", failures and garbage rejected, `display` fallback, ambient block carrying time/gap/city and labeling it "may be inaccurate", omitted unknowns |
 | `UpdateModelsTest` | 9 | Release JSON parsing version/notes/APK URL/size/published time, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, prerelease older, `v` prefix normalization |
-| `ModelCatalogTest` | 8 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends no sampling parameters, Meta Llama reaches aggregators and local runtimes, and legacy models still resolve through the generic fallback |
+| `ModelCatalogTest` | 10 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends no sampling parameters, Meta Llama reaches aggregators and local runtimes, legacy models still resolve through the generic fallback, the default model is deepseek-flash, and deepseek-flash exposes adjustable reasoning depth |
 | `BackupArchiveTest` | 11 | Export/import round trip restoring messages, memory, images, and settings; overwriting deleting old images and memory; non-zip and missing-manifest rejected; too-new format version rejected; out-of-bounds image entries ignored; an empty backup clearing local history; a corrupt chat log refusing to overwrite; full settings serialization round trip; missing fields falling back to defaults; memory parsing tolerating garbage; the default file name carrying the extension |
 
 `testImplementation("org.json:json:20240303")` is deliberate: unit tests run on the JVM, where the
@@ -708,12 +716,12 @@ These need on-device integration / end-to-end verification.
    flattened to white, and at most 9 per message.
 10. Historical images are re-encoded and re-sent every turn (`dataUrls` has only an in-memory cache), so many
     images noticeably enlarge the request body and memory pressure.
-11. Images have no full-screen viewer, save, or pinch-to-zoom.
+11. Images open to a full-screen in-app viewer with pinch-to-zoom, but cannot be saved to the gallery or shared.
 12. The update package is checked only for length, package name, and signature, with no checksum from the
     release, and there is no background automatic update check.
 13. Most context windows of the newly added models are conservative values from the previous generation
-    (only GLM-5.3 and MiniMax M3 at 1M are verified), and no reasoning control is declared for the new
-    models other than GPT-5.x and GLM-5.3. Both only affect parameters and budgeting, never whether a
+    (only GLM-5.3 and MiniMax M3 at 1M are verified), and reasoning control is declared only for GPT-5.x,
+    GLM-5.3, and deepseek-flash. Both only affect parameters and budgeting, never whether a
     request can be made.
 14. Backups are plaintext ZIPs with no password or encryption; import can only replace everything rather
     than restoring selected items, there is no scheduled/automatic backup, and an export carries the API key.
@@ -727,18 +735,25 @@ because a gallery `content://` URI is only readable within the current process; 
 the history would go blank after a restart.
 
 - Directories: `filesDir/chat/images/`; camera temp files in `cacheDir/chat_camera/`.
-- Import: read bounds → sample-decode via `sampleSizeFor` → scale to a longest edge of
-  `MAX_DIMENSION = 1280` → flatten alpha onto white → compress to JPEG (quality 85) as `img_<uuid>.jpg`.
+- Import: read bounds → read the EXIF orientation → sample-decode via `sampleSizeFor` → scale to a longest
+  edge of `MAX_DIMENSION = 1280` → rotate/mirror the pixels upright → flatten alpha onto white → compress to
+  JPEG (quality 85) as `img_<uuid>.jpg`.
   Any step failing returns `null` so the caller skips that image instead of failing the whole send.
   Note that `decodeStream` returning `null` under `inJustDecodeBounds` is normal — the size is only written
   into the `Options`; only an unopenable stream counts as failure.
+- EXIF orientation: `BitmapFactory` does **not** rotate pixels according to `TAG_ORIENTATION` — a portrait
+  photo's pixels are actually landscape and the direction lives only in the tag. Re-encoding as JPEG drops
+  that tag, so the pixels must be made upright during import or the thumbnail, the full-screen view, and the
+  image sent to the model all lie on their side. `exifTransformFor` maps tags 1–8 to "rotate N degrees plus
+  optional horizontal mirroring"; unreadable or unknown values are left untouched.
 - Data URLs: `dataUrl` / `dataUrls` encode a file as `data:image/jpeg;base64,...`, cached by file name in a
   12-entry LRU (files are never rewritten, so cache entries never go stale).
 - Camera: `newCameraTarget()` produces a writable URI through `FileProvider` (authority
   `${applicationId}.fileprovider`, paths configured in `res/xml/file_paths.xml`); on success `commitCamera`
   runs the same import pipeline, and on cancel the temp file is deleted.
 - Thumbnails: `decodeSampledBitmap` samples to a 512 px longest edge for `ChatImage`, keeping full images out
-  of memory.
+  of memory; the full-screen view uses the same decode path at 2048
+  (see [20. Full-screen viewer](#20-full-screen-viewer-imageviewerkt)).
 
 ---
 
@@ -879,3 +894,25 @@ Defences:
   no registered MIME type);
 - `BackupStatus`'s four states (`Idle` / `Working` / `Done` / `Failed`) drive progress and result text; a
   new import cannot start while another action runs or a model reply is pending.
+
+---
+
+## 20. Full-screen viewer (`ImageViewer.kt`)
+
+Tapping a thumbnail in the chat history opens `ImagePreviewDialog(name, onDismiss)` through
+`CatChatScreen`'s `previewImage` state: a full-screen `Dialog` (`usePlatformDefaultWidth = false`) with a
+black background and `ContentScale.Fit`, closed by the top-right button or the back key (back goes through
+the `Dialog`'s `onDismissRequest`).
+
+- Decoding: `decodeSampledBitmap(file, PREVIEW_PIXELS = 2048)`, clearer than the list's 512 px thumbnail
+  while still avoiding an un-sampled 1280 px image in memory; decoding happens on the IO dispatcher with a
+  spinner until it finishes.
+- Three states: `Loading` / `Missing` (the file was deleted or cannot be decoded, showing "this image is
+  gone") / `Ready`. `Missing` exists so the placeholder spinner cannot spin forever.
+- Gestures: `rememberTransformableState` + `transformable` handle pinch-to-zoom (1–5×) and pan; panning is
+  ignored while unzoomed, and once zoomed the pure function `clampPan` clamps the translation to the
+  overflow so the image cannot be dragged off-screen.
+- Only thumbnails inside message bubbles pass `onClick`; the pending-attachment strip does not open the viewer.
+- Compatibility: the EXIF fix applies only to **newly imported** images. Portrait photos imported before the
+  fix already lost their orientation tag at import time — the file itself is landscape and cannot be
+  corrected during display. Backup archives carry images as-is, so already-sideways ones stay sideways.
