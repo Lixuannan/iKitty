@@ -53,6 +53,37 @@ final class AppModel: ObservableObject {
         environment.engine.extractMemoryNow()
     }
 
+    // MARK: - 记忆
+
+    func upsertFact(originalKey: String?, category: MemoryCategory, key: String, value: String) {
+        environment.engine.upsertFact(
+            originalKey: originalKey,
+            category: category,
+            key: key,
+            value: value
+        )
+    }
+
+    func deleteFact(key: String) {
+        environment.engine.deleteFact(key: key)
+    }
+
+    func toggleFactPin(key: String) {
+        environment.engine.toggleFactPin(key: key)
+    }
+
+    func clearMemory() {
+        environment.engine.clearMemory()
+    }
+
+    func setLocationEnabled(_ enabled: Bool) {
+        environment.updateLocationEnabled(enabled: enabled)
+    }
+
+    func savePersona(name: String, notes: String) {
+        environment.updatePersona(name: name, notes: notes)
+    }
+
     // MARK: - 图片
 
     /// 归一化并保存一张刚选中的图片。

@@ -69,6 +69,25 @@ class IosAppEnvironment {
      */
     fun imageFilePath(name: String): String = (paths.imagesDir / name).toString()
 
+    /**
+     * 只改"是否允许用 IP 推测城市"。
+     *
+     * 定位默认是开的，所以必须有一个关掉它的入口：每刷新一次都会把用户的 IP
+     * 交给第三方，不给开关就是隐私问题。
+     */
+    fun updateLocationEnabled(enabled: Boolean) {
+        engine.saveSettings(engine.config.value, engine.persona.value, enabled)
+    }
+
+    /** 只改角色设定的名字与补充说明；其余设定沿用现有值。 */
+    fun updatePersona(name: String, notes: String) {
+        engine.saveSettings(
+            engine.config.value,
+            engine.persona.value.copy(name = name.trim(), notes = notes.trim()),
+            engine.locationEnabled.value
+        )
+    }
+
 
     /**
      * 只改"连接"这三个字段并保存。
