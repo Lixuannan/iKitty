@@ -21,10 +21,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildTypes {
         release {
             // 沿用 v0.1.0 的 debug 签名密钥：老用户已装的包就是这把 key 签的，
@@ -32,6 +28,13 @@ android {
             // 换成正式发布密钥时，必须同时准备一次带数据迁移的过渡方案。
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+// KGP 2.4.20 起 `kotlinOptions` 是编译错误，必须改用 compilerOptions DSL。
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
