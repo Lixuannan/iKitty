@@ -144,21 +144,6 @@ class ImageStore(context: Context) {
     data class CameraTarget(val file: File, val uri: Uri)
 }
 
-/** 数据 URL 的 MIME；本机只存 JPEG，其余按名字兜底以兼容手工放入的文件。 */
-internal fun mimeFor(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-    "png" -> "image/png"
-    "webp" -> "image/webp"
-    "gif" -> "image/gif"
-    else -> "image/jpeg"
-}
-
-/** 让解码后的最长边不超过 [maxDimension] 的采样倍率。 */
-internal fun sampleSizeFor(width: Int, height: Int, maxDimension: Int): Int {
-    var sample = 1
-    while (max(width / sample, height / sample) > maxDimension) sample *= 2
-    return sample
-}
-
 private fun scaleDown(bitmap: Bitmap, maxDimension: Int): Bitmap {
     val longest = max(bitmap.width, bitmap.height)
     if (longest <= maxDimension) return bitmap
@@ -190,27 +175,6 @@ internal fun decodeSampledBitmap(file: File, maxPixels: Int): Bitmap? {
         inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, maxPixels)
     }
     return BitmapFactory.decodeFile(file.absolutePath, options)
-}
-
-/**
- * EXIF 方向标签要做的几何变换。
- *
- * 单独抽出来是为了能在纯 JVM 测试里验证 1–8 八个取值的映射；
- * 真正调用 [Bitmap.createBitmap] 的那一步只能在设备上验证。
- */
-internal data class ExifTransform(val degrees: Int, val mirrored: Boolean)
-
-/** 把 EXIF 方向取值翻译成「先顺时针旋转 [ExifTransform.degrees] 度，再左右镜像」。 */
-internal fun exifTransformFor(orientation: Int): ExifTransform = when (orientation) {
-    ExifInterface.ORIENTATION_ROTATE_90 -> ExifTransform(90, false)
-    ExifInterface.ORIENTATION_ROTATE_180 -> ExifTransform(180, false)
-    ExifInterface.ORIENTATION_ROTATE_270 -> ExifTransform(270, false)
-    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifTransform(0, true)
-    ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifTransform(180, true)
-    ExifInterface.ORIENTATION_TRANSPOSE -> ExifTransform(90, true)
-    ExifInterface.ORIENTATION_TRANSVERSE -> ExifTransform(270, true)
-    // 含 ORIENTATION_NORMAL / ORIENTATION_UNDEFINED 与认不出的取值：原样返回。
-    else -> ExifTransform(0, false)
 }
 
 /** 读取流里的 EXIF 方向；读不出来（非图片、截断、不支持的格式）一律当作「不用转」。 */

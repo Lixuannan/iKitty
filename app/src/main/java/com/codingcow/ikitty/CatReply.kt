@@ -68,25 +68,6 @@ fun parseCatReply(raw: String): CatReply {
     }
 }
 
-/** 去掉 ```json ... ``` 之类的代码块围栏。 */
-internal fun stripCodeFence(raw: String): String {
-    var body = raw.trim()
-    if (!body.startsWith("```")) return body
-
-    val firstNewline = body.indexOf('\n')
-    body = if (firstNewline >= 0) body.substring(firstNewline + 1) else body.removePrefix("```")
-    val closingFence = body.lastIndexOf("```")
-    if (closingFence >= 0) body = body.substring(0, closingFence)
-    return body.trim()
-}
-
-internal fun extractJsonObject(text: String): String? {
-    val start = text.indexOf('{')
-    val end = text.lastIndexOf('}')
-    if (start < 0 || end <= start) return null
-    return text.substring(start, end + 1)
-}
-
 /** 空字符串表示模型没给这个字段。 */
 private fun moodOf(value: String): CatMood? {
     val key = value.trim().lowercase()

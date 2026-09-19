@@ -58,7 +58,7 @@ internal fun parseCatMemory(text: String): CatMemory? = try {
         val array = obj.optJSONArray("facts") ?: JSONArray()
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
-            MemoryFact.fromJson(item)?.let { add(it) }
+            parseMemoryFact(item)?.let { add(it) }
         }
     }
     CatMemory(

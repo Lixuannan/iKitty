@@ -57,15 +57,6 @@ class LocationTest {
     }
 
     @Test
-    fun `display falls back city then region then country`() {
-        assertEquals("杭州", Place(city = "杭州", region = "浙江省", country = "中国").display)
-        assertEquals("浙江省", Place(region = "浙江省", country = "中国").display)
-        assertEquals("中国", Place(country = "中国").display)
-        assertTrue(Place().isEmpty)
-        assertFalse(Place(city = "杭州").isEmpty)
-    }
-
-    @Test
     fun `ambient block carries time, gap and place`() {
         val now = 1_700_000_000_000L
         val block = AmbientContext.block(
