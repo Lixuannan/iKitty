@@ -4,8 +4,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import platform.Foundation.NSData
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import okio.Path.Companion.toPath
 
 /**
  * iOS 侧的依赖装配。
@@ -17,8 +19,8 @@ import kotlin.time.ExperimentalTime
  * 作用域跑在 `Dispatchers.Main` 上：界面状态因此总是在主线程更新，SwiftUI 可以直接用。
  * 真正的文件与网络操作各自切到自己的调度器，不会占住主线程。
  *
- * 图片（Phase 8）在 iOS 上还没接，所以 `imageDataUrls` 返回空表 ——
- * 历史里的图片暂时不会进请求。这是显式留空，不是静默降级。
+ * 像素操作（解码、降采样、EXIF 摆正、JPEG 编码）留在 Swift 侧用 CoreGraphics 做，
+ * Kotlin 只负责把处理好的字节存到应用私有目录并编成数据 URL。
  */
 class IosAppEnvironment {
 
@@ -28,6 +30,7 @@ class IosAppEnvironment {
     private val fileSystem = iosFileSystem()
     private val ioDispatcher = iosIoDispatcher()
     private val api = iosApiClient()
+    private val images = IosImageStore(fileSystem, paths.imagesDir, ioDispatcher)
 
     val engine: ChatEngine = ChatEngine(
         api = api,
@@ -44,13 +47,28 @@ class IosAppEnvironment {
             ioDispatcher = ioDispatcher
         ),
         extractor = MemoryExtractor(api),
-        imageDataUrls = { emptyMap() },
+        imageDataUrls = { names -> images.dataUrls(names) },
         locationSource = IpLocationSource(KtorTransport()),
-        invalidateImageCache = {},
+        invalidateImageCache = { images.invalidateCache() },
         scope = scope
     )
 
     val observer = ChatEngineObserver(engine, scope)
+
+    /**
+     * 保存一张已经归一化好的 JPEG（Swift 侧用 CoreGraphics 处理好），返回本机文件名。
+     *
+     * 返回 null 表示这张图没存进去（例如存储空间不足），调用方应当跳过它。
+     */
+    suspend fun saveImage(data: NSData): String? = images.saveData(data)
+
+    /**
+     * 某张本机图片的绝对路径，供 Swift 直接 `UIImage(contentsOfFile:)` 显示缩略图。
+     *
+     * 不返回数据 URL 给界面：那是发给服务商的形式，界面没必要先 base64 再解码一遍。
+     */
+    fun imageFilePath(name: String): String = (paths.imagesDir / name).toString()
+
 
     /**
      * 只改"连接"这三个字段并保存。

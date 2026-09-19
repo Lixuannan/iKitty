@@ -1,14 +1,26 @@
+import Combine
+import PhotosUI
 import SwiftUI
 import Shared
 
 struct ChatView: View {
     @ObservedObject var model: AppModel
     @FocusState private var isInputFocused: Bool
+    @State private var photoItem: PhotosPickerItem?
+    @State private var isShowingCamera = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 messageList
+                if !model.pendingImages.isEmpty { pendingStrip }
+                if let error = model.imageError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                }
                 Divider()
                 inputBar
             }
@@ -17,26 +29,34 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Button("清空聊天记录", role: .destructive) {
-                            model.clearMessages()
-                        }
-                        Button("现在整理记忆") {
-                            model.extractMemoryNow()
-                        }
+                        Button("清空聊天记录", role: .destructive) { model.clearMessages() }
+                        Button("现在整理记忆") { model.extractMemoryNow() }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        model.isShowingSettings = true
-                    } label: {
+                    Button { model.isShowingSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                 }
             }
-            .sheet(isPresented: $model.isShowingSettings) {
-                SettingsView(model: model)
+            .sheet(isPresented: $model.isShowingSettings) { SettingsView(model: model) }
+            .fullScreenCover(isPresented: $isShowingCamera) {
+                CameraPicker(isPresented: $isShowingCamera) { image in
+                    Task { await model.attach(image: image) }
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        await model.attach(image: image)
+                    }
+                    photoItem = nil
+                }
             }
         }
     }
@@ -45,8 +65,8 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(messages, id: \.seq) { message in
-                        MessageBubble(message: message)
+                    ForEach(model.state?.messages ?? [], id: \.seq) { message in
+                        MessageBubble(message: message) { name in model.image(for: name) }
                             .id(message.seq)
                     }
                     if let streaming = model.state?.streamingReply, !streaming.isEmpty {
@@ -61,17 +81,56 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .onChange(of: model.state?.messages.count ?? 0) { _, _ in
-                scrollToBottom(proxy)
+            .onChange(of: model.state?.messages.count ?? 0) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: model.state?.streamingReply ?? "") { _, _ in scrollToBottom(proxy) }
+        }
+    }
+
+    private var pendingStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.pendingImages, id: \.self) { name in
+                    ZStack(alignment: .topTrailing) {
+                        if let image = model.image(for: name) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 64, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        Button {
+                            model.removePendingImage(name)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.white, .black.opacity(0.6))
+                        }
+                        .offset(x: 4, y: -4)
+                    }
+                }
             }
-            .onChange(of: model.state?.streamingReply ?? "") { _, _ in
-                scrollToBottom(proxy)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
     }
 
     private var inputBar: some View {
         HStack(spacing: 10) {
+            Menu {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Label("从相册选择", systemImage: "photo")
+                }
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button {
+                        isShowingCamera = true
+                    } label: {
+                        Label("拍照", systemImage: "camera")
+                    }
+                }
+            } label: {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 26))
+            }
+
             TextField("说点什么…", text: $model.draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
@@ -79,9 +138,7 @@ struct ChatView: View {
                 .padding(.vertical, 8)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
                 .focused($isInputFocused)
-                .onChange(of: model.draft) { _, _ in
-                    model.onDraftChanged()
-                }
+                .onChange(of: model.draft) { _, _ in model.onDraftChanged() }
 
             Button {
                 model.send()
@@ -95,16 +152,12 @@ struct ChatView: View {
         .padding(.vertical, 8)
     }
 
-    private var messages: [StoredMessage] {
-        model.state?.messages ?? []
-    }
-
-    private var isBusy: Bool {
-        model.state?.busy ?? false
-    }
+    private var isBusy: Bool { model.state?.busy ?? false }
 
     private var canSend: Bool {
-        !isBusy && !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isBusy else { return false }
+        if !model.pendingImages.isEmpty { return true }
+        return !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private static let streamingId = Int64.min
@@ -122,30 +175,50 @@ struct ChatView: View {
 
 private struct MessageBubble: View {
     let text: String
+    let images: [String]
     let isUser: Bool
     let isError: Bool
+    let imageFor: (String) -> UIImage?
 
-    init(message: StoredMessage) {
+    init(message: StoredMessage, imageFor: @escaping (String) -> UIImage?) {
         self.text = message.content
+        self.images = message.images
         self.isUser = message.role == "user"
         self.isError = message.localError
+        self.imageFor = imageFor
     }
 
     init(text: String, isUser: Bool, isError: Bool) {
         self.text = text
+        self.images = []
         self.isUser = isUser
         self.isError = isError
+        self.imageFor = { _ in nil }
     }
 
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             if isUser { Spacer(minLength: 40) }
-            Text(text)
-                .textSelection(.enabled)
-                .foregroundStyle(foreground)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(background, in: RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+                // 文件被删掉的图片直接不显示，而不是画一个空白框。
+                ForEach(images, id: \.self) { name in
+                    if let image = imageFor(name) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 220, maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                if !text.isEmpty {
+                    Text(text)
+                        .textSelection(.enabled)
+                        .foregroundStyle(foreground)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(background, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
             if !isUser { Spacer(minLength: 40) }
         }
     }
@@ -168,8 +241,6 @@ private struct ThinkingIndicator: View {
     var body: some View {
         Text(String(repeating: "·", count: phase + 1))
             .foregroundStyle(.secondary)
-            .onReceive(timer) { _ in
-                phase = (phase + 1) % 3
-            }
+            .onReceive(timer) { _ in phase = (phase + 1) % 3 }
     }
 }

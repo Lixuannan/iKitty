@@ -31,9 +31,12 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<!--
-	  暂不声明 NSPhotoLibraryUsageDescription / NSCameraUsageDescription：
-	  图片输入（Phase 8）还没接。等接入时再一起加，权限文案才有意义。
+	  相册不需要权限：用的是 PHPickerViewController（SwiftUI 的 PhotosPicker），
+	  它在应用外运行、只回传用户选中的那几张，所以不需要 NSPhotoLibraryUsageDescription。
+	  相机必须声明用途，否则调用 UIImagePickerController 会直接崩溃。
 	-->
+	<key>NSCameraUsageDescription</key>
+	<string>用来拍照发给猫猫。照片只保存在本机，并直接发给你配置的模型服务。</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!--

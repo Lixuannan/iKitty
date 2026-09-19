@@ -1,5 +1,6 @@
 import Foundation
 import Shared
+import UIKit
 
 /// SwiftUI 与 `:shared` 之间的唯一桥梁。
 ///
@@ -13,6 +14,10 @@ final class AppModel: ObservableObject {
     @Published var draft: String = ""
     @Published var isShowingSettings = false
     @Published var settingsError: String?
+
+    /// 已选好、还没发出去的图片（本机文件名）。
+    @Published private(set) var pendingImages: [String] = []
+    @Published var imageError: String?
 
     let environment = IosAppEnvironment()
 
@@ -29,9 +34,11 @@ final class AppModel: ObservableObject {
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !pendingImages.isEmpty else { return }
+        let names = pendingImages
         draft = ""
-        environment.engine.send(text: text, imageNames: [])
+        pendingImages = []
+        environment.engine.send(text: text, imageNames: names)
     }
 
     func onDraftChanged() {
@@ -45,6 +52,42 @@ final class AppModel: ObservableObject {
     func extractMemoryNow() {
         environment.engine.extractMemoryNow()
     }
+
+    // MARK: - 图片
+
+    /// 归一化并保存一张刚选中的图片。
+    func attach(image: UIImage) async {
+        guard let data = ImageNormalizer.normalizedJpegData(from: image) else {
+            imageError = "这张图片没法处理，换一张试试。"
+            return
+        }
+        do {
+            guard let name = try await environment.saveImage(data: data) else {
+                imageError = "图片没能存下来，可能是存储空间不足。"
+                return
+            }
+            imageError = nil
+            pendingImages.append(name)
+        } catch {
+            // Kotlin 的 suspend 函数在 Swift 里是 async throws；写文件失败会走这里。
+            imageError = "图片没能存下来：\(error.localizedDescription)"
+        }
+    }
+
+    func removePendingImage(_ name: String) {
+        pendingImages.removeAll { $0 == name }
+    }
+
+    /// 某张本机图片的文件路径，用来显示缩略图。
+    func imagePath(_ name: String) -> String {
+        environment.imageFilePath(name: name)
+    }
+
+    func image(for name: String) -> UIImage? {
+        UIImage(contentsOfFile: environment.imageFilePath(name: name))
+    }
+
+    // MARK: - 设置
 
     /// 保存连接设置。
     ///
