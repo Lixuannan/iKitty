@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -63,7 +64,12 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
             .versionName
     }.getOrNull().orEmpty().ifBlank { "0.0.0" }
 
-    private val archive = BackupArchive(app, appVersion)
+    private val archive = BackupArchive(
+        fileSystem = androidFileSystem(),
+        paths = androidAppPaths(app),
+        appVersion = appVersion,
+        ioDispatcher = Dispatchers.IO
+    ) { System.currentTimeMillis() }
 
     private val updateDir: File
         get() = File(getApplication<Application>().cacheDir, UPDATE_DIR)
@@ -243,8 +249,9 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _backupStatus.value = try {
                 val settings = BackupSettings(config.value, persona.value, locationEnabled.value)
-                val output = openOutput(uri)
-                val summary = output.use { archive.export(it, settings) }
+                val export = archive.export(settings)
+                openOutput(uri).use { it.write(export.bytes) }
+                val summary = export.summary
                 BackupStatus.Done(
                     "已导出 ${summary.messageCount} 条消息、${summary.imageCount} 张图片、" +
                         "${summary.factCount} 条记忆和设置。"
@@ -272,7 +279,8 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             _backupStatus.value = try {
-                val contents = openInput(uri).use { archive.stage(it) }
+                // 归档整份读进内存：格式是先解包校验、再整体覆盖，所以不能边读边改本机数据。
+                val contents = archive.stage(openInput(uri).use { it.readBytes() })
                 val failedImages = archive.commit(contents)
                 // 设置也要跟着归档一起落地；写完之后再整体重读，界面立刻反映备份内容。
                 saveSettings(
