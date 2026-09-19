@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="IpPlaceParseTest[jvm]" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:24.940Z" hostname="MeizhendeMacBook-Air.local" time="0.021">
+<testsuite name="IpPlaceParseTest[jvm]" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.455Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="parses the chinese ip-api response[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.015"/>
-  <testcase name="failure responses and garbage are rejected instead of cached[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.005"/>
-  <testcase name="parses the ipwho-is fallback shape[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.001"/>
-  <testcase name="parses the ipapi-co fallback field names[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.0"/>
+  <testcase name="parses the chinese ip-api response[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.0"/>
+  <testcase name="failure responses and garbage are rejected instead of cached[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.0"/>
+  <testcase name="parses the ipwho-is fallback shape[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.0"/>
+  <testcase name="parses the ipapi-co fallback field names[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.001"/>
   <testcase name="a json null city does not become the string null[jvm]" classname="com.codingcow.ikitty.IpPlaceParseTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

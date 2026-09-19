@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.MemoryJsonTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:25.393Z" hostname="MeizhendeMacBook-Air.local" time="0.007">
+<testsuite name="com.codingcow.ikitty.MemoryJsonTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.774Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="parse returns null on garbage so the old memory survives" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.002"/>
-  <testcase name="the memory file shape is the cross-platform contract" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.004"/>
-  <testcase name="parse accepts plain json, fenced json and chinese category labels" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
-  <testcase name="a corrupt memory file returns null instead of throwing" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
+  <testcase name="parse returns null on garbage so the old memory survives" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="the memory file shape is the cross-platform contract" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="parse accepts plain json, fenced json and chinese category labels" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
+  <testcase name="a corrupt memory file returns null instead of throwing" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
   <testcase name="a memory file survives an encode parse round trip" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
   <testcase name="pinned is only written when true" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
   <testcase name="an unknown category falls back instead of dropping the fact" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>

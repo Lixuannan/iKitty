@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="MemoryJsonTest[jvm]" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:24.963Z" hostname="MeizhendeMacBook-Air.local" time="0.007">
+<testsuite name="MemoryJsonTest[jvm]" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.457Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="parse returns null on garbage so the old memory survives[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
-  <testcase name="the memory file shape is the cross-platform contract[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
-  <testcase name="parse accepts plain json, fenced json and chinese category labels[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.002"/>
-  <testcase name="a corrupt memory file returns null instead of throwing[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
-  <testcase name="a memory file survives an encode parse round trip[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
-  <testcase name="pinned is only written when true[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
+  <testcase name="parse returns null on garbage so the old memory survives[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="the memory file shape is the cross-platform contract[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="parse accepts plain json, fenced json and chinese category labels[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="a corrupt memory file returns null instead of throwing[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.001"/>
+  <testcase name="a memory file survives an encode parse round trip[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
+  <testcase name="pinned is only written when true[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
   <testcase name="an unknown category falls back instead of dropping the fact[jvm]" classname="com.codingcow.ikitty.MemoryJsonTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

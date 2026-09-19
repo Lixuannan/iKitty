@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.AmbientContextTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:25.293Z" hostname="MeizhendeMacBook-Air.local" time="0.022">
+<testsuite name="com.codingcow.ikitty.AmbientContextTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.659Z" hostname="MeizhendeMacBook-Air.local" time="0.015">
   <properties/>
-  <testcase name="ambient block carries time, gap and place" classname="com.codingcow.ikitty.AmbientContextTest" time="0.018"/>
+  <testcase name="ambient block carries time, gap and place" classname="com.codingcow.ikitty.AmbientContextTest" time="0.013"/>
   <testcase name="the block tells the model not to parrot it" classname="com.codingcow.ikitty.AmbientContextTest" time="0.0"/>
   <testcase name="a place with a blank city is treated as unknown" classname="com.codingcow.ikitty.AmbientContextTest" time="0.0"/>
-  <testcase name="ambient block omits what it does not know" classname="com.codingcow.ikitty.AmbientContextTest" time="0.001"/>
+  <testcase name="ambient block omits what it does not know" classname="com.codingcow.ikitty.AmbientContextTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

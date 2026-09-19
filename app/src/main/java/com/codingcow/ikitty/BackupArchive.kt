@@ -99,9 +99,9 @@ class BackupArchive(
     private val now: () -> Long = System::currentTimeMillis
 ) {
     constructor(context: Context, appVersion: String) : this(
-        chatLog = File(context.applicationContext.filesDir, ChatLogStore.FILE_PATH),
-        memory = File(context.applicationContext.filesDir, CatMemoryStore.FILE_PATH),
-        imagesDir = File(context.applicationContext.filesDir, ImageStore.DIR),
+        chatLog = File(context.applicationContext.filesDir, AppPaths.CHAT_LOG_PATH),
+        memory = File(context.applicationContext.filesDir, AppPaths.CAT_MEMORY_PATH),
+        imagesDir = File(context.applicationContext.filesDir, AppPaths.IMAGES_PATH),
         stagingDir = File(context.applicationContext.cacheDir, STAGING_DIR),
         appVersion = appVersion
     )

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.MultimodalPayloadTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:25.411Z" hostname="MeizhendeMacBook-Air.local" time="0.004">
+<testsuite name="com.codingcow.ikitty.MultimodalPayloadTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.779Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="an image-only message has no empty text part" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.001"/>
+  <testcase name="an image-only message has no empty text part" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="numeric params keep the old wire formatting" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.001"/>
   <testcase name="plain text keeps a string content and no stream flag" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
-  <testcase name="images become content parts with image_url data urls" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.001"/>
+  <testcase name="images become content parts with image_url data urls" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="streaming adds the stream flag without touching the text field" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="sent params still follow the model capability table" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>
   <testcase name="an unset max_tokens never reaches the wire" classname="com.codingcow.ikitty.MultimodalPayloadTest" time="0.0"/>

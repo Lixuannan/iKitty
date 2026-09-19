@@ -1,7 +1,7 @@
 abi_version=2.4.0
 builtins_platform=NATIVE
 compiler_version=2.4.20
-depends=org.jetbrains.kotlinx\:kotlinx-datetime org.jetbrains.kotlinx\:kotlinx-serialization-core org.jetbrains.kotlinx\:kotlinx-serialization-json stdlib
+depends=com.squareup.okio\:okio org.jetbrains.kotlinx\:atomicfu org.jetbrains.kotlinx\:atomicfu-cinterop-interop org.jetbrains.kotlinx\:kotlinx-coroutines-core org.jetbrains.kotlinx\:kotlinx-datetime org.jetbrains.kotlinx\:kotlinx-serialization-core org.jetbrains.kotlinx\:kotlinx-serialization-json stdlib
 ir_signature_versions=1,2
 language_features=+ExportKDocDocumentationToKlib +MultiPlatformProjects
 metadata_version=2.4.0

@@ -36,9 +36,17 @@ kotlin {
             // 进 system prompt 的时间必须两端一致；时区/夏令时交给 kotlinx-datetime，
             // 不自己算 epoch 偏移。用 api 是因为时区类型出现在公开签名里。
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+            // 文件读写。okio 已经是 OkHttp 的传递依赖，所以不算新增框架；
+            // FileSystem/Path 出现在公开签名里（AppPaths、两个 store），因此用 api。
+            api("com.squareup.okio:okio:3.18.2")
+            // 协程类型出现在公开签名里（suspend 函数与注入的 CoroutineDispatcher）。
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+            // 让存储层的测试不需要真实文件系统。
+            implementation("com.squareup.okio:okio-fakefilesystem:3.18.2")
         }
     }
 }

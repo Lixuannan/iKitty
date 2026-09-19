@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.CatMemoryRulesTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:25.317Z" hostname="MeizhendeMacBook-Air.local" time="0.013">
+<testsuite name="com.codingcow.ikitty.CatMemoryRulesTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:18:42.675Z" hostname="MeizhendeMacBook-Air.local" time="0.011">
   <properties/>
-  <testcase name="an unchanged fact keeps its old timestamp so eviction stays fair" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.002"/>
+  <testcase name="an unchanged fact keeps its old timestamp so eviction stays fair" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.001"/>
   <testcase name="same key overwrites instead of piling up" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
-  <testcase name="over the cap the least recently updated unpinned fact is dropped" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.006"/>
-  <testcase name="forget removes a fact but never a pinned one" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.004"/>
-  <testcase name="render groups by category and is empty without facts" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.001"/>
-  <testcase name="upsert clamps runaway values instead of rejecting them" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
+  <testcase name="over the cap the least recently updated unpinned fact is dropped" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.005"/>
+  <testcase name="forget removes a fact but never a pinned one" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.003"/>
+  <testcase name="render groups by category and is empty without facts" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
+  <testcase name="upsert clamps runaway values instead of rejecting them" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.001"/>
   <testcase name="upsert renames a key without leaving the old one behind" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
   <testcase name="merge adds new facts and keeps the ones the model did not mention" classname="com.codingcow.ikitty.CatMemoryRulesTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
