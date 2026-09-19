@@ -1,8 +1,8 @@
 package com.codingcow.ikitty
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** 上下文装配：长对话下"带哪几条"的契约。 */
 class ContextAssemblerTest {

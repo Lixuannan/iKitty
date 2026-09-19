@@ -1,12 +1,11 @@
 package com.codingcow.ikitty
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-/** 注入提示词的「此刻」背景块。IP 返回的解析已经随 `Place` 迁到 `:shared` 的测试里。 */
-class LocationTest {
+/** 注入 system prompt 的「此刻」背景块：知道什么写什么，不知道的整行不出现。 */
+class AmbientContextTest {
 
     @Test
     fun `ambient block carries time, gap and place`() {
@@ -41,13 +40,10 @@ class LocationTest {
         assertFalse(block.contains("主人大致在"))
     }
 
+    /** 时间和位置都是易变信息，必须写在提示词最后一块。 */
     @Test
-    fun `elapsed is rendered coarsely`() {
-        assertEquals("刚刚", formatElapsed(30_000L))
-        assertEquals("12 分钟", formatElapsed(12 * 60_000L))
-        assertEquals("3 小时", formatElapsed(3 * 3_600_000L))
-        assertEquals("2 天", formatElapsed(2 * 86_400_000L))
-        // 时钟倒退也不能显示负数
-        assertEquals("刚刚", formatElapsed(-5_000L))
+    fun `the block tells the model not to parrot it`() {
+        val block = AmbientContext.block(now = 1_700_000_000_000L, lastMessageAt = null, place = null)
+        assertTrue(block.contains("不要复述"))
     }
 }

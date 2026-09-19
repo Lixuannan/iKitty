@@ -33,6 +33,9 @@ kotlin {
             // 用 api 而不是 implementation：JsonObject 出现在 shared 的公开签名里
             //（StoredMessage.toJson 等），:app 的编译类路径必须能看到它。
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+            // 进 system prompt 的时间必须两端一致；时区/夏令时交给 kotlinx-datetime，
+            // 不自己算 epoch 偏移。用 api 是因为时区类型出现在公开签名里。
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

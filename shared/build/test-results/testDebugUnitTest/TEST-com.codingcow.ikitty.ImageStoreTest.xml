@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.codingcow.ikitty.ImageStoreTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:14:56.126Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
+<testsuite name="com.codingcow.ikitty.ImageStoreTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:16:25.372Z" hostname="MeizhendeMacBook-Air.local" time="0.002">
   <properties/>
   <testcase name="sampling keeps the longest edge within the limit" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
-  <testcase name="mime falls back to jpeg for the names we store" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
-  <testcase name="sampled dimensions never exceed the limit" classname="com.codingcow.ikitty.ImageStoreTest" time="0.001"/>
+  <testcase name="mime falls back to jpeg for the names we store" classname="com.codingcow.ikitty.ImageStoreTest" time="0.001"/>
+  <testcase name="sampled dimensions never exceed the limit" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <testcase name="unknown exif orientation leaves the pixels untouched" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
   <testcase name="exif orientation maps to the expected rotation and mirroring" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
-  <testcase name="sampling uses the longer edge" classname="com.codingcow.ikitty.ImageStoreTest" time="0.0"/>
+  <testcase name="sampling uses the longer edge" classname="com.codingcow.ikitty.ImageStoreTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
