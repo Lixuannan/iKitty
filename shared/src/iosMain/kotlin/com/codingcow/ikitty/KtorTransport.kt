@@ -11,7 +11,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.Dispatchers
 import io.ktor.client.statement.HttpResponse as KtorResponse
 
@@ -54,7 +54,7 @@ class KtorTransport(private val client: HttpClient = defaultClient()) : HttpTran
         val whole = StringBuilder()
         val channel = response.bodyAsChannel()
         while (true) {
-            val line = channel.readUTF8Line() ?: break
+            val line = channel.readLine() ?: break
             whole.append(line).append('\n')
             onLine(line)
         }

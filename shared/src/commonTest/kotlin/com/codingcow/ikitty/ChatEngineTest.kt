@@ -2,6 +2,7 @@ package com.codingcow.ikitty
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ import kotlin.test.assertTrue
  * 现在 iOS 也要依赖它，所以把关键行为固定下来：消息落盘、流式回复、
  * 失败时保留半截回复、清空记录时序号从头开始。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ChatEngineTest {
 
     private class FakeStore : KeyValueStore {

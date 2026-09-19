@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="PlaceTest[jvm]" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-19T07:27:21.749Z" hostname="MeizhendeMacBook-Air.local" time="0.001">
-  <properties/>
-  <testcase name="display falls back city then region then country[jvm]" classname="com.codingcow.ikitty.PlaceTest" time="0.001"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

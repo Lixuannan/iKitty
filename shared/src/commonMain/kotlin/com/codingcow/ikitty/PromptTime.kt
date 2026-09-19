@@ -29,7 +29,7 @@ fun formatMoment(
     return buildString {
         append(local.year.toString().padStart(4, '0'))
         append('-')
-        append(local.monthNumber.toString().padStart(2, '0'))
+        append((local.month.ordinal + 1).toString().padStart(2, '0'))
         append('-')
         append(local.day.toString().padStart(2, '0'))
         append(' ')

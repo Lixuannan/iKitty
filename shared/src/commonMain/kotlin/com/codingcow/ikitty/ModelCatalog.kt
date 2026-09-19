@@ -437,7 +437,7 @@ object ModelCatalog {
             providerId = providerId,
             modelId = modelId,
             label = label,
-            temperature = if (samplingAllowed) temperature(temperatureMax!!, 0.8f) else null,
+            temperature = if (samplingAllowed) temperature(temperatureMax, 0.8f) else null,
             topP = if (samplingAllowed) topP(1f) else null,
             maxTokens = tokens(maxOutput, 512),
             reasoning = reasoning,
