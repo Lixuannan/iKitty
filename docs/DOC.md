@@ -5,9 +5,10 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：0.4.0 · 包名：`com.codingcow.ikitty` · 源码根目录：`app/src/main/java/com/codingcow/ikitty/`
-- 技术栈：Kotlin 2.0.21、Jetpack Compose（Material3）、OkHttp 4.12.0、DataStore Preferences 1.1.1
-- 构建：AGP 8.7.3、Gradle 9.7.1、Java 17 字节码目标、minSdk 26 / targetSdk 35
+- 版本：0.4.0 · 包名：`com.codingcow.ikitty`
+- 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
+- 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
+- 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
 
 ---
 
@@ -24,20 +25,46 @@ MainActivity (ComponentActivity + MaterialTheme)
     └── 聊天页（Header + LazyColumn + InputBar）
             │  collectAsState / 事件回调
             ▼
-    CatChatViewModel (AndroidViewModel)   ← 唯一的状态持有者与编排者
-        ├── ApiClient            → 模型服务（HTTP）
-        ├── SettingsStore        → DataStore
-        ├── ChatLogStore         → JSONL 追加
-        ├── CatMemoryStore       → 记忆 JSON
-        ├── MemoryExtractor      → 记忆整理请求
+    CatChatViewModel (AndroidViewModel)   ← 薄壳：只保留不可移植的两块
+        ├── ChatEngine           → 全部聊天编排（见 1.1.1）
         ├── UpdateClient         → GitHub release 检查与 APK 下载
         ├── ApkInstaller         → 覆盖安装前的包名校验 / 签名校验
-        ├── BackupArchive        → `.ikitty` 备份的导出 / 校验 / 还原
-        └── LocationSource ─ IpLocationSource → IP 城市定位
+        └── .ikitty 备份的 content:// 出入口
 ```
 
 依赖方向始终由 UI 指向 ViewModel，再由 ViewModel 指向存储与网络。
 反向只通过 `StateFlow`：UI 不直接读写任何文件或网络。
+
+### 1.1.1 跨平台结构（Android + iOS 共用 `:shared`）
+
+与平台无关的逻辑集中在 `:shared`（Kotlin Multiplatform），Android 应用与 iOS 应用
+（`iosApp/`，SwiftUI）共用同一份实现：
+
+```
+CatChatViewModel (Android)              ChatView / AppModel (iOS, SwiftUI)
+        └──────────────┬─────────────────────────┘
+                       ▼
+                  ChatEngine                ← 编排：发送、流式、落盘、记忆、情绪
+        ┌──────────────┼───────────────┬──────────────────────┐
+        ▼              ▼               ▼                      ▼
+   ApiClient     ChatLogStore    CatMemoryStore      ContextAssembler / CatPersona
+        │              │               │              CatMemory / AmbientContext
+        ▼              │               │              ModelCatalog / StoredMessage
+  HttpTransport        │               │              CatReply / JsonSupport
+   ├ OkHttp (JVM/Android)              │              PromptTime（进 prompt 的时间）
+   └ Ktor Darwin (iOS)                 │              BackupArchive / ZipCodec
+                            okio FileSystem            SettingsRepository
+                    （androidMain / iosMain 各自给出根目录与调度器）
+```
+
+平台差异全部通过**构造参数注入**，不用 `expect/actual`：文件系统、根路径、IO 调度器、
+图片归一化、设置存储（Android DataStore / iOS NSUserDefaults）各由平台提供；
+键名、默认值与回退只在 `SettingsRepository` 里写一遍。
+
+两端各有一条不可移植的尾巴：Android 是应用内 APK 更新与 `content://` 备份读写，
+iOS 是 CoreGraphics 图片归一化与 `fileImporter` / `ShareLink`。
+
+分阶段计划与进度见 [`KMP_IOS_MIGRATION_PLAN.md`](KMP_IOS_MIGRATION_PLAN.md)。
 
 ### 1.2 无 Android 依赖的纯逻辑层
 

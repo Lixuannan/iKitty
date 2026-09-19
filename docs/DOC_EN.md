@@ -6,9 +6,10 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 0.4.0 · Package: `com.codingcow.ikitty` · Source root: `app/src/main/java/com/codingcow/ikitty/`
-- Stack: Kotlin 2.0.21, Jetpack Compose (Material3), OkHttp 4.12.0, DataStore Preferences 1.1.1
-- Build: AGP 8.7.3, Gradle 9.7.1, Java 17 bytecode target, minSdk 26 / targetSdk 35
+- Version: 0.4.0 · Package: `com.codingcow.ikitty`
+- Sources: Android `app/src/main/java/com/codingcow/ikitty/` · shared `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
+- Stack: Kotlin 2.4.20, Jetpack Compose (Material3), Kotlin Multiplatform (`:shared`, with iOS targets), OkHttp 4.12.0 / Ktor 3.6.0, okio 3.18.2, kotlinx-serialization 1.11.0
+- Build: AGP 8.7.3, Gradle 9.7.0, Java 17 bytecode target, minSdk 26 / targetSdk 35, iOS 17+ (Xcode 27.0)
 
 ---
 
@@ -25,20 +26,47 @@ MainActivity (ComponentActivity + MaterialTheme)
     └── chat screen (Header + LazyColumn + InputBar)
             │  collectAsState / event callbacks
             ▼
-    CatChatViewModel (AndroidViewModel)   ← the only state holder and orchestrator
-        ├── ApiClient            → model service (HTTP)
-        ├── SettingsStore        → DataStore
-        ├── ChatLogStore         → JSONL append
-        ├── CatMemoryStore       → memory JSON
-        ├── MemoryExtractor      → memory extraction request
+    CatChatViewModel (AndroidViewModel)   ← thin shell: only the non-portable parts
+        ├── ChatEngine           → all chat orchestration (see 1.1.1)
         ├── UpdateClient         → GitHub release lookup and APK download
         ├── ApkInstaller         → package/signature check before an in-place update
-        ├── BackupArchive        → `.ikitty` export / validation / restore
-        └── LocationSource ─ IpLocationSource → IP city geolocation
+        └── .ikitty backup over content:// URIs
 ```
 
 Dependencies always point from UI to ViewModel, and from ViewModel to storage and network.
 The reverse direction is `StateFlow` only: the UI never reads or writes a file or the network directly.
+
+### 1.1.1 Cross-platform structure (Android and iOS share `:shared`)
+
+Everything platform-free lives in `:shared` (Kotlin Multiplatform), used by both the Android app
+and the iOS app (`iosApp/`, SwiftUI):
+
+```
+CatChatViewModel (Android)              ChatView / AppModel (iOS, SwiftUI)
+        └──────────────┬─────────────────────────┘
+                       ▼
+                  ChatEngine                ← send, streaming, persistence, memory, mood
+        ┌──────────────┼───────────────┬──────────────────────┐
+        ▼              ▼               ▼                      ▼
+   ApiClient     ChatLogStore    CatMemoryStore      ContextAssembler / CatPersona
+        │              │               │              CatMemory / AmbientContext
+        ▼              │               │              ModelCatalog / StoredMessage
+  HttpTransport        │               │              CatReply / JsonSupport
+   ├ OkHttp (JVM/Android)              │              PromptTime (time in the prompt)
+   └ Ktor Darwin (iOS)                 │              BackupArchive / ZipCodec
+                            okio FileSystem            SettingsRepository
+                    (androidMain / iosMain supply the root and the dispatcher)
+```
+
+Platform differences are injected as constructor parameters rather than `expect`/`actual`:
+the file system, the root path, the IO dispatcher, image normalisation and the settings store
+(DataStore on Android, NSUserDefaults on iOS) all come from the platform. Key names, defaults
+and fallbacks are written once, in `SettingsRepository`.
+
+Each platform keeps one non-portable tail: in-app APK updates and `content://` backup IO on
+Android; CoreGraphics image normalisation and `fileImporter` / `ShareLink` on iOS.
+
+The staged plan and its progress live in [`KMP_IOS_MIGRATION_PLAN.md`](KMP_IOS_MIGRATION_PLAN.md).
 
 ### 1.2 The Android-free logic layer
 
