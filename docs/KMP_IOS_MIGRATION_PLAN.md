@@ -45,6 +45,27 @@ okio 的 `Inflater()` 无参构造是**带 zlib 头**的，拿它解 ZIP 的 raw
 隐私开关 / 测试连接 / 模型列表）、备份与恢复、图片输入与缩略图都已完成。
 设置里的参数控件由共享的模型能力表驱动，换模型会自动增减控件并改上下限。
 
+**配色与 Android 对齐**：iOS 侧新增 `AppTheme.swift`，取 Android `CatLightColors`
+（`MainActivity.kt`）里的对应角色——内容区底色 `#FFF8F2`、主色 `#E08A5F` 等。
+
+**镀铬层改走 iOS 的 Liquid Glass**（`GlassChrome.swift`）：Apple 明确要求
+「减少控件与导航元素上的自定义背景」，否则自定义底色会盖住玻璃材质和滚动边缘效果。
+所以分工是——玻璃是镀铬层的语言，暖色是内容层的识别度：
+
+| 层 | iOS 26+ | iOS 17–25 回退 |
+| --- | --- | --- |
+| 导航栏 / 工具栏 / 表单 / 弹层 | 系统自动采用 Liquid Glass | 系统自带的材质与配色 |
+| 聊天输入栏 | `safeAreaBar` + `glassEffect(.regular)`：左侧「+」与文本框合成胶囊，发送键是**独立**的圆形玻璃按钮 | 同样排布 + `.ultraThinMaterial` |
+| 发送按钮 | `buttonStyle(.glass)` + 品牌色 tint | 品牌色实心圆 |
+| 内容区（气泡 / 卡片 / 底色） | 固定暖色，不叠玻璃 | 同左 |
+
+为此移除了上一轮刷在导航栏、表单、输入栏上的自定义底色（`scrollContentBackground`、
+输入栏实心白条与自定义阴影），并把消息列表交给 `safeAreaBar` 以获得滚动边缘效果。
+`preferredColorScheme(.light)` 锁死浅色外观：这套暖奶油配色没有深色版本，
+不锁的话系统切深色后标题与输入框占位会变成浅色，压在 `#FFF8F2` 上几乎看不见。
+
+部署目标仍是 **iOS 17**，Liquid Glass 的可用性判断集中在 `GlassChrome.swift` 一处。
+
 **两处刻意的偏离**（都朝"更少的平台代码"）：
 
 1. **不引入 `expect/actual`**。文件系统、路径与 IO 调度器通过构造参数注入

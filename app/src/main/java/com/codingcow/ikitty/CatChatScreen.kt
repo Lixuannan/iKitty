@@ -60,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,13 +93,17 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
     val updateStatus by vm.updateStatus.collectAsState()
     val backupStatus by vm.backupStatus.collectAsState()
 
-    var input by remember { mutableStateOf("") }
+    // 输入框与待发图片用 rememberSaveable 持有：旋转屏幕会重建 Activity，
+    // 只靠 remember 的话用户已经打好的文字和选好的图片会在重建时消失。
+    var input by rememberSaveable { mutableStateOf("") }
     /** 已选好、等待发送的图片文件名。 */
-    var attachments by remember { mutableStateOf<List<String>>(emptyList()) }
+    var attachments by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    // 这三个也要跨重建保留：设置页/记忆页的草稿是它们自己的 rememberSaveable，
+    // 页面一旦因旋转被关掉，那些草稿会随页面一起离开 composition，等于白存。
     /** 正在全屏查看的聊天记录图片名；`null` 表示没有打开大图。 */
-    var previewImage by remember { mutableStateOf<String?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showMemory by remember { mutableStateOf(false) }
+    var previewImage by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showMemory by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 

@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：1.0.0 · 包名：`com.codingcow.ikitty`
+- 版本：1.0.1 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
@@ -531,8 +531,18 @@ DataStore Preferences，文件名 `cat_settings`。键：
 
 ### 12.1 页面切换
 
-`CatChatScreen` 用两个 `remember` 布尔量（`showSettings` / `showMemory`）切换页面，
-命中时提前 `return`。项目没有引入 Navigation 组件；新增页面沿用这个模式或在引入导航时一并替换。
+`CatChatScreen` 用两个布尔量（`showSettings` / `showMemory`）切换页面，命中时提前 `return`。
+这两个布尔量用 `rememberSaveable`：旋转屏幕会重建 Activity，页面若被顺手关掉，页面里那些
+`rememberSaveable` 的草稿会随页面一起离开 composition，等于没保存。
+项目没有引入 Navigation 组件；新增页面沿用这个模式或在引入导航时一并替换。
+
+**旋转（Activity 重建）时的状态归属**，12.2–12.4 通用：
+
+- 用户已经输入或选择、还没提交的草稿一律用 `rememberSaveable`，否则旋转一次就要重填。
+- 正在进行的请求状态（`testing` / `loadingModels`）保持 `remember`：协程挂在
+  `rememberCoroutineScope` 上、随重建被取消，恢复成 `true` 只会留下永远转不完的圈。
+- `AlertDialog` 是独立窗口，Activity 的 `onSaveInstanceState` 不保存它的视图树，所以对话框内的
+  草稿在旋转时必然会丢；草稿要提升到页面层用 `rememberSaveable` 持有，对话框本身做成无状态。
 
 ### 12.2 聊天页（`CatChatScreen.kt`）
 
@@ -546,6 +556,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 - 输入栏：左侧「+」弹出「从相册选择 / 拍照」，中间多行输入框（≤5 行，IME 动作是发送）。
   已选图片显示为可横向滚动的缩略图条，每张右上角可单独删除。
   发送按钮在「文字为空且没有图片」或 `busy` 时禁用。
+  输入文字与待发图片用 `rememberSaveable` 持有，页面的 `showSettings` / `showMemory` / `previewImage`
+  也是；理由见 [12.1](#121-页面切换)。
 - 相册走 `PickMultipleVisualMedia`（最多 9 张，老设备回退系统文件选择器）；拍照走 `TakePicture`，
   目标地址由 `ImageStore.newCameraTarget()` 通过 FileProvider 生成，返回后 `finishCamera` 收编或删除。
 - 这两个 launcher 和其余 `remember` 一样必须在提前 `return` 之前调用，否则切到设置页再回来会错位。
@@ -555,7 +567,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ### 12.3 设置页（`SettingsScreen.kt`）
 
 自上而下：猫猫设定 → 模型服务 → 连接 → 生成参数 → 位置 → 保存。
-所有输入都是本地 `remember` 草稿，只有点「保存」才写回 ViewModel。
+所有输入都是本地 `rememberSaveable` 草稿，只有点「保存」才写回 ViewModel；
+草稿跨旋转保留，但请求进行中的 `testing` / `loadingModels` 不恢复（见 [12.1](#121-页面切换)）。
 
 - 切换服务商：套用该服务商默认 Base URL 与默认模型，并把采样参数拉回默认值。
 - 换模型：只做**收敛**——不支持的参数复位，超出范围的值拉回区间。
@@ -576,7 +589,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 顶部状态卡（整理中 / 上次整理时间 / 错误 / 「现在整理」/「清空记忆」），
 按分类分组的记忆卡片（固定 / 修改 / 删除），底部是对话记录卡（条数 + 「清空聊天记录（记忆保留）」），
 以及「上次请求的上下文」卡（带了多少条、省略多少、估算 tokens / 预算）。
-新增与修改共用一个对话框。
+新增与修改共用一个对话框。对话框本身无状态，分类 / 关键词 / 内容三个草稿由本页
+`rememberSaveable` 持有，原因见 [12.1](#121-页面切换)。
 
 ### 12.5 猫咪渲染（`CatView.kt`）
 

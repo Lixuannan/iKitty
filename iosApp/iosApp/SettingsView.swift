@@ -61,7 +61,7 @@ struct SettingsView: View {
                 privacySection
                 if let notice {
                     Section {
-                        Text(notice).foregroundStyle(noticeIsError ? .red : .primary)
+                        Text(notice).foregroundStyle(noticeIsError ? AppTheme.error : AppTheme.onSurface)
                     }
                 }
             }
@@ -103,7 +103,7 @@ struct SettingsView: View {
             if !fetchedModels.isEmpty {
                 ForEach(fetchedModels, id: \.self) { item in
                     Button(item) { modelName = item }
-                        .foregroundStyle(modelName == item ? .secondary : .primary)
+                        .foregroundStyle(modelName == item ? AppTheme.onSurfaceVariant : AppTheme.primary)
                 }
             }
         } header: {
@@ -210,7 +210,7 @@ struct SettingsView: View {
                         Text(trait.label)
                         Spacer()
                         if traits.contains(trait) {
-                            Image(systemName: "checkmark").foregroundStyle(.tint)
+                            Image(systemName: "checkmark").foregroundStyle(AppTheme.primary)
                         }
                     }
                 }
@@ -351,14 +351,14 @@ private struct SliderRow: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text(formatted).foregroundStyle(.secondary).monospacedDigit()
+                Text(formatted).foregroundStyle(AppTheme.onSurfaceVariant).monospacedDigit()
             }
             Slider(
                 value: $value,
                 in: Double(range.min)...Double(range.max),
                 step: Double(range.step)
             )
-            Text(hint).font(.caption).foregroundStyle(.secondary)
+            Text(hint).font(.caption).foregroundStyle(AppTheme.onSurfaceVariant)
         }
     }
 

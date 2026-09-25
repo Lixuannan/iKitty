@@ -77,12 +77,12 @@ struct MemoryView: View {
                         Text("正在整理…")
                     }
                 } else if let error = status.lastError {
-                    Text("上次整理失败：\(error)").foregroundStyle(.red)
+                    Text("上次整理失败：\(error)").foregroundStyle(AppTheme.error)
                 } else if status.lastRunAt > 0 {
                     Text("上次整理：\(Self.format(status.lastRunAt))")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.onSurfaceVariant)
                 } else {
-                    Text("还没有整理过").foregroundStyle(.secondary)
+                    Text("还没有整理过").foregroundStyle(AppTheme.onSurfaceVariant)
                 }
             }
             Button("现在整理") { model.extractMemoryNow() }
@@ -113,11 +113,11 @@ struct MemoryView: View {
                             if fact.pinned {
                                 Image(systemName: "pin.fill")
                                     .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(AppTheme.primary)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(fact.key).font(.subheadline).foregroundStyle(.secondary)
-                                Text(fact.value).foregroundStyle(.primary)
+                                Text(fact.key).font(.subheadline).foregroundStyle(AppTheme.onSurfaceVariant)
+                                Text(fact.value).foregroundStyle(AppTheme.onSurface)
                             }
                         }
                     }
@@ -128,7 +128,7 @@ struct MemoryView: View {
                         Button(fact.pinned ? "取消固定" : "固定") {
                             model.toggleFactPin(key: fact.key)
                         }
-                        .tint(.orange)
+                        .tint(AppTheme.primary)
                     }
                 }
             }

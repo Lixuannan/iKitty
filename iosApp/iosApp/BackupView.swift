@@ -51,7 +51,7 @@ struct BackupView: View {
                 if let message = model.backupMessage {
                     Section {
                         Text(message)
-                            .foregroundStyle(message.contains("失败") ? .red : .primary)
+                            .foregroundStyle(message.contains("失败") ? AppTheme.error : AppTheme.onSurface)
                     }
                 }
             }

@@ -36,7 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,8 +63,38 @@ fun CatMemoryScreen(
     onClearMemory: () -> Unit,
     onClearMessages: () -> Unit
 ) {
-    var editing by remember { mutableStateOf<MemoryFact?>(null) }
-    var creating by remember { mutableStateOf(false) }
+    // 对话框的状态必须由本页持有，不能用 rememberSaveable 放在 AlertDialog 里面：
+    // Dialog 是独立窗口，Activity 的 onSaveInstanceState 不会保存它的视图树，对话框内部的
+    // 可保存状态在旋转时一定丢。放在这里才能跨重建保住用户已经输入的关键词和内容。
+    var creating by rememberSaveable { mutableStateOf(false) }
+    /** 正在修改的条目 key；用 key 而不是整条记录，旋转后按最新的 facts 重新查一遍。 */
+    var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var draftCategory by rememberSaveable { mutableStateOf(MemoryCategory.OWNER) }
+    var draftKey by rememberSaveable { mutableStateOf("") }
+    var draftValue by rememberSaveable { mutableStateOf("") }
+
+    val editing = facts.firstOrNull { it.key == editingKey }
+
+    fun openCreate() {
+        creating = true
+        editingKey = null
+        draftCategory = MemoryCategory.OWNER
+        draftKey = ""
+        draftValue = ""
+    }
+
+    fun openEdit(fact: MemoryFact) {
+        creating = false
+        editingKey = fact.key
+        draftCategory = fact.category
+        draftKey = fact.key
+        draftValue = fact.value
+    }
+
+    fun closeEditor() {
+        creating = false
+        editingKey = null
+    }
 
     Column(
         modifier = Modifier
@@ -88,7 +118,7 @@ fun CatMemoryScreen(
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { creating = true }) {
+            IconButton(onClick = { openCreate() }) {
                 Icon(Icons.Default.Add, contentDescription = "新增记忆")
             }
         }
@@ -115,7 +145,7 @@ fun CatMemoryScreen(
                 items(group, key = { it.key }) { fact ->
                     FactCard(
                         fact = fact,
-                        onEdit = { editing = fact },
+                        onEdit = { openEdit(fact) },
                         onDelete = { onDelete(fact.key) },
                         onTogglePin = { onTogglePin(fact.key) }
                     )
@@ -136,15 +166,17 @@ fun CatMemoryScreen(
     if (creating || editing != null) {
         val initial = editing
         FactDialog(
-            initial = initial,
-            onDismiss = {
-                creating = false
-                editing = null
-            },
-            onConfirm = { category, key, value ->
-                onUpsert(initial?.key, category, key, value)
-                creating = false
-                editing = null
+            title = if (initial == null) "新增记忆" else "修改记忆",
+            category = draftCategory,
+            keyword = draftKey,
+            content = draftValue,
+            onCategoryChange = { draftCategory = it },
+            onKeywordChange = { draftKey = it },
+            onContentChange = { draftValue = it },
+            onDismiss = { closeEditor() },
+            onConfirm = {
+                onUpsert(initial?.key, draftCategory, draftKey.trim(), draftValue.trim())
+                closeEditor()
             }
         )
     }
@@ -313,19 +345,27 @@ private fun Note(text: String) {
     )
 }
 
+/**
+ * 新增 / 修改记忆的对话框。
+ *
+ * 完全无状态：草稿由 [CatMemoryScreen] 用 rememberSaveable 持有，因为 Dialog 里的
+ * 可保存状态活不过 Activity 重建（见调用处的说明）。
+ */
 @Composable
 private fun FactDialog(
-    initial: MemoryFact?,
+    title: String,
+    category: MemoryCategory,
+    keyword: String,
+    content: String,
+    onCategoryChange: (MemoryCategory) -> Unit,
+    onKeywordChange: (String) -> Unit,
+    onContentChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (MemoryCategory, String, String) -> Unit
+    onConfirm: () -> Unit
 ) {
-    var category by remember { mutableStateOf(initial?.category ?: MemoryCategory.OWNER) }
-    var key by remember { mutableStateOf(initial?.key.orEmpty()) }
-    var value by remember { mutableStateOf(initial?.value.orEmpty()) }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增记忆" else "修改记忆") },
+        title = { Text(title) },
         text = {
             Column {
                 Row(
@@ -335,15 +375,15 @@ private fun FactDialog(
                     MemoryCategory.entries.forEach { option ->
                         FilterChip(
                             selected = option == category,
-                            onClick = { category = option },
+                            onClick = { onCategoryChange(option) },
                             label = { Text(option.label) }
                         )
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
+                    value = keyword,
+                    onValueChange = onKeywordChange,
                     label = { Text("关键词") },
                     placeholder = { Text("例如：名字") },
                     singleLine = true,
@@ -351,8 +391,8 @@ private fun FactDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it },
+                    value = content,
+                    onValueChange = onContentChange,
                     label = { Text("内容") },
                     placeholder = { Text("例如：小明") },
                     minLines = 2,
@@ -363,8 +403,8 @@ private fun FactDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(category, key.trim(), value.trim()) },
-                enabled = key.isNotBlank() && value.isNotBlank()
+                onClick = onConfirm,
+                enabled = keyword.isNotBlank() && content.isNotBlank()
             ) {
                 Text("保存")
             }

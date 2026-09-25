@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,37 +82,42 @@ fun SettingsScreen(
     onImportBackup: (Uri) -> Unit,
     onBack: () -> Unit
 ) {
-    var providerId by remember(initial) { mutableStateOf(initial.providerId) }
-    var baseUrl by remember(initial) { mutableStateOf(initial.baseUrl) }
-    var apiKey by remember(initial) { mutableStateOf(initial.apiKey) }
-    var model by remember(initial) { mutableStateOf(initial.model) }
+    // 这里的每一项都是用户已经输入/选择、但还没点「保存」的草稿，用 rememberSaveable 跨旋转保留，
+    // 否则旋转一次就要从头再填一遍。`initial` 仍是 key：保存后重进设置会重置为最新已存值。
+    var providerId by rememberSaveable(initial) { mutableStateOf(initial.providerId) }
+    var baseUrl by rememberSaveable(initial) { mutableStateOf(initial.baseUrl) }
+    var apiKey by rememberSaveable(initial) { mutableStateOf(initial.apiKey) }
+    var model by rememberSaveable(initial) { mutableStateOf(initial.model) }
 
-    var catName by remember(initialPersona) { mutableStateOf(initialPersona.name) }
-    var catTraits by remember(initialPersona) { mutableStateOf(initialPersona.traits) }
-    var catSpeechStyle by remember(initialPersona) { mutableStateOf(initialPersona.speechStyle) }
-    var catFlavor by remember(initialPersona) { mutableStateOf(initialPersona.flavor) }
-    var catNotes by remember(initialPersona) { mutableStateOf(initialPersona.notes) }
+    var catName by rememberSaveable(initialPersona) { mutableStateOf(initialPersona.name) }
+    var catTraits by rememberSaveable(initialPersona) { mutableStateOf(initialPersona.traits) }
+    var catSpeechStyle by rememberSaveable(initialPersona) { mutableStateOf(initialPersona.speechStyle) }
+    var catFlavor by rememberSaveable(initialPersona) { mutableStateOf(initialPersona.flavor) }
+    var catNotes by rememberSaveable(initialPersona) { mutableStateOf(initialPersona.notes) }
 
     // 打开设置时先把已存的值收敛到当前模型的范围，避免滑杆显示越界值。
     val initialSpec = remember(initial) { ModelCatalog.resolve(initial.providerId, initial.model) }
-    var temperature by remember(initial) {
+    var temperature by rememberSaveable(initial) {
         mutableStateOf(initialSpec.temperature?.snap(initial.temperature) ?: initial.temperature)
     }
-    var topP by remember(initial) {
+    var topP by rememberSaveable(initial) {
         mutableStateOf(initialSpec.topP?.snap(initial.topP) ?: initial.topP)
     }
-    var maxTokens by remember(initial) {
+    var maxTokens by rememberSaveable(initial) {
         mutableStateOf(
             initialSpec.maxTokens?.let { param ->
                 if (initial.maxTokens > param.max) param.max.toInt() else initial.maxTokens
             } ?: initial.maxTokens
         )
     }
-    var thinking by remember(initial) { mutableStateOf(initial.thinking) }
-    var reasoning by remember(initial) { mutableStateOf(initial.reasoningEffort) }
-    var locationEnabled by remember(initialLocationEnabled) { mutableStateOf(initialLocationEnabled) }
+    var thinking by rememberSaveable(initial) { mutableStateOf(initial.thinking) }
+    var reasoning by rememberSaveable(initial) { mutableStateOf(initial.reasoningEffort) }
+    var locationEnabled by rememberSaveable(initialLocationEnabled) { mutableStateOf(initialLocationEnabled) }
     var showKey by remember { mutableStateOf(false) }
 
+    // 运行态保持 remember，不跨重建恢复：请求跑在 rememberCoroutineScope 上，旋转时随 composition
+    // 一起取消；把 testing / loadingModels 恢复成 true 只会留下永远转不完的圈。模型列表与状态文案
+    // 会由 LaunchedEffect 在新 composition 里自动重新拉取，测试结果则重置为未测试。
     var testing by remember { mutableStateOf(false) }
     var testOutcome by remember { mutableStateOf<TestOutcome?>(null) }
     var testError by remember { mutableStateOf<String?>(null) }

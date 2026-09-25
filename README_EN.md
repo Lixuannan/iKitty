@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **1.0.0** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **1.0.1** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
