@@ -76,7 +76,8 @@ cd iKitty
 
 ./gradlew assembleDebug        # produces app/build/outputs/apk/debug/app-debug.apk
 ./gradlew installDebug         # installs to a connected device / emulator
-./gradlew testDebugUnitTest    # runs unit tests (plain JVM, no device needed)
+./gradlew testDebugUnitTest    # unit tests for the Android platform tail
+./gradlew :shared:jvmTest      # cross-platform logic tests (incl. real network, no device needed)
 ```
 
 You can also open the repository root directly in Android Studio and run after the first Gradle sync.
@@ -361,7 +362,7 @@ iKitty/
 │   ├── AmbientContext.kt          "Right now" background block
 │   ├── Location.kt / IpLocationSource.kt  IP city geolocation
 │   └── PromptTime.kt / ChatTime.kt  Prompt timestamp prefix / chat time display
-├── app/src/test/java/com/codingcow/ikitty/   101 plain-JVM unit tests
+├── app/src/test/java/com/codingcow/ikitty/   Unit tests for the Android platform tail
 ├── design/cat_v1/                 Layered cat character assets and spec
 └── docs/DOC_EN.md                 Detailed design document
 ```
@@ -369,15 +370,24 @@ iKitty/
 ## Tests
 
 ```bash
-./gradlew testDebugUnitTest
+./gradlew :shared:jvmTest                # 199
+./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew testDebugUnitTest              # 12
 ```
 
-The 101 cases cover pure logic contracts: chat log read/write and corrupt-line tolerance, image-message
-persistence and round-trip, memory merge and parsing, context assembly (including image tokens and image
-resolution), multimodal request-body structure, persona prompt, image sampling ratio, EXIF orientation
-mapping and viewer pan clamping, IP response parsing, the “right now” block, and `.ikitty` export/import
-round-trips, settings serialization, and rejection of corrupt files and out-of-bounds entries. UI, real
-network requests, and image decoding/compression are outside unit-test scope. See
+Pure-logic cases all live in `:shared`'s `commonTest`, so **a single body of code runs the same
+assertions on three targets** (JVM / Android / iOS simulator) — "both platforms behave identically" is
+enforced by the tests rather than compared by hand. Coverage: chat log read/write and corrupt-line
+tolerance, image-message persistence and round-trip, **per-message timestamps and the prompt time
+prefix**, memory merge and parsing, context assembly (image tokens, image resolution, the "right now"
+block), multimodal request-body structure, persona prompt, the model capability table, image sampling
+ratio, EXIF orientation mapping and viewer pan clamping, IP response parsing, ZIP ↔ `java.util.zip`
+interop in both directions, and `.ikitty` export/import round-trips, settings serialization, and
+rejection of corrupt files and out-of-bounds entries. `:shared:jvmTest` additionally holds 5
+**real-network** integration tests (a real `HttpServer` driven through the production OkHttp transport).
+
+UI, real image decoding/compression, Android's DataStore/SAF, and `UpdateClient`'s real downloads are
+outside unit-test scope and need a device. See
 [the design document](docs/DOC_EN.md#14-testing-strategy) for details.
 
 ## Known limitations and roadmap

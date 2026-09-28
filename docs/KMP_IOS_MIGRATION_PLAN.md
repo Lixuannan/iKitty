@@ -82,7 +82,7 @@ okio 的 `Inflater()` 无参构造是**带 zlib 头**的，拿它解 ZIP 的 raw
 `xcrun simctl list runtimes` 现在能看到它，于是：
 
 ```bash
-# 共享逻辑在真的 iOS 运行时上跑（174 条：168 common + 6 平台层）
+# 共享逻辑在真的 iOS 运行时上跑（commonTest + iosTest；用例数以 docs/DOC.md §14 为准）
 ./gradlew :shared:iosSimulatorArm64Test
 
 # 构建、安装、运行 iOS 应用

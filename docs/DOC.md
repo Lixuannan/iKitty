@@ -674,36 +674,70 @@ DataStore Preferences，文件名 `cat_settings`。键：
 
 ## 14. 测试策略
 
+纯逻辑用例全部放在 `:shared` 的 `commonTest`，**一份代码在三个 target 上跑同一套断言**
+（JVM、Android、iOS 模拟器）。所以"两端行为一致"是被测试保证的，不是靠人工比对：
+时间格式化、请求体形状、存储格式、备份归档在两端跑的是同一组用例。平台专有的尾巴
+（Android 的应用内更新、图片查看器）留在 `:app`。
+
 ```bash
-./gradlew testDebugUnitTest
+./gradlew :shared:jvmTest                # 199
+./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew testDebugUnitTest              # 12（Android 平台尾巴）
 ```
 
-101 个用例，全部是纯 JVM 测试（无需设备/模拟器）：
+| target | 用例 | 组成 |
+| --- | --- | --- |
+| `:shared:jvmTest` | 199 | `commonTest` 189 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 195 | `commonTest` 189 + `iosTest` 6 |
+| `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
+
+### 14.1 `commonTest`（189）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
-| `ChatLogStoreTest` | 6 | 追加/读末尾往返、只返回最新、跨 8192 字节块的中文不损坏、`readAfter` 游标、坏行不影响其余、清空 |
-| `CatMemoryStoreTest` | 2 | 记忆保存/加载往返、损坏文件读成空记忆 |
-| `CatMemoryTest` | 11 | 合并只增不减、同 key 覆盖、未变化保留旧时间戳、`forget` 不动固定项、超限淘汰、重命名 key、超长裁剪、渲染分组、三种 JSON 形态解析、解析失败返回 null、未知分类回退 |
+| `ContextAssemblerTest` | 18 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、人设与记忆进首条 system 而「此刻」不进、**每条进请求的消息都带自己的时间戳**、**同一段历史两轮装配字节一致**、背景块位于历史之后且不因预算被挤掉、没有背景块就不多出空 system、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块与图片各自计入预算、图片解析进 wire |
+| `ApiClientTest` | 15 | 补全解析与 usage、content 为空时用 reasoning、Bearer 头与 JSON content type、空 Key 不发 Authorization、HTTP 错误带服务商详情与本地提示、非 JSON 错误体截断展示、传输失败转成网络错误、SSE 增量累积、reasoning 与正文分开、服务商忽略 `stream` 时退化整体解析、坏 SSE 行跳过、空流报无内容、模型列表解析与排序、缺 `/models` 不算错误、测试连接回报端点与实际发送参数 |
+| `BackupArchiveTest` | 12 | 导出/导入往返还原消息、记忆、图片与设置、非 zip 与缺清单被拒、格式版本过新被拒、越界图片条目被忽略、空备份清空本机历史、聊天记录损坏时拒绝覆盖、设置序列化全字段往返、容忍缺字段、显式的 `max_tokens = 0` 能往返、记忆解析容忍垃圾、默认文件名带后缀 |
+| `StoredMessageTest` | 12 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、**每条 prompt 消息带自己的时间戳**、纯图片消息也有时间戳、没有 `at` 的老记录不加前缀、落盘 JSON 形状是契约、坏行返回 null |
+| `ModelCatalogTest` | 11 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 `reasoning_effort` 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 只发 `reasoning_effort`、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底、默认模型是 `deepseek-flash`、`deepseek-flash` 可调思考深度、参数格式化保留固定小数位 |
+| `ChatLogStoreTest` | 7 | 追加/读末尾往返、只返回最新、跨 8192 字节块的中文不损坏、`readAfter` 游标、坏行不影响其余、清空、记录文件在约定路径 |
+| `CatMemoryStoreTest` | 4 | 记忆保存/加载往返、不可读文件读成空记忆而不是崩溃、文件缺失读成空记忆、记忆文件在约定路径 |
+| `ChatTimeTest` | 9 | 当天只显示时分、昨天带「昨天」、更早带日期、月日补零、**按本地日历判断跨天**（夏令时那天不足 24 小时）、首条显示时间、换说话人重新显示、同人快速连发不重复、间隔满 5 分钟重新显示 |
+| `LruCacheTest` | 9 | 存取往返、缺键返回 null、上限生效、`getAndTouch` 保持存活、普通 `get` 不改淘汰顺序、覆写不增长、清空、非正上限被拒、未达上限不淘汰 |
 | `CatPersonaTest` | 8 | 默认 prompt 含名字/性格/JSON 契约、性格渲染顺序与可空、补充设定、`HUMAN` 无「喵」、只有非「像朋友」的猫味建议带猫的动作、空名回退、性格存储往返、枚举反查 |
-| `StoredMessageTest` | 7 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、纯文字 wire 不带图片 |
-| `MultimodalPayloadTest` | 5 | 纯文本仍是字符串 content 且无 `stream`、图片转成 `image_url` content 数组、纯图片不写空 text 段、流式只加 `stream` 不改 content、发送参数仍受能力表约束 |
-| `ContextAssemblerTest` | 13 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、附加块按存在拼接、稳定块在易变块前、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块计入预算、每张图片固定开销、图片解析进 wire、图片挤占历史预算 |
-| `ImageStoreTest` | 6 | 采样倍率落在上限内、按长边采样、采样后尺寸不超上限、数据 URL 的 MIME 兜底、EXIF 八个方向值的旋转/镜像映射、认不出的方向不转 |
-| `ImageViewerTest` | 3 | 未放大时不接受拖动、放大后拖动被钳制在溢出范围内、钳制范围随倍数增长 |
-| `LocationTest` | 10 | ip-api/ipapi.co/ipwho.is 三种返回解析、JSON null 不成字符串、失败与垃圾拒绝、`display` 回退、背景块含时间/间隔/城市且标注「可能不准」、缺信息时不输出 |
-| `UpdateModelsTest` | 9 | release JSON 解析版本/说明/APK 地址/大小/发布时间、多 APK 时优先同名、无 APK 返回 null、预发布不算更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、预发布更旧、`v` 前缀归一化 |
-| `ModelCatalogTest` | 10 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 reasoning_effort 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 不发送采样参数、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底、默认模型是 deepseek-flash、deepseek-flash 可调思考深度 |
-| `BackupArchiveTest` | 11 | 导出/导入往返还原消息、记忆、图片与设置、覆盖时删掉旧图片与旧记忆、非 zip 与缺清单被拒、格式版本过新被拒、越界图片条目被忽略、空备份清空本机历史、聊天记录损坏时拒绝覆盖、设置序列化全字段往返、缺字段回退默认值、记忆解析容忍垃圾、默认文件名带后缀 |
+| `CatMemoryRulesTest` | 8 | 合并只增不减、同 key 覆盖、未变化的条目保留旧时间戳（淘汰才公平）、`forget` 不动固定项、超上限淘汰最久未更新的非固定项、重命名 key 不留旧条目、超长值裁剪而不是拒绝、渲染按分类分组且空记忆渲染为空 |
+| `ChatEngineTest` | 8 | 空记录启动补开场白、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零并重补开场白、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
+| `PromptTimeTest` | 8 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏） |
+| `SettingsRepositoryTest` | 8 | 空存储给出默认值、缺 providerId 时按 Base URL 反查、认不出的 Base URL 落到 `custom`、配置往返、角色设定往返、未知枚举名回退不抛异常、定位开关能关且保持关闭、键名是约定的那些 |
+| `MemoryJsonTest` | 7 | 接受裸 JSON / 围栏 JSON / 中文分类标签、解析失败返回 null（旧记忆因此不会被清空）、未知分类回退而不是丢条目、记忆文件形状是跨端契约、编解码往返、损坏文件返回 null、`pinned` 只在为真时写出 |
+| `MultimodalPayloadTest` | 7 | 纯文本保持字符串 content 且无 `stream`、图片转成 `image_url` content 数组、纯图片不写空 text 段、流式只加 `stream` 不改 content、发送参数仍受能力表约束、数值精度沿用旧格式（`0.8` 而不是 `0.800000011920929`）、未设 `max_tokens` 绝不进请求体 |
+| `ImageStoreTest` | 6 | 采样后长边不超上限、按长边采样、采样尺寸不超上限、数据 URL 的 MIME 兜底、EXIF 八个方向值的旋转/镜像映射、认不出的方向不动像素 |
+| `AmbientContextTest` | 6 | 背景块按已知信息拼接、不知道的整行不出现、空白城市当未知、明确「不要复述」、把「现在」声明为唯一权威且不沿用旧话、**解释历史消息的时间前缀** |
+| `IpLocationSourceTest` | 7 | 第一个给出城市的端点胜出、结果新鲜时不再请求、过期不算新鲜、全部失败保留上一次结果、不可用响应体落到下一个端点、挂起的端点超时放弃、传输失败被吞掉 |
+| `IpPlaceParseTest` | 5 | 解析 ip-api 中文响应、解析 ipapi.co 的回退字段名、解析 ipwho.is 形状、JSON null 不会变成字符串 `"null"`、失败响应与垃圾被拒绝而不是缓存 |
+| `PlaceTest` | 1 | `display` 依次回退 city → region → country |
+| `ImageSupportTest` | 3 | 数据 URL 用标准 base64 字母表且不换行、空图片也产出合法前缀、文件名是 jpeg hex 且唯一 |
+| `ZipTest` | 10 | CRC32 标准校验值、单条目往返、多条目保持顺序与名字、空条目往返、无条目也是合法 zip、写出可复现、非 ASCII 文件名往返、非 zip 输入被拒而不是半解析、CRC 检出损坏条目、尾部注释不遮住目录 |
 
-`testImplementation("org.json:json:20240303")` 是刻意的：单元测试跑在 JVM 上，
-`android.jar` 里的 `org.json` 只是会抛异常的桩，补一份真实现才能测记忆解析这类纯逻辑。
+### 14.2 平台专有（`jvmTest` / `iosTest` / `:app`）
 
-未覆盖：Compose UI、真实网络请求、SSE 解析、图片的真实解码与压缩（依赖 `BitmapFactory`）、
-`SettingsStore` 的 DataStore 读写、`IpLocationSource` 的实际 HTTP、
-`UpdateClient` 的真实 GitHub 请求与下载、`ApkInstaller` 的签名校验和系统安装器跳转。
-备份测试覆盖归档本身，而 SAF 文件选择与 `ContentResolver` 的读写同样需要设备验证。
-这些需要在设备上做集成/端到端验证。
+| 测试文件 | 用例 | 覆盖的契约 |
+| --- | --- | --- |
+| `ChatEngineIntegrationTest`（jvmTest） | 5 | 起一个**真实** `HttpServer`，用生产用的 OkHttp 传输跑完整链路：真实 socket → SSE → 落盘；服务商忽略 `stream` 时退化整体解析；HTTP 错误转成本地错误行；请求体符合线上契约（且历史消息带时间戳）；带图片消息以 `image_url` 数据 URL 到达 wire |
+| `ZipInteropTest`（jvmTest） | 5 | 用 `java.util.zip` 写出的 DEFLATE 归档可读、这里写出的归档 `java.util.zip` 可读、大且高压缩比条目在 DEFLATE 下完好、DEFLATE 归档的注释被容忍、STORED 与 DEFLATE 可以混用 |
+| `IosPlatformTest`（iosTest） | 6 | iOS 路径创建根目录并使用约定布局、设置经 NSUserDefaults 往返、未写入时给出默认值、图片存储写文件并返回数据 URL、拒绝空字节、失效缓存后强制重读 |
+| `UpdateModelsTest`（`:app`） | 9 | release JSON 解析版本与 APK 地址、多个 APK 时优先同名、无 APK 返回 null、预发布不作为更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、同基线预发布更旧、`v` 前缀归一化 |
+| `ImageViewerTest`（`:app`） | 3 | 未放大时不接受拖动、放大后拖动被钳制在溢出范围内、钳制范围随倍数增长 |
+
+`testImplementation("org.json:json:20240303")` 是刻意的：`:app` 的单元测试跑在 JVM 上，
+`android.jar` 里的 `org.json` 只是会抛异常的桩，补一份真实现才能测 `UpdateModels` 这类纯逻辑。
+
+**未覆盖**（需要真机/模拟器人工验证）：
+
+- Compose 与 SwiftUI 界面本身——时间标签的分组与格式化有共享用例兜底，但"看起来对不对"没有自动化；
+- 图片的**真实**解码与压缩（`BitmapFactory` / CoreGraphics）——采样倍率、EXIF 映射、数据 URL 编码有纯逻辑用例，像素管线没有；
+- Android 的 `DataStoreKeyValueStore`、SAF 文件选择与 `ContentResolver` 备份读写（iOS 侧的对应实现由 `IosPlatformTest` 覆盖）；
+- `UpdateClient` 的真实 GitHub 请求与下载、`ApkInstaller` 的签名校验与系统安装器跳转。
 
 ---
 

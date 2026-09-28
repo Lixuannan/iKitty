@@ -64,7 +64,8 @@ cd iKitty
 
 ./gradlew assembleDebug        # 产出 app/build/outputs/apk/debug/app-debug.apk
 ./gradlew installDebug         # 安装到已连接的设备 / 模拟器
-./gradlew testDebugUnitTest    # 运行单元测试（纯 JVM，不需要设备）
+./gradlew testDebugUnitTest    # Android 平台尾巴的单元测试
+./gradlew :shared:jvmTest      # 跨平台逻辑的单元测试（含真实网络往返，不需要设备）
 ```
 
 也可以直接用 Android Studio 打开仓库根目录，首次 Gradle 同步后运行。
@@ -304,7 +305,7 @@ iKitty/
 │   ├── AmbientContext.kt          「此刻」背景块
 │   ├── Location.kt / IpLocationSource.kt  IP 城市定位
 │   └── PromptTime.kt / ChatTime.kt  进 prompt 的时间前缀 / 界面时间显示
-├── app/src/test/java/com/codingcow/ikitty/   101 个纯 JVM 单元测试
+├── app/src/test/java/com/codingcow/ikitty/   Android 平台尾巴的单元测试
 ├── design/cat_v1/                 分层猫咪角色素材与规范
 └── docs/DOC.md                    详细设计文档
 ```
@@ -312,15 +313,22 @@ iKitty/
 ## 测试
 
 ```bash
-./gradlew testDebugUnitTest
+./gradlew :shared:jvmTest                # 199
+./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew testDebugUnitTest              # 12
 ```
 
-当前 101 个用例覆盖纯逻辑契约：聊天记录的读写与坏行容错、带图片消息的落盘与还原、
-记忆合并与解析、上下文装配（含图片 token 与图片解析）、多模态请求体结构、
-角色 prompt、图片采样倍率、EXIF 方向映射与大图拖动钳制、IP 返回解析与「此刻」背景块，
-以及 `.ikitty` 备份的导出/导入往返、设置序列化、坏文件与越界条目的拒绝。
-UI、真实网络请求和图片解码压缩不在单元测试范围内。
-详见[详细设计文档](docs/DOC.md#14-测试策略)。
+纯逻辑用例都放在 `:shared` 的 `commonTest`，**一份代码在三个 target 上跑同一套断言**
+（JVM / Android / iOS 模拟器），所以两端行为一致是被测试保证的。当前覆盖：
+聊天记录的读写与坏行容错、带图片消息的落盘与还原、**每条消息的时间戳与时间前缀**、
+记忆合并与解析、上下文装配（含图片 token、图片解析与「此刻」背景块）、多模态请求体结构、
+角色 prompt、模型能力表、图片采样倍率、EXIF 方向映射与大图拖动钳制、IP 返回解析、
+ZIP 与 `java.util.zip` 双向互操作，以及 `.ikitty` 备份的导出/导入往返、设置序列化、
+坏文件与越界条目的拒绝。`:shared:jvmTest` 里还有 5 条**真实网络往返**的集成测试
+（起一个真的 `HttpServer`，用生产用的 OkHttp 传输跑完整链路）。
+
+UI、图片的真实解码压缩、Android 的 DataStore/SAF 与 `UpdateClient` 的真实下载不在单元测试范围内，
+需要真机验证。详见[详细设计文档](docs/DOC.md#14-测试策略)。
 
 ## 已知限制与路线图
 

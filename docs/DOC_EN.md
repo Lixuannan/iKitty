@@ -744,38 +744,76 @@ Rive / Lottie means replacing this file wholesale; the external interface does n
 
 ## 14. Testing strategy
 
+Pure-logic cases all live in `:shared`'s `commonTest`, so **a single body of code runs the same
+assertions on three targets** (JVM, Android, iOS simulator). "Both platforms behave identically" is
+therefore a property the tests enforce, not something compared by hand: time formatting, request-body
+shape, storage formats and backup archives all run the same cases on both ends. Platform-specific tails
+(Android's in-app update and image viewer) stay in `:app`.
+
 ```bash
-./gradlew testDebugUnitTest
+./gradlew :shared:jvmTest                # 199
+./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew testDebugUnitTest              # 12 (Android platform tail)
 ```
 
-101 cases, all plain JVM tests (no device or emulator):
+| Target | Cases | Composition |
+| --- | --- | --- |
+| `:shared:jvmTest` | 199 | `commonTest` 189 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 195 | `commonTest` 189 + `iosTest` 6 |
+| `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
+
+### 14.1 `commonTest` (189)
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
-| `ChatLogStoreTest` | 6 | Append/tail round trip, only newest returned, Chinese text uncorrupted across 8192-byte chunks, `readAfter` cursor, a corrupt line not affecting the rest, clear |
-| `CatMemoryStoreTest` | 2 | Memory save/load round trip, corrupt file reading as empty memory |
-| `CatMemoryTest` | 11 | Additive merge, same-key overwrite, unchanged fact keeps its timestamp, `forget` leaves pinned alone, over-cap eviction, key rename, over-long truncation, render grouping, three JSON shapes, parse failure returning null, unknown category fallback |
+| `ContextAssemblerTest` | 18 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, persona and memory in the first system message while "right now" stays out of it, **every message that reaches the wire carries its own timestamp**, **the same history is byte-identical across two assemblies**, the ambient block sits after the history and survives the budget, no ambient block means no trailing empty system message, non-negative budget, Chinese costing more than equal-length ASCII, window carried in the model name, ambient block and images each charged against the budget, images resolved into the wire |
+| `ApiClientTest` | 15 | Completion parsing with usage, reasoning standing in when content is empty, bearer token and JSON content type, blank API key sending no Authorization header, HTTP failures carrying provider detail plus our hint, non-JSON error bodies truncated, transport failures becoming network errors, SSE deltas accumulated, reasoning kept separate from the reply, a provider ignoring `stream` falling back to whole-body parsing, unparseable SSE lines skipped, empty streams reported as no content, model list parsed and sorted, a missing `/models` not treated as an error, test connection reporting endpoint and sent params |
+| `BackupArchiveTest` | 12 | Export/import round trip restoring messages, memory, images and settings; non-zip and missing-manifest rejected; too-new format version rejected; out-of-bounds image entries ignored; an empty backup clearing local history; a corrupt chat log refusing to overwrite; full settings serialization round trip; missing fields falling back to defaults; an explicit `max_tokens = 0` surviving the round trip; memory parsing tolerating garbage; the default file name carrying the extension |
+| `StoredMessageTest` | 12 | Image message JSON round trip, image-only message valid, text-only omitting `images`, neither text nor images rejected, blank image names dropped, `toWire` resolving and skipping missing images, **every prompt message carrying its own timestamp**, an image-only message still carrying the time, a record with no `at` getting no prefix, the on-disk JSON shape as contract, unparseable lines returning null |
+| `ModelCatalogTest` | 11 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends only `reasoning_effort`, Meta Llama reaches aggregators and local runtimes, legacy models still resolve through the generic fallback, the default model is `deepseek-flash`, `deepseek-flash` exposes adjustable reasoning depth, parameter formatting keeping fixed decimals |
+| `ChatLogStoreTest` | 7 | Append/tail round trip, only newest returned, Chinese text uncorrupted across 8192-byte chunks, `readAfter` cursor, a corrupt line not affecting the rest, clear, the log living at the canonical path |
+| `CatMemoryStoreTest` | 4 | Memory save/load round trip, an unreadable file reading as empty memory instead of crashing, an absent file reading as empty memory, the memory file living at the canonical path |
+| `ChatTimeTest` | 9 | Time only today, `昨天` yesterday, date for older, month and day zero padded, **the day boundary following the local calendar** (a daylight-saving day is not 24 hours), the first message showing its time, a speaker change showing it again, a quick same-speaker reply not repeating it, a full 5-minute gap showing it again |
+| `LruCacheTest` | 9 | Store/read round trip, missing key returning null, the limit enforced, `getAndTouch` keeping an entry alive, a plain `get` not changing eviction order, overwriting not growing the cache, clear, non-positive limits rejected, entries surviving until the limit is actually reached |
 | `CatPersonaTest` | 8 | Default prompt carries name/traits/JSON contract, trait render order and empty set, extra notes, `HUMAN` has no "meow", only non-"like a friend" flavors suggesting cat actions, blank-name fallback, trait storage round trip, enum lookup |
-| `StoredMessageTest` | 7 | Image message JSON round trip, image-only message valid, text-only omits `images`, neither text nor images rejected, blank image names dropped, `toWire` resolving and skipping missing images, plain-text wire carrying no images |
-| `MultimodalPayloadTest` | 5 | Plain text stays a string content with no `stream`, images become `image_url` content parts, image-only writes no empty text part, streaming only adds `stream`, sent params still follow the capability table |
-| `ContextAssemblerTest` | 13 | Starts with system and never with assistant, over-budget whole turns dropped, last turn always kept, local errors never sent, extra blocks joined only when present, stable blocks before volatile, non-negative budget, Chinese costing more than equal-length ASCII, window in the model name, ambient block counted against the budget, fixed per-image cost, images resolved into the wire, images eating history budget |
-| `ImageStoreTest` | 6 | Sampling ratio within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs, EXIF orientation values 1–8 mapped to the right rotation/mirroring, unknown orientations left untouched |
-| `ImageViewerTest` | 3 | Pan ignored while not zoomed, pan clamped to the zoomed overflow, clamping growing with the zoom level |
-| `LocationTest` | 10 | Three provider response shapes, JSON null not becoming the string "null", failures and garbage rejected, `display` fallback, ambient block carrying time/gap/city and labeling it "may be inaccurate", omitted unknowns |
-| `UpdateModelsTest` | 9 | Release JSON parsing version/notes/APK URL/size/published time, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, prerelease older, `v` prefix normalization |
-| `ModelCatalogTest` | 10 | Every preset's default model hits its own built-in table, the preset list covers every vendor, new presets have a Base URL and reverse-look-up to themselves, GLM-5.3 uses `reasoning_effort` with a 1M window, the `glm-5` name heuristic, GPT-5.5 sends no sampling parameters, Meta Llama reaches aggregators and local runtimes, legacy models still resolve through the generic fallback, the default model is deepseek-flash, and deepseek-flash exposes adjustable reasoning depth |
-| `BackupArchiveTest` | 11 | Export/import round trip restoring messages, memory, images, and settings; overwriting deleting old images and memory; non-zip and missing-manifest rejected; too-new format version rejected; out-of-bounds image entries ignored; an empty backup clearing local history; a corrupt chat log refusing to overwrite; full settings serialization round trip; missing fields falling back to defaults; memory parsing tolerating garbage; the default file name carrying the extension |
+| `CatMemoryRulesTest` | 8 | Additive merge, same-key overwrite, an unchanged fact keeping its timestamp (so eviction stays fair), `forget` leaving pinned alone, over-cap eviction of the least recently updated unpinned fact, key rename leaving no old entry, over-long values clamped rather than rejected, rendering grouped by category and empty for no facts |
+| `ChatEngineTest` | 8 | An empty log getting a welcome message on start, a send appending the user message and the streamed reply, a failing stream keeping the partial reply and adding an error line, a blank send ignored, clearing restarting the sequence and re-adding the welcome, input changes driving `LISTENING`, a failed memory extraction recording the error without advancing the cursor, a successful one merging facts and advancing the cursor |
+| `PromptTimeTest` | 8 | `formatMoment` byte-identical to the old `SimpleDateFormat` output, following the requested timezone, respecting daylight-saving transitions, zero padding, `formatElapsed` coarseness and boundaries, **the message stamp sharing its source with `formatMoment`**, the stamp stable for the same instant (so the cached prefix survives) |
+| `SettingsRepositoryTest` | 8 | An empty store yielding the built-in defaults, a missing providerId inferred from the Base URL, an unknown Base URL falling back to `custom`, config round trip, persona round trip, an unrecognised enum name falling back instead of throwing, location turning off and staying off, settings written under the canonical key names |
+| `MemoryJsonTest` | 7 | Plain JSON, fenced JSON and Chinese category labels accepted; parse failure returning null (so old memory survives); unknown category falling back rather than dropping the fact; the memory file shape as the cross-platform contract; encode/parse round trip; a corrupt file returning null; `pinned` written only when true |
+| `MultimodalPayloadTest` | 7 | Plain text keeping a string content with no `stream`, images becoming `image_url` content parts, image-only writing no empty text part, streaming only adding `stream`, sent params still following the capability table, numeric precision keeping the old wire format (`0.8`, not `0.800000011920929`), an unset `max_tokens` never reaching the wire |
+| `ImageStoreTest` | 6 | Sampled longest edge within the limit, sampling by the longer edge, sampled dimensions never exceeding the limit, MIME fallback for data URLs, EXIF orientation values 1–8 mapped to the right rotation/mirroring, unknown orientations left untouched |
+| `AmbientContextTest` | 6 | The block assembled from what is known, unknown lines omitted, a blank city treated as unknown, "do not recite" stated, "now" declared the single authority and earlier statements not reused, **the timestamp prefix on history messages explained** |
+| `IpLocationSourceTest` | 7 | The first endpoint returning a city winning, a fresh value stopping further requests, an expired value not fresh, a total failure keeping the previous place, an unusable body falling through, a hanging endpoint abandoned on timeout, a transport failure swallowed |
+| `IpPlaceParseTest` | 5 | ip-api Chinese responses parsed, ipapi.co fallback field names parsed, the ipwho.is shape parsed, a JSON null city not becoming the string `"null"`, failures and garbage rejected rather than cached |
+| `PlaceTest` | 1 | `display` falls back city → region → country |
+| `ImageSupportTest` | 3 | A data URL using the standard base64 alphabet with no line breaks, an empty image still producing a valid prefix, file names being unique jpeg hex |
+| `ZipTest` | 10 | CRC32 matching the standard check value, single entry round trip, multiple entries keeping order and names, empty entries round trip, no entries still a valid zip, deterministic output, non-ASCII file names round trip, non-zip input rejected rather than half-parsed, a corrupted entry detected by its CRC, a trailing comment not hiding the directory |
 
-`testImplementation("org.json:json:20240303")` is deliberate: unit tests run on the JVM, where the
-`org.json` in `android.jar` is only a throwing stub; a real implementation is needed to test pure logic such
-as memory parsing.
+### 14.2 Platform-specific (`jvmTest` / `iosTest` / `:app`)
 
-Not covered: Compose UI, real network requests, SSE parsing, real image decoding/compression (which depends
-on `BitmapFactory`), DataStore reads/writes in `SettingsStore`, the actual HTTP of `IpLocationSource`,
-real GitHub requests and downloads in `UpdateClient`, and `ApkInstaller`'s signature check and system
-installer hand-off. The backup tests cover the archive itself, while SAF file selection and
-`ContentResolver` reads/writes likewise need on-device verification.
-These need on-device integration / end-to-end verification.
+| Test file | Cases | Contracts covered |
+| --- | --- | --- |
+| `ChatEngineIntegrationTest` (`jvmTest`) | 5 | Starts a **real** `HttpServer` and drives the whole path through the production OkHttp transport: real socket → SSE → persistence; a provider ignoring `stream` falling back to whole-body parsing; an HTTP error becoming a local error line; the request body following the wire contract (with timestamps on history); an attached image reaching the wire as an `image_url` data URL |
+| `ZipInteropTest` (`jvmTest`) | 5 | A DEFLATE archive written by `java.util.zip` is readable, an archive written here is readable by `java.util.zip`, a large highly compressible entry surviving DEFLATE, a comment on a DEFLATE archive tolerated, STORED and DEFLATE entries mixed |
+| `IosPlatformTest` (`iosTest`) | 6 | iOS paths creating the root directory with the canonical layout, settings round-tripping through NSUserDefaults, an untouched store yielding the built-in defaults, the image store writing a file and returning a data URL, empty bytes rejected, invalidating the cache forcing a re-read |
+| `UpdateModelsTest` (`:app`) | 9 | Release JSON parsing version and APK URL, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, a prerelease on the same baseline being older, `v` prefix normalization |
+| `ImageViewerTest` (`:app`) | 3 | Pan ignored while not zoomed, pan clamped to the zoomed overflow, clamping growing with the zoom level |
+
+`testImplementation("org.json:json:20240303")` is deliberate: `:app`'s unit tests run on the JVM, where
+the `org.json` in `android.jar` is only a throwing stub; a real implementation is needed to test pure
+logic such as `UpdateModels`.
+
+**Not covered** (needs manual verification on a device or simulator):
+
+- Compose and SwiftUI UI itself — the grouping and formatting of time labels are backed by shared cases,
+  but "does it look right" is not automated;
+- **real** image decoding and compression (`BitmapFactory` / CoreGraphics) — sampling ratios, the EXIF
+  mapping and data-URL encoding have pure-logic cases; the pixel pipeline does not;
+- Android's `DataStoreKeyValueStore`, SAF file selection and `ContentResolver` backup IO (the iOS
+  counterparts are covered by `IosPlatformTest`);
+- `UpdateClient`'s real GitHub requests and downloads, and `ApkInstaller`'s signature check and system
+  installer hand-off.
 
 ---
 
