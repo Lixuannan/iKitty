@@ -1,5 +1,6 @@
 package com.codingcow.ikitty
 
+import kotlinx.datetime.TimeZone
 import kotlin.math.min
 
 /**
@@ -65,6 +66,9 @@ object TokenEstimator {
  *
  * 这是"哪些消息进请求"的唯一决策点，取代原先的 `takeLast(HISTORY_LIMIT)`：
  * 按 token 预算从最近往前装，裁剪以**轮**为单位，绝不切开一问一答。
+ *
+ * 每条历史消息都会带上一段绝对时间前缀（见 [StoredMessage.contentForPrompt]），
+ * 这样模型知道每句话是什么时候说的，而不是只靠末尾的「此刻」推断。
  */
 object ContextAssembler {
 
@@ -102,19 +106,26 @@ object ContextAssembler {
          * 装配本身保持纯函数：调用方先在 IO 线程把需要的图片编码好，这里只做查表，
          * 于是长对话重发历史图片不会阻塞主线程。
          */
-        imageUrl: (String) -> String? = { null }
+        imageUrl: (String) -> String? = { null },
+        /**
+         * 历史消息时间前缀用哪个时区算。
+         *
+         * 生产路径用系统时区，两端因此一致；显式传入是为了让测试不依赖跑测试的机器时区。
+         */
+        timeZone: TimeZone = TimeZone.currentSystemDefault()
     ): ContextPlan {
-        // 稳定的在前、易变的在后：这样提示词缓存的前缀能尽量复用。
+        // system 只放慢变内容（人设 + 记忆）：它每轮都一模一样，缓存前缀才能命中。
+        // 易变的「此刻」放到最后的尾随 system 消息里，见下方 `ambientMessage`。
         val system = buildString {
             append(systemPrompt.trimEnd())
-            listOf(memoryBlock, ambientBlock).forEach { block ->
-                if (block.isNotBlank()) {
-                    append("\n\n")
-                    append(block.trimEnd())
-                }
+            if (memoryBlock.isNotBlank()) {
+                append("\n\n")
+                append(memoryBlock.trimEnd())
             }
         }
         val systemTokens = TokenEstimator.estimateMessage(system)
+        val ambientMessage = ambientBlock.trim().takeIf { it.isNotEmpty() }
+        val ambientTokens = ambientMessage?.let { TokenEstimator.estimateMessage(it) } ?: 0
         val usable = history.filter { !it.localError }
         val units = buildUnits(usable)
 
@@ -122,14 +133,16 @@ object ContextAssembler {
         var start = units.size
         if (units.isNotEmpty()) {
             val costs = units.map { unit ->
-                unit.sumOf { TokenEstimator.estimateMessage(it.content, it.images.size) }
+                // 估算必须按真正发出去的那段文字算，否则时间前缀的成本会漏掉，
+                // 预算就会被前缀悄悄顶穿。
+                unit.sumOf { TokenEstimator.estimateMessage(it.contentForPrompt(timeZone), it.images.size) }
             }
             // 至少保留最后一轮：宁可让服务端报上下文超长，
             // 也不要发一条只有 system、没有 user 的请求。
             start = units.lastIndex
             used = costs[start]
             var index = units.lastIndex - 1
-            while (index >= 0 && used + costs[index] <= budget - systemTokens) {
+            while (index >= 0 && used + costs[index] + ambientTokens <= budget - systemTokens) {
                 used += costs[index]
                 start = index
                 index--
@@ -142,13 +155,17 @@ object ContextAssembler {
 
         val messages = buildList {
             add(ChatMessage("system", system))
-            kept.forEach { add(it.toWire(imageUrl)) }
+            // 历史消息带上各自的时间前缀：模型据此知道每句话是什么时候说的。
+            // 前缀是绝对时间，写完就不再变，所以这一段前缀逐轮稳定、缓存照样命中。
+            kept.forEach { add(it.toWire(timeZone, imageUrl)) }
+            // 「此刻」紧贴最后一条用户消息：离模型的生成点最近，最不容易被对话本身盖过。
+            ambientMessage?.let { add(ChatMessage("system", it)) }
         }
         return ContextPlan(
             messages = messages,
             keptMessages = kept.size,
             droppedMessages = usable.size - kept.size,
-            estimatedTokens = systemTokens + used,
+            estimatedTokens = systemTokens + used + ambientTokens,
             inputBudget = budget
         )
     }

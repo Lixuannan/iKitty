@@ -219,7 +219,8 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             itemsIndexed(messages, key = { _, msg -> msg.seq }) { index, msg ->
                 MessageBubble(
                     msg = msg,
-                    showTime = shouldShowTime(messages, index),
+                    // 分组规则由 :shared 给，Android 与 iOS 因此显示得一样。
+                    showTime = shouldShowMessageTime(messages.getOrNull(index - 1), msg),
                     onImageClick = { name -> previewImage = name }
                 )
             }
@@ -316,17 +317,6 @@ private fun Header(
         }
     }
 }
-
-/** 每 5 分钟或换了说话人就重新显示一次时间，和常见聊天应用一致。 */
-private fun shouldShowTime(messages: List<StoredMessage>, index: Int): Boolean {
-    if (index == 0) return true
-    val previous = messages[index - 1]
-    val current = messages[index]
-    if (previous.role != current.role) return true
-    return current.createdAt - previous.createdAt >= TIME_GAP_MILLIS
-}
-
-private const val TIME_GAP_MILLIS = 5 * 60 * 1000L
 
 /** 气泡四边统一圆角；用户和猫猫只靠左右位置和配色区分，不再靠缺角。 */
 private val BubbleShape = RoundedCornerShape(20.dp)

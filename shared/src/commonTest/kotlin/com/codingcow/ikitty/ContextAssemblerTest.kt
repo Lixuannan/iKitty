@@ -1,11 +1,16 @@
 package com.codingcow.ikitty
 
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** 上下文装配：长对话下"带哪几条"的契约。 */
 class ContextAssemblerTest {
+
+    /** 固定时区，断言才不依赖跑测试的机器。 */
+    private val shanghai = TimeZone.of("Asia/Shanghai")
 
     private fun user(seq: Long, text: String) =
         StoredMessage(seq, StoredMessage.ROLE_USER, text, seq)
@@ -19,7 +24,7 @@ class ContextAssemblerTest {
         budget: Int,
         memory: String = "",
         ambient: String = ""
-    ) = ContextAssembler.assemble(system, memory, ambient, history, budget)
+    ) = ContextAssembler.assemble(system, memory, ambient, history, budget, timeZone = shanghai)
 
     @Test
     fun `assembly starts with the system message and never with an assistant turn`() {
@@ -46,8 +51,8 @@ class ContextAssemblerTest {
         assertTrue(plan.droppedMessages > 0)
         assertTrue(plan.keptMessages < history.size)
         assertEquals("user", plan.messages[1].role)
-        // 最近一轮一定在
-        assertEquals(history.last().content, plan.messages.last().content)
+        // 最近一轮一定在，并且带着它自己的时间前缀
+        assertEquals(history.last().contentForPrompt(shanghai), plan.messages.last().content)
     }
 
     @Test
@@ -78,20 +83,57 @@ class ContextAssemblerTest {
             assemble("系统", history, 1000, memory = "【你记得的事】")
                 .messages.first().content.contains("【你记得的事】")
         )
+        // 「此刻」不进第一条 system，而是作为尾随 system 消息出现（见下面的专门用例）。
         assertTrue(
             assemble("系统", history, 1000, ambient = "【此刻】")
-                .messages.first().content.contains("【此刻】")
+                .messages.last().content.contains("【此刻】")
         )
     }
 
     @Test
-    fun `stable blocks come before volatile ones so the cached prefix survives`() {
-        val history = listOf(user(1, "你好"))
-        val system = assemble("人设", history, 1000, memory = "记忆块", ambient = "此刻块")
-            .messages.first().content
+    fun `the ambient block stays out of the cached prefix`() {
+        val history = listOf(user(1, "你好"), cat(2, "在呢"), user(3, "现在还早吗"))
+        val plan = assemble("人设", history, 1000, memory = "记忆块", ambient = "此刻块")
 
+        // system 里只有人设和记忆：它每轮都一样，服务商的缓存前缀才命中得了。
+        val system = plan.messages.first().content
         assertTrue(system.indexOf("人设") < system.indexOf("记忆块"))
-        assertTrue(system.indexOf("记忆块") < system.indexOf("此刻块"))
+        assertFalse(system.contains("此刻块"), system)
+    }
+
+    /** 时刻必须紧贴生成点，否则长对话里模型会沿用几轮前自己说过的旧时间。 */
+    @Test
+    fun `the ambient block is the last message after the whole history`() {
+        val history = listOf(
+            user(1, "早上好"),
+            cat(2, "早呀"),
+            user(3, "现在几点了")
+        )
+        val plan = assemble("人设", history, 10_000, ambient = "【此刻】\n- 现在：2026-01-01 21:30 星期四")
+
+        val last = plan.messages.last()
+        assertEquals("system", last.role)
+        assertTrue(last.content.contains("21:30"), last.content)
+        // 历史仍然保持在它前面，且最后一条历史是用户这一轮（正文带上了它自己的时间前缀）。
+        assertEquals(history.last().contentForPrompt(shanghai), plan.messages[plan.messages.size - 2].content)
+        assertEquals("user", plan.messages[plan.messages.size - 2].role)
+    }
+
+    /** 时刻消息永远不能因为预算被挤掉——它正是解决"忘记时间"的那条信息。 */
+    @Test
+    fun `the ambient block survives even when the history alone blows the budget`() {
+        val history = listOf(user(1, "字".repeat(5000)), cat(2, "字".repeat(5000)))
+        val plan = assemble("系统", history, budget = 100, ambient = "【此刻】现在：21:30")
+
+        assertTrue(plan.messages.last().content.contains("21:30"))
+    }
+
+    /** 没有「此刻」时不该凭空多出一条空 system 消息。 */
+    @Test
+    fun `no ambient block means no trailing system message`() {
+        val plan = assemble("系统", listOf(user(1, "你好")), 1000)
+        assertEquals(2, plan.messages.size)
+        assertEquals(StoredMessage(1, StoredMessage.ROLE_USER, "你好", 1).contentForPrompt(shanghai), plan.messages.last().content)
     }
 
     @Test
@@ -132,7 +174,7 @@ class ContextAssemblerTest {
 
         // 背景块本身要花 token，所以装得下的历史轮数变少——这正是它计入预算的证据。
         assertTrue(fat.keptMessages < lean.keptMessages)
-        assertTrue(fat.messages.first().content.contains("此刻"))
+        assertTrue(fat.messages.last().content.contains("此刻"))
     }
 
     @Test
@@ -156,11 +198,59 @@ class ContextAssemblerTest {
             ambientBlock = "",
             history = history,
             budget = 10_000,
-            imageUrl = { name -> if (name == "a.jpg") "data:image/jpeg;base64,AA" else null }
+            imageUrl = { name -> if (name == "a.jpg") "data:image/jpeg;base64,AA" else null },
+            timeZone = shanghai
         )
         // 文件已删除的图片被跳过，而不是让整条消息发送失败。
         assertEquals(listOf("data:image/jpeg;base64,AA"), plan.messages.last().images)
-        assertEquals("看图", plan.messages.last().content)
+        assertEquals(history.last().contentForPrompt(shanghai), plan.messages.last().content)
+    }
+
+    /**
+     * 「每条信息都应该有时间戳」的装配侧契约。
+     *
+     * 模型必须能从请求里读出每句话是什么时候说的；只给一个「现在」不足以让它算清时间线。
+     */
+    @Test
+    fun `every message that reaches the wire carries its own timestamp`() {
+        val history = listOf(
+            StoredMessage(1, StoredMessage.ROLE_USER, "早上好", 1_700_000_000_000L),
+            StoredMessage(2, StoredMessage.ROLE_ASSISTANT, "早呀", 1_700_000_030_000L),
+            StoredMessage(3, StoredMessage.ROLE_USER, "现在几点了", 1_700_000_060_000L)
+        )
+        val plan = assemble("人设", history, budget = 10_000)
+
+        // 除了第一条 system 与可能存在的「此刻」，其余全部是历史消息，条条带前缀。
+        val kept = plan.messages.drop(1).filter { it.role != "system" }
+        assertEquals(history.size, kept.size)
+        assertEquals(
+            listOf(
+                "[2023-11-15 06:13 星期三] 早上好",
+                "[2023-11-15 06:13 星期三] 早呀",
+                "[2023-11-15 06:14 星期三] 现在几点了"
+            ),
+            kept.map { it.content }
+        )
+    }
+
+    /**
+     * 时间前缀必须是绝对时间：同一条历史在两轮请求里产生同样的字节，
+     * 服务商的提示词缓存前缀才不会被它破坏。
+     */
+    @Test
+    fun `history bytes do not change between two assemblies`() {
+        val history = listOf(
+            StoredMessage(1, StoredMessage.ROLE_USER, "早上好", 1_700_000_000_000L),
+            StoredMessage(2, StoredMessage.ROLE_ASSISTANT, "早呀", 1_700_000_030_000L)
+        )
+        val first = assemble("人设", history, budget = 10_000, ambient = "【此刻】现在：09:00")
+        val second = assemble("人设", history, budget = 10_000, ambient = "【此刻】现在：21:00")
+
+        // 只有尾随的「此刻」不同，历史逐字节一致。
+        assertEquals(
+            first.messages.dropLast(1).map { it.content },
+            second.messages.dropLast(1).map { it.content }
+        )
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.codingcow.ikitty
 
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -11,6 +12,10 @@ import kotlin.test.assertNull
 
 /** 带图片的消息落盘契约：重启后聊天记录里的图片不能丢。 */
 class StoredMessageTest {
+
+    /** 固定时区，断言才不依赖跑测试的机器。2023-11-15 06:13 星期三（UTC+8）。 */
+    private val shanghai = TimeZone.of("Asia/Shanghai")
+    private val AT = 1_700_000_000_000L
 
     private fun message(
         seq: Long,
@@ -53,17 +58,53 @@ class StoredMessageTest {
 
     @Test
     fun `toWire resolves images and drops the ones that are gone`() {
-        val wire = message(4, "hi", listOf("a.jpg", "gone.jpg")).toWire { name ->
+        val wire = StoredMessage(
+            seq = 4,
+            role = StoredMessage.ROLE_USER,
+            content = "hi",
+            createdAt = AT,
+            images = listOf("a.jpg", "gone.jpg")
+        ).toWire(shanghai) { name ->
             if (name == "a.jpg") "data:image/jpeg;base64,AA" else null
         }
-        assertEquals("hi", wire.content)
+        // 正文前面带上这条消息自己的时间：历史进请求时每条都如此。
+        assertEquals("[2023-11-15 06:13 星期三] hi", wire.content)
         assertEquals(listOf("data:image/jpeg;base64,AA"), wire.images)
     }
 
+    /**
+     * 「每条消息都带时间戳」的请求侧契约。
+     *
+     * 模型必须能分清哪句是什么时候说的，才不会再沿用几轮前自己报过的时间。
+     */
     @Test
-    fun `a plain text message keeps a plain wire content`() {
-        val wire = message(5, "只有文字").toWire()
-        assertEquals("只有文字", wire.content)
+    fun `every prompt message carries its own timestamp`() {
+        val first = StoredMessage(1, "user", "你好", AT)
+        val second = StoredMessage(2, "assistant", "在呢", AT + 60_000L)
+
+        assertEquals("[2023-11-15 06:13 星期三] 你好", first.contentForPrompt(shanghai))
+        assertEquals("[2023-11-15 06:14 星期三] 在呢", second.contentForPrompt(shanghai))
+    }
+
+    /** 只有图片的消息也要拿到前缀，否则模型不知道这张图是什么时候发的。 */
+    @Test
+    fun `an image-only message still carries the time`() {
+        val onlyImage = StoredMessage(3, "user", "", AT, images = listOf("a.jpg"))
+        assertEquals("[2023-11-15 06:13 星期三]", onlyImage.contentForPrompt(shanghai))
+    }
+
+    /** 老记录没有 `at`（解析成 0）时不能凭空补一个「1970 年」。 */
+    @Test
+    fun `a message without a stored time gets no prefix`() {
+        val legacy = StoredMessage(4, "user", "老记录", createdAt = 0L)
+        assertEquals("老记录", legacy.contentForPrompt(shanghai))
+        assertEquals("老记录", legacy.toWire(shanghai).content)
+    }
+
+    @Test
+    fun `a plain text message keeps its images empty on the wire`() {
+        val wire = message(5, "只有文字").toWire(shanghai)
+        assertEquals("[1970-01-01 08:00 星期四] 只有文字", wire.content)
         assertEquals(emptyList<String>(), wire.images)
     }
 

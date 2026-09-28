@@ -64,4 +64,26 @@ class PromptTimeTest {
         assertEquals("23 小时", formatElapsed(86_399_999L))
         assertEquals("1 天", formatElapsed(86_400_000L))
     }
+
+    /**
+     * 历史消息的时间前缀。
+     *
+     * 前缀必须和 `formatMoment` 逐字节同源：它是同一个「这条消息是什么时候说的」答案，
+     * 分成两套格式就会让模型看到的时间前后不一致。
+     */
+    @Test
+    fun `message stamp wraps the same moment the model already knows`() {
+        assertEquals("[2023-11-15 06:13 星期三]", formatMessageStamp(1_700_000_000_000L, shanghai))
+        assertEquals(
+            "[${formatMoment(0L, utc)}]",
+            formatMessageStamp(0L, utc)
+        )
+    }
+
+    /** 前缀必须是**绝对**时间：同一条历史每次算出来都一样，提示词缓存前缀才稳定。 */
+    @Test
+    fun `message stamp is stable for the same instant`() {
+        val at = 1_700_000_000_000L
+        assertEquals(formatMessageStamp(at, shanghai), formatMessageStamp(at, shanghai))
+    }
 }

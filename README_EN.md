@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **1.0.1** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **1.0.2** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -201,8 +201,16 @@ clearing memory keeps the cursor so the next extraction does not relearn what th
 ## Time and location
 
 Every message stores a timestamp, and the chat stream shows times as “time only today / yesterday / date
-for older”. Each request also injects a small **right now** block (`AmbientContext`): the current time
-(with date and weekday), how long since the previous message, and roughly which city the owner is in.
+for older”. The grouping rule (first message / speaker change / gap ≥ 5 minutes) and the formatting both
+live in the shared `ChatTime.kt`, so Android and iOS display identically.
+
+**Every history message sent to the model also carries its own timestamp**: the content becomes
+`[2023-11-15 06:13 星期三] original text`. The prefix is **absolute**, fixed the moment the message is
+written, so the history bytes stay identical turn after turn and the provider's cached prompt prefix still
+hits. A relative form (“3 hours ago”) would change every turn and invalidate that prefix, so it is not used.
+Each request additionally appends a small **right now** block (`AmbientContext`) *after* the history:
+the current time (with date and weekday), how long since the previous message, and roughly which city the
+owner is in.
 
 Location uses IP geolocation (`IpLocationSource`) — **no permissions** and no dialogs. It sends the egress
 IP to a third-party service in exchange for a city name, trying ip-api → ipwho.is → ipapi.co in order and
@@ -215,8 +223,11 @@ a distant city, and behind a VPN it is the VPN's location. The prompt therefore 
 “inferred from the network IP, may be inaccurate”, and the settings screen has a toggle that stops all
 location requests when off.
 
-Time, location, and memory blocks are appended after the persona at the end of the system prompt: stable
-prefix first, volatile last, so provider prompt caching can reuse as much as possible.
+The persona and memory blocks sit at the start of the system prompt (stable, so the cached prefix hits),
+while the **right now** block comes after the history, right next to the generation point, and declares
+itself the single authoritative current time. In a long conversation the model prefers to reuse a time it
+stated a few turns earlier; putting this block last and telling it “take this as authoritative, do not
+reuse your earlier words” is what holds that drift back.
 
 ## Software updates
 
@@ -349,7 +360,7 @@ iKitty/
 │   ├── SettingsStore.kt           DataStore persistence
 │   ├── AmbientContext.kt          "Right now" background block
 │   ├── Location.kt / IpLocationSource.kt  IP city geolocation
-│   └── TimeFormat.kt              Time and interval formatting
+│   └── PromptTime.kt / ChatTime.kt  Prompt timestamp prefix / chat time display
 ├── app/src/test/java/com/codingcow/ikitty/   101 plain-JVM unit tests
 ├── design/cat_v1/                 Layered cat character assets and spec
 └── docs/DOC_EN.md                 Detailed design document

@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 1.0.1 · Package: `com.codingcow.ikitty`
+- Version: 1.0.2 · Package: `com.codingcow.ikitty`
 - Sources: Android `app/src/main/java/com/codingcow/ikitty/` · shared `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - Stack: Kotlin 2.4.20, Jetpack Compose (Material3), Kotlin Multiplatform (`:shared`, with iOS targets), OkHttp 4.12.0 / Ktor 3.6.0, okio 3.18.2, kotlinx-serialization 1.11.0
 - Build: AGP 8.7.3, Gradle 9.7.0, Java 17 bytecode target, minSdk 26 / targetSdk 35, iOS 17+ (Xcode 27.0)
@@ -66,6 +66,12 @@ and fallbacks are written once, in `SettingsRepository`.
 Each platform keeps one non-portable tail: in-app APK updates and `content://` backup IO on
 Android; CoreGraphics image normalisation and `fileImporter` / `ShareLink` on iOS.
 
+The orientation list in `iosApp/Supporting/Info.plist` must cover all four, upside-down portrait
+included: the app targets iPhone and iPad (`TARGETED_DEVICE_FAMILY = "1,2"`), and iPad requires
+all four unless `UIRequiresFullScreen` is declared — otherwise archiving reports
+`All interface orientations must be supported unless the app requires full screen`. Declaring
+every orientation rather than requiring full screen keeps iPad Split View and Slide Over working.
+
 The staged plan and its progress live in [`KMP_IOS_MIGRATION_PLAN.md`](KMP_IOS_MIGRATION_PLAN.md).
 
 ### 1.2 The Android-free logic layer
@@ -80,7 +86,7 @@ The following objects reference no Android API and are therefore callable direct
 | `CatMemoryRules` / `CatMemoryRender` / `parseMemoryUpdate` | Memory merge, rendering, parsing |
 | `CatReply` / `parseCatReply` | Model reply parsing |
 | `ChatModels` | Domain data models |
-| `TimeFormat` | Time formatting |
+| `PromptTime` / `ChatTime` | Prompt timestamp prefix and intervals / chat time display (shared) |
 | `parseIpPlace` / `Place` | IP response parsing |
 | `AmbientContext` | "Right now" background block |
 | `parseLatestRelease` / `compareVersions` | Release JSON parsing and version comparison |
@@ -379,21 +385,33 @@ produce a negative budget.
 
 ### 7.3 Assembly algorithm
 
-1. system = `systemPrompt.trimEnd()` plus the non-blank memory block plus the non-blank background block,
-   joined by blank lines. **The order is fixed stable → volatile**, so provider prompt caching can reuse
-   as much of the prefix as possible.
+1. system = `systemPrompt.trimEnd()` plus the non-blank memory block, joined by blank lines. **The
+   "right now" background block does not join this system message** — it is a trailing system message of
+   its own; see step 7.
 2. Messages with `localError` are filtered out.
 3. `buildUnits` groups by turn: a `user` message or an empty list starts a new turn; other messages join
    the current turn.
-4. Each turn's token cost is computed, counting images by the piece.
+4. Each turn's token cost is computed from `contentForPrompt(timeZone)` (timestamp prefix included),
+   counting images by the piece.
 5. Packing walks backwards from the **last turn**: the last turn is kept unconditionally (better to let the
    server report an over-long context than to send a request with only a system message), then
-   `while (used + costs[index] <= budget - systemTokens)` continues backwards.
+   `while (used + costs[index] + ambientTokens <= budget - systemTokens)` continues backwards. The
+   background block is charged against the budget because it really is sent.
 6. `dropWhile { role != user }` removes a leading assistant message (such as the greeting), so a request
    never begins with an assistant message.
-7. The output is `[system] + kept`, where each kept message goes through `toWire(imageUrl)` to resolve image
-   names into data URLs (unresolvable images are skipped, so deleting an image file never makes a historical
-   message unsendable), reporting `keptMessages`, `droppedMessages`, `estimatedTokens`, and `inputBudget`.
+7. The output is `[system] + kept + ["right now" system?]`:
+   - each kept message goes through `toWire(timeZone, imageUrl)` — the content becomes
+     `[yyyy-MM-dd HH:mm EEEE] original text` (see 10.1), image names resolve into data URLs, and
+     unresolvable images are skipped so deleting an image file never makes a historical message
+     unsendable;
+   - the background block goes **after the history**, next to the generation point, and can never be pushed
+     out by the budget (`ambientTokens` is subtracted up front).
+   It reports `keptMessages`, `droppedMessages`, `estimatedTokens`, and `inputBudget`.
+
+**Why history may carry timestamps while "now" may not**: the prefix is an **absolute** time, fixed the
+moment the message is written, so the same history is byte-identical every turn and the provider's cached
+prompt prefix still hits. "Now" and "how long ago" change every turn; putting them in history would
+invalidate that prefix, so they appear only in the trailing system message.
 
 `droppedMessages` is "sendable messages − messages actually sent", so a dropped greeting counts.
 
@@ -504,13 +522,34 @@ batch is retried automatically next time.
 
 ## 10. Time, location, and the background block
 
-### 10.1 Time formatting (`TimeFormat.kt`)
+### 10.1 Time formatting (`PromptTime.kt` / `ChatTime.kt`)
 
-- `formatMessageTime`: `HH:mm` today, `昨天 HH:mm` yesterday, `MM-dd HH:mm` older. Determining "which day"
-  in the local timezone uses `floorDiv(epochMillis + zoneOffset, 86400000)` rather than a raw duration
-  division, which would be wrong at timezone boundaries.
-- `formatMoment`: `yyyy-MM-dd HH:mm EEEE`, Chinese locale, for the model.
+Two formats, each with its own contract; do not mix them.
+
+**Into the prompt (`PromptTime.kt`, for the model)**
+
+- `formatMoment`: `yyyy-MM-dd HH:mm EEEE`, Chinese weekday, for the model.
+- `formatMessageStamp`: `[yyyy-MM-dd HH:mm EEEE]` — the timestamp prefix on a history message's content.
+  It must share its source with `formatMoment`: one question has one answer, and two formats would show
+  the model inconsistent times. It uses an absolute time rather than "3 hours ago" because an absolute
+  time is fixed once written, keeping the history bytes identical every turn and preserving the provider's
+  cached prompt prefix.
 - `formatElapsed`: `刚刚` / `N 分钟` / `N 小时` / `N 天`, with negatives clamped to 0.
+
+**On screen (`ChatTime.kt`, shared, for people)**
+
+- `formatMessageTime`: `HH:mm` today, `昨天 HH:mm` yesterday, `MM-dd HH:mm` older. "Which day" is compared
+  by local calendar date (`LocalDate.toEpochDays()`), never by a fixed `86400000` millisecond difference —
+  a daylight-saving day is 23 or 25 hours long, and a millisecond difference would misjudge "yesterday".
+- `messageTimeLabel`: the entry point for Swift. Kotlin/Native's exported signature **ignores default
+  arguments**, so a single-`epochMillis` entry point is provided and the timezone and current instant are
+  taken from the system on the Kotlin side.
+- `shouldShowMessageTime(previous, current)`: the time is shown only on the first message, on a speaker
+  change, or when the gap reaches `CHAT_TIME_GAP_MILLIS` (5 minutes). The grouping rule lives in `:shared`
+  so both platforms display the same thing.
+
+Having one format for the prompt and another for the screen is deliberate: the model needs an absolute,
+comparable time, while a person wants the instantly readable relative form "昨天 06:13".
 
 ### 10.2 Location contract (`Location.kt`)
 
@@ -542,11 +581,25 @@ non-JSON responses.
 - 现在：<formatMoment>
 - 距离上一条消息：<formatElapsed>        // only when known
 - 主人大致在：<place.display>（按网络 IP 推测，只到城市，可能不准）
+
+历史里每条消息开头的方括号是那条消息发出的时间，可以用它判断先后和隔了多久。
+这一行「现在」是唯一权威的当前时间，每次说话都会刷新。……不要沿用你之前说过的时间，也不要靠猜。
 ```
+
+Placement: **the last system message, after the history**, not the opening system message. It sits next to
+the generation point, where attention can actually hold it against the conversation itself, and it never
+enters the history, so the cached prefix stays stable.
 
 It ends with "this is only background; do not recite these lines and do not pretend to know a specific
 address". Time and gap are always included; the city appears only when the location toggle is on and the
 cache holds a result.
+
+Two of these lines exist specifically to fix "forgetting the time"; think twice before deleting them:
+
+- "历史里每条消息开头的方括号是那条消息发出的时间" — history messages now carry timestamps, and without
+  this explanation the model recites them as part of the text;
+- "这一行『现在』是唯一权威的当前时间……不要沿用你之前说过的时间" — the observed failure mode is a model in a
+  long conversation reusing a time it stated a few turns earlier; a single "now" line alone does not correct it.
 
 ---
 
@@ -596,7 +649,9 @@ migration.
 - Header: name, current mood label, `provider · model`, the memory button (heart, with a count), and the
   settings button.
 - Message list: a `LazyColumn` keyed by `msg.seq`; time is shown only on the first message, when the
-  speaker changes, or when the gap is ≥ 5 minutes. User bubbles sit right in the primary color; cat bubbles
+  speaker changes, or when the gap is ≥ 5 minutes. Both that rule and the formatting come from `:shared`
+  (`shouldShowMessageTime` / `formatMessageTime`), and iOS calls the same functions. User bubbles sit right
+  in the primary color; cat bubbles
   sit left with a small cat avatar; `localError` uses the error color. Messages with images render thumbnails
   inside the bubble as a `FlowRow` two per row; image-only messages render no empty text. Tapping a thumbnail
   opens the full-screen viewer (`ImagePreviewDialog`, see [20. Full-screen viewer](#20-full-screen-viewer-imageviewerkt)).

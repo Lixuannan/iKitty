@@ -152,9 +152,19 @@ class ChatEngineIntegrationTest {
         assertTrue(messages.none { it.localError })
         // 落盘之后重启还看得到。
         assertEquals(listOf("你好", "喵～在呢"), persistedLog().takeLast(2).map { it.content })
-        // 装配结果里应当只有 system + 本轮 user：开场白是 assistant，不能作为首条发出。
-        assertEquals(2, engine.contextPlan.value?.messages?.size)
-        assertEquals("system", engine.contextPlan.value?.messages?.first()?.role)
+        // 装配结果是 system + 本轮 user + 尾随的「此刻」system：开场白是 assistant，
+        // 不能作为首条发出；时间要落在最后，紧贴生成点。
+        val planned = engine.contextPlan.value?.messages ?: error("没有装配结果")
+        assertEquals(3, planned.size)
+        assertEquals("system", planned.first().role)
+        assertEquals("user", planned[1].role)
+        assertEquals("system", planned.last().role)
+        assertTrue(planned.last().content.contains("【此刻】"), planned.last().content)
+        // 时刻取的是发出这条消息时的时间（测试里时钟固定在 2023-11-15）。
+        assertTrue(planned.last().content.contains("2023-"), planned.last().content)
+        // 本轮 user 消息带着它自己的时间前缀。
+        assertTrue(planned[1].content.startsWith("["), planned[1].content)
+        assertTrue(planned[1].content.endsWith("你好"), planned[1].content)
     }
 
     /** 服务商忽略 stream 参数时，退回整体解析，而不是当成空回复。 */
@@ -237,7 +247,10 @@ class ChatEngineIntegrationTest {
             ?: error("带图片的消息 content 应该是数组，实际是 ${userMessage["content"]}")
         assertEquals(2, parts.size, "应当有 text + image_url 两段")
         assertEquals("text", (parts[0] as JsonObject).stringOrEmpty("type"))
-        assertEquals("看图", (parts[0] as JsonObject).stringOrEmpty("text"))
+        // 正文是「绝对时间前缀 + 原文」：每条进请求的消息都要带上自己是什么时候说的。
+        val text = (parts[0] as JsonObject).stringOrEmpty("text")
+        assertTrue(text.startsWith("["), text)
+        assertTrue(text.endsWith("看图"), text)
         val imageUrl = (parts[1] as JsonObject).stringOrEmpty("type")
         assertEquals("image_url", imageUrl)
         val url = ((parts[1] as JsonObject)["image_url"] as JsonObject).stringOrEmpty("url")

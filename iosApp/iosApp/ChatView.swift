@@ -73,12 +73,16 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(model.state?.messages ?? [], id: \.seq) { message in
-                        MessageBubble(message: message) { name in model.image(for: name) }
-                            .id(message.seq)
+                    ForEach(Array(messages.enumerated()), id: \.element.seq) { index, message in
+                        MessageBubble(
+                            message: message,
+                            timeLabel: timeLabel(at: index),
+                            imageFor: { name in model.image(for: name) }
+                        )
+                        .id(message.seq)
                     }
                     if let streaming = model.state?.streamingReply, !streaming.isEmpty {
-                        // 流式回复单独显示，等结束后才落成一条真正的消息。
+                        // 流式回复单独显示，等结束后才落成一条真正的消息；它还没有落盘时间，不给标签。
                         MessageBubble(text: streaming, isUser: false, isError: false)
                             .id(Self.streamingId)
                     }
@@ -92,6 +96,21 @@ struct ChatView: View {
             .onChange(of: model.state?.messages.count ?? 0) { _, _ in scrollToBottom(proxy) }
             .onChange(of: model.state?.streamingReply ?? "") { _, _ in scrollToBottom(proxy) }
         }
+    }
+
+    private var messages: [StoredMessage] { model.state?.messages ?? [] }
+
+    /// 这一条要不要显示时间，以及显示成什么，都取自 `:shared`——
+    /// 分组规则（首条 / 换说话人 / 间隔 ≥5 分钟）与格式化因此和 Android 完全一致。
+    private func timeLabel(at index: Int) -> String? {
+        let all = messages
+        guard index < all.count else { return nil }
+        let current = all[index]
+        let previous = index > 0 ? all[index - 1] : nil
+        guard ChatTimeKt.shouldShowMessageTime(previous: previous, current: current) else {
+            return nil
+        }
+        return ChatTimeKt.messageTimeLabel(epochMillis: current.createdAt)
     }
 
     private var pendingStrip: some View {
@@ -217,13 +236,15 @@ private struct MessageBubble: View {
     let images: [String]
     let isUser: Bool
     let isError: Bool
+    let timeLabel: String?
     let imageFor: (String) -> UIImage?
 
-    init(message: StoredMessage, imageFor: @escaping (String) -> UIImage?) {
+    init(message: StoredMessage, timeLabel: String?, imageFor: @escaping (String) -> UIImage?) {
         self.text = message.content
         self.images = message.images
         self.isUser = message.role == "user"
         self.isError = message.localError
+        self.timeLabel = timeLabel
         self.imageFor = imageFor
     }
 
@@ -232,6 +253,7 @@ private struct MessageBubble: View {
         self.images = []
         self.isUser = isUser
         self.isError = isError
+        self.timeLabel = nil
         self.imageFor = { _ in nil }
     }
 
@@ -239,6 +261,12 @@ private struct MessageBubble: View {
         HStack(alignment: .top) {
             if isUser { Spacer(minLength: 40) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+                if let timeLabel {
+                    Text(timeLabel)
+                        .font(.caption2)
+                        .foregroundStyle(AppTheme.onSurfaceVariant)
+                        .padding(.horizontal, 6)
+                }
                 // 文件被删掉的图片直接不显示，而不是画一个空白框。
                 ForEach(images, id: \.self) { name in
                     if let image = imageFor(name) {

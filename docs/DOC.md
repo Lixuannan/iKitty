@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：1.0.1 · 包名：`com.codingcow.ikitty`
+- 版本：1.0.2 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
@@ -64,6 +64,11 @@ CatChatViewModel (Android)              ChatView / AppModel (iOS, SwiftUI)
 两端各有一条不可移植的尾巴：Android 是应用内 APK 更新与 `content://` 备份读写，
 iOS 是 CoreGraphics 图片归一化与 `fileImporter` / `ShareLink`。
 
+`iosApp/Supporting/Info.plist` 的方向声明必须覆盖四个（含倒置竖屏）：应用同时声明 iPhone 与
+iPad（`TARGETED_DEVICE_FAMILY = "1,2"`），而 iPad 要求四方向全支持，除非声明
+`UIRequiresFullScreen`；否则归档时会报 `All interface orientations must be supported unless
+the app requires full screen`。选补齐方向而不是声明全屏要求，是为了保住 iPad 的分屏与侧拉。
+
 分阶段计划与进度见 [`KMP_IOS_MIGRATION_PLAN.md`](KMP_IOS_MIGRATION_PLAN.md)。
 
 ### 1.2 无 Android 依赖的纯逻辑层
@@ -78,7 +83,7 @@ iOS 是 CoreGraphics 图片归一化与 `fileImporter` / `ShareLink`。
 | `CatMemoryRules` / `CatMemoryRender` / `parseMemoryUpdate` | 记忆合并、渲染、解析 |
 | `CatReply` / `parseCatReply` | 模型回复解析 |
 | `ModelCatalog` / `ChatModels` | 领域数据模型 |
-| `TimeFormat` | 时间格式化 |
+| `PromptTime` / `ChatTime` | 进 prompt 的时间前缀与间隔 / 界面时间显示（两端共用） |
 | `parseIpPlace` / `Place` | IP 返回解析 |
 | `AmbientContext` | 「此刻」背景块 |
 | `parseLatestRelease` / `compareVersions` | release JSON 解析与版本比较 |
@@ -358,17 +363,25 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
 
 ### 7.3 装配算法
 
-1. system = `systemPrompt.trimEnd()` + 非空的记忆块 + 非空的背景块，用空行连接。
-   **顺序固定为稳定 → 易变**，让服务商的提示词缓存尽量复用前缀。
+1. system = `systemPrompt.trimEnd()` + 非空的记忆块，用空行连接。**「此刻」背景块不进这条 system**，
+   它是尾随的独立 system 消息，见第 7 步。
 2. 过滤掉 `localError` 的消息。
 3. `buildUnits` 按轮分组：遇到 `user` 或列表为空时开新轮，其余消息并入当前轮。
-4. 计算每轮的 token 成本，图片按张数计入。
+4. 计算每轮的 token 成本：正文按 `contentForPrompt(timeZone)` 算（含时间前缀），图片按张数计入。
 5. 从**最后一轮**开始向前装：最后一轮无条件保留（宁可让服务端报上下文超长，也不发只有 system 的请求），
-   然后 `while (used + costs[index] <= budget - systemTokens)` 继续向前。
+   然后 `while (used + costs[index] + ambientTokens <= budget - systemTokens)` 继续向前。
+   背景块的 token 也计入预算，因为它真的会发出去。
 6. `dropWhile { role != user }` 丢掉领先的 assistant（例如开场白），保证请求不以 assistant 开头。
-7. 输出 `[system] + kept`，kept 里的每条消息经 `toWire(imageUrl)` 把图片名解析成数据 URL
-   （解析不到的图片跳过，删掉图片文件不会让历史消息无法发送），并回报 `keptMessages`、
-   `droppedMessages`、`estimatedTokens`、`inputBudget`。
+7. 输出 `[system] + kept + [「此刻」system?]`：
+   - kept 里每条经 `toWire(timeZone, imageUrl)` 转换——正文变成
+     `[yyyy-MM-dd HH:mm EEEE] 原文`（见 10.1），图片名解析成数据 URL，解析不到的图片跳过，
+     于是删掉图片文件不会让历史消息无法发送；
+   - 背景块放在**历史之后**，紧贴生成点，且不因预算被挤掉（`ambientTokens` 在预算里先扣掉）。
+   回报 `keptMessages`、`droppedMessages`、`estimatedTokens`、`inputBudget`。
+
+**为什么历史消息可以带时间戳、而「现在」不行**：时间前缀是**绝对**时间，消息落盘那一刻就固定，
+同一条历史每轮请求都是同样的字节，服务商的提示词缓存前缀照样命中；「现在」「距今多久」每轮都变，
+写进历史会让整个前缀作废，所以只出现在尾随的 system 消息里。
 
 `droppedMessages` 是「可发送消息数 − 实际发送数」，开场白被丢弃也会计入。
 
@@ -467,12 +480,29 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
 
 ## 10. 时间、位置与背景块
 
-### 10.1 时间格式化（`TimeFormat.kt`）
+### 10.1 时间格式化（`PromptTime.kt` / `ChatTime.kt`）
+
+两套格式，各有各的契约，不要混用：
+
+**进 prompt（`PromptTime.kt`，模型看）**
+
+- `formatMoment`：`yyyy-MM-dd HH:mm EEEE`，中文星期，给模型看。
+- `formatMessageStamp`：`[yyyy-MM-dd HH:mm EEEE]`——历史消息正文的时间前缀。
+  它必须和 `formatMoment` 同源：同一个问题只有一个答案，两套格式会让模型看到的时间前后不一致。
+  用绝对时间而不是「3 小时前」，是因为绝对时间写完就不再变，历史字节逐轮稳定，提示词缓存前缀才保得住。
+- `formatElapsed`：`刚刚` / `N 分钟` / `N 小时` / `N 天`，负数夹到 0。
+
+**界面（`ChatTime.kt`，两端共用，人看）**
 
 - `formatMessageTime`：当天 `HH:mm`、昨天 `昨天 HH:mm`、更早 `MM-dd HH:mm`。
-  按本地时区计算「哪一天」用 `floorDiv(epochMillis + zoneOffset, 86400000)`，避免直接用时长除法在时区边界算错。
-- `formatMoment`：`yyyy-MM-dd HH:mm EEEE`，中文 Locale，给模型看。
-- `formatElapsed`：`刚刚` / `N 分钟` / `N 小时` / `N 天`，负数夹到 0。
+  「哪一天」按本地日历比较（`LocalDate.toEpochDays()`），不能用固定 `86400000` 毫秒的差值——
+  夏令时切换那天只有 23 或 25 小时，按毫秒差会把「昨天」判错。
+- `messageTimeLabel`：给 Swift 用的一层。Kotlin/Native 导出的签名**不认默认参数**，
+  所以另外给一个只有 `epochMillis` 的入口，时区与当前时刻在 Kotlin 侧取系统值。
+- `shouldShowMessageTime(previous, current)`：首条 / 换说话人 / 间隔 ≥ `CHAT_TIME_GAP_MILLIS`（5 分钟）
+  才在后一条前面显示时间。分组规则放进 `:shared`，两端才显示得一样。
+
+进 prompt 与界面各有一套是刻意的：模型要的是绝对、可比较的时间，人要的是「昨天 06:13」这种一眼能懂的相对写法。
 
 ### 10.2 定位契约（`Location.kt`）
 
@@ -501,10 +531,23 @@ TTL 30 分钟；超时连接 5s / 读 5s / 整体 8s。全部失败则保留上�
 - 现在：<formatMoment>
 - 距离上一条消息：<formatElapsed>        // 仅在知道时
 - 主人大致在：<place.display>（按网络 IP 推测，只到城市，可能不准）
+
+历史里每条消息开头的方括号是那条消息发出的时间，可以用它判断先后和隔了多久。
+这一行「现在」是唯一权威的当前时间，每次说话都会刷新。……不要沿用你之前说过的时间，也不要靠猜。
 ```
+
+位置：**历史之后的最后一条 system 消息**，不是开头的 system。离模型的生成点最近，注意力才压得住
+对话本身；而且它完全不进历史，缓存前缀照样稳定。
 
 末尾附「这些只是背景，不要复述这几行，也不要假装知道具体的地址」。
 时间与间隔总会带上；「在哪个城市」只有在定位开关打开且缓存有结果时才出现。
+
+这几行里有两句是专门为「忘记时间」写的，删之前先想清楚：
+
+- 「历史里每条消息开头的方括号是那条消息发出的时间」——历史消息现在也带时间戳了，
+  不说明的话模型会把它当正文念出来；
+- 「这一行『现在』是唯一权威的当前时间……不要沿用你之前说过的时间」——实测的失效模式是
+  长对话里模型沿用几轮前自己报过的旧时间，光给一行「现在」并不足以纠正它。
 
 ---
 
@@ -547,7 +590,8 @@ DataStore Preferences，文件名 `cat_settings`。键：
 ### 12.2 聊天页（`CatChatScreen.kt`）
 
 - Header：名字、当前情绪文案、`服务商 · 模型`、记忆按钮（心形，带数量）、设置按钮。
-- 消息列表：`LazyColumn`，key 用 `msg.seq`；时间只在「首条 / 说话人变化 / 间隔 ≥5 分钟」时显示。
+- 消息列表：`LazyColumn`，key 用 `msg.seq`；时间只在「首条 / 说话人变化 / 间隔 ≥5 分钟」时显示，
+  规则与格式化都来自 `:shared` 的 `shouldShowMessageTime` / `formatMessageTime`，iOS 侧同样调用它们。
   用户气泡靠右用主色，猫猫靠左带小猫头像；`localError` 用错误色。
   带图片的消息在气泡内用 `FlowRow` 每行两张显示缩略图，纯图片消息不渲染空文本；
   点缩略图打开全屏大图（`ImagePreviewDialog`，见 [20. 大图查看](#20-大图查看imageviewerkt)）。

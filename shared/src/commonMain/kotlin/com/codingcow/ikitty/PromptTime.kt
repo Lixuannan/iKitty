@@ -8,9 +8,9 @@ import kotlin.time.Instant
 /**
  * 会进入 system prompt 的时间格式化。
  *
- * 这两个函数的输出是**提示词契约的一部分**：两端必须给出完全一样的字符串，
+ * 这里每个函数的输出都是**提示词契约的一部分**：两端必须给出完全一样的字符串，
  * 否则同一段对话在 Android 与 iOS 上会得到不同的模型行为。
- * 界面用的时间显示（`formatMessageTime`）不属于这一层，各平台自己实现。
+ * 界面用的时间显示在 `ChatTime.kt`，也是两端共用的一份，但属于另一套格式。
  *
  * 时区交给 kotlinx-datetime，不自己算 epoch 偏移——夏令时与历史时区规则手算必错。
  */
@@ -40,6 +40,19 @@ fun formatMoment(
         append(chineseWeekday(local.dayOfWeek))
     }
 }
+
+/**
+ * 一条历史消息在请求里的时间前缀，例如 `[2023-11-15 06:13 星期三]`。
+ *
+ * 用**绝对**时间而不是「3 小时前」：绝对时间在消息落盘那一刻就固定了，同一条历史每轮请求
+ * 都是同样的字节，服务商的提示词缓存前缀照样命中；相对时间每轮都变，会把整个前缀作废。
+ *
+ * 只给模型看，界面用的是 `ChatTime.kt` 里的 `formatMessageTime`，两者不要混用。
+ */
+fun formatMessageStamp(
+    epochMillis: Long,
+    timeZone: TimeZone = TimeZone.currentSystemDefault()
+): String = "[${formatMoment(epochMillis, timeZone)}]"
 
 /** 「刚刚」「12 分钟」「3 小时」「2 天」——给模型看的粗略间隔。 */
 fun formatElapsed(millis: Long): String {

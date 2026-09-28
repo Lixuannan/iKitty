@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.1</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -27,9 +27,23 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+	  倒置竖屏是为 iPad 补的：本应用同时声明 iPhone 与 iPad
+	  （TARGETED_DEVICE_FAMILY = "1,2"），而 iPad 要求四个方向全支持，
+	  除非应用声明 UIRequiresFullScreen。归档时会拿这条规则校验并报
+	  "All interface orientations must be supported unless the app requires full screen"。
+
+	  两个备选都没选：
+	  - 声明 UIRequiresFullScreen 会放弃 iPad 的分屏与侧拉，代价比多支持一个方向大得多；
+	  - 只给 iPad 开方向（UISupportedInterfaceOrientations~ipad）会让一个聊天界面出现
+	    两套方向配置，没有实际收益。
+
+	  iPhone 也一并拿到倒置竖屏：对聊天界面无害，且用户把手机倒着拿时不会被卡住。
+	-->
 	<!--
 	  相册不需要权限：用的是 PHPickerViewController（SwiftUI 的 PhotosPicker），
 	  它在应用外运行、只回传用户选中的那几张，所以不需要 NSPhotoLibraryUsageDescription。
