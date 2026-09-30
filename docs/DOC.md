@@ -507,6 +507,10 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
   所以另外给一个只有 `epochMillis` 的入口，时区与当前时刻在 Kotlin 侧取系统值。
 - `shouldShowMessageTime(previous, current)`：首条 / 换说话人 / 间隔 ≥ `CHAT_TIME_GAP_MILLIS`（5 分钟）
   才在后一条前面显示时间。分组规则放进 `:shared`，两端才显示得一样。
+- `stripLeadingMessageStamp` / `StoredMessage.displayContent()`：展示层去掉**猫猫回复开头**被模型
+  照抄回来的时间前缀（有些模型会把历史消息的 `[yyyy-MM-dd HH:mm 星期X]` 格式一起抄回来）。
+  只去掉开头且形状确实是时间戳的方括号，用户自己打的 `[图片]` 之类不受影响；用户的消息一律原样显示。
+  落盘内容与请求正文都不动——那两处要保持模型的原始输出，否则下一轮历史会凭空少一截。
 
 进 prompt 与界面各有一套是刻意的：模型要的是绝对、可比较的时间，人要的是「昨天 06:13」这种一眼能懂的相对写法。
 
@@ -699,20 +703,20 @@ iOS 的 `UserDefaultsKeyValueStore` 现在也按契约在 `put` 之后重新发�
 （Android 的应用内更新、图片查看器）留在 `:app`。
 
 ```bash
-./gradlew :shared:jvmTest                # 249
-./gradlew :shared:iosSimulatorArm64Test  # 250
+./gradlew :shared:jvmTest                # 252
+./gradlew :shared:iosSimulatorArm64Test  # 253
 ./gradlew testDebugUnitTest              # 12（Android 平台尾巴）
 cd worker && node test/local-check.mjs   # 16（同步服务端）
 ```
 
 | target | 用例 | 组成 |
 | --- | --- | --- |
-| `:shared:jvmTest` | 249 | `commonTest` 239 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 250 | `commonTest` 239 + `iosTest` 11 |
+| `:shared:jvmTest` | 252 | `commonTest` 242 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 253 | `commonTest` 242 + `iosTest` 11 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | 同步服务端：跑在 `node:sqlite` 上的真实 SQL |
 
-### 14.1 `commonTest`（239）
+### 14.1 `commonTest`（242）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -733,7 +737,7 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | `SyncSettingsCodecTest` | 3 | 云端设置载荷里含角色的名字/性格/说话风格/猫味浓度/补充设定且往返一致、载荷覆盖 `SettingsKeys` 的每一项（新增设置项漏进 codec 就红）、关掉开关时 `api_key` 字段整个不出现 |
 | `SyncFlagTest` | 2 | 同步开关的两种存储表示都要读得出来（iOS 存布尔、Android 存字面量字符串） |
 | `SyncCredentialsTest` | 9 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
-| `PromptTimeTest` | 8 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏） |
+| `PromptTimeTest` | 11 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏）、**展示层剥掉猫猫回复开头被模型照抄的时间前缀**、**用户输入与非时间戳方括号（`[图片]`）不被改写**、**只有开头的、时间戳形状的方括号才去掉** |
 | `SettingsPersistenceTest` | 3 | 保存设置在只发射一次的存储上也能更新引擎内存状态（iOS `NSUserDefaults` 的行为）、分步保存不会互相覆盖、一次保存只写一次 put |
 | `SettingsRepositoryTest` | 8 | 空存储给出默认值、缺 providerId 时按 Base URL 反查、认不出的 Base URL 落到 `custom`、配置往返、角色设定往返、未知枚举名回退不抛异常、定位开关能关且保持关闭、键名是约定的那些 |
 | `MemoryJsonTest` | 7 | 接受裸 JSON / 围栏 JSON / 中文分类标签、解析失败返回 null（旧记忆因此不会被清空）、未知分类回退而不是丢条目、记忆文件形状是跨端契约、编解码往返、损坏文件返回 null、`pinned` 只在为真时写出 |

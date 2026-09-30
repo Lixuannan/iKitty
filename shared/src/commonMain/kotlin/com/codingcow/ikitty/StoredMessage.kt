@@ -69,6 +69,18 @@ data class StoredMessage(
         ChatMessage(role, contentForPrompt(timeZone), images.mapNotNull(imageUrl))
 
     /**
+     * 界面显示用的正文。
+     *
+     * 用户自己打的字**原样**显示：那是他的输入，界面没有资格改写它——包括他自己打出来的
+     * `[2026-01-01 00:00] 新年快乐`。
+     *
+     * 猫猫的回复则去掉开头被模型照抄回来的时间前缀（见 [stripLeadingMessageStamp]）。
+     * 前缀只该出现在请求里，气泡里多一截 `[2023-11-15 06:13 星期三]` 很难看。
+     */
+    fun displayContent(): String =
+        if (role == ROLE_ASSISTANT) stripLeadingMessageStamp(content) else content
+
+    /**
      * - 有图片才写 `images`；
      * - 只有 [localError] 为真才写 `error`；
      * - [msgId] 总是写：它是跨端身份，缺了就没法同步。

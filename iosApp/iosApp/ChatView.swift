@@ -90,8 +90,13 @@ struct ChatView: View {
                     }
                     if let streaming = model.state?.streamingReply, !streaming.isEmpty {
                         // 流式回复单独显示，等结束后才落成一条真正的消息；它还没有落盘时间，不给标签。
-                        MessageBubble(text: streaming, isUser: false, isError: false)
-                            .id(Self.streamingId)
+                        // 开头被模型照抄回来的时间前缀在这一层去掉，和落盘后的显示保持一致。
+                        MessageBubble(
+                            text: PromptTimeKt.stripLeadingMessageStamp(text: streaming),
+                            isUser: false,
+                            isError: false
+                        )
+                        .id(Self.streamingId)
                     }
                     if isBusy && (model.state?.streamingReply ?? "").isEmpty {
                         ThinkingIndicator()
@@ -251,7 +256,9 @@ private struct MessageBubble: View {
     let imageFor: (String) -> UIImage?
 
     init(message: StoredMessage, timeLabel: String?, imageFor: @escaping (String) -> UIImage?) {
-        self.text = message.content
+        // 显示与复制都用这一份：猫猫回复开头被模型照抄回来的时间前缀在这里被去掉，
+        // 用户自己打的字原样保留。去前缀只发生在展示层，落盘与请求正文都不动。
+        self.text = message.displayContent()
         self.images = message.images
         self.isUser = message.role == "user"
         self.isError = message.localError

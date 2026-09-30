@@ -54,6 +54,30 @@ fun formatMessageStamp(
     timeZone: TimeZone = TimeZone.currentSystemDefault()
 ): String = "[${formatMoment(epochMillis, timeZone)}]"
 
+/**
+ * 正文**开头**那条时间前缀的形状：`[yyyy-MM-dd HH:mm 星期X]`。
+ *
+ * 年份-月-日-时:分这一段是必须的，所以不可能是时间戳的方括号（`[图片]`、`[1]`）不会被误伤。
+ * 秒与星期几允许省略、冒号前后允许空白：模型照抄这条前缀时经常少抄一点或改格式，
+ * 而少一个「星期三」不该就让整条前缀继续留在气泡里。
+ */
+private val LEADING_MESSAGE_STAMP = Regex(
+    """^\s*\[\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?(?:\s+[^\]\r\n]*?)?\s*\]\s*"""
+)
+
+/**
+ * 界面显示用的正文：去掉开头被模型照抄回来的时间前缀。
+ *
+ * 这条前缀只该出现在发给模型的请求里（见 [formatMessageStamp]）——它是提示词契约的一部分，
+ * 用来让模型知道每句话是什么时候说的。但有些模型会把历史消息的格式一并抄回来，
+ * 于是回复开头多出一段 `[2023-11-15 06:13 星期三]`，在气泡里非常难看。
+ *
+ * 只在**展示**这一层去掉它：落盘内容与请求正文都不动。落在盘上的必须是模型的原始输出，
+ * 否则下一轮历史里模型说过的话会凭空少一截，提示词缓存的前缀也会跟着变。
+ */
+fun stripLeadingMessageStamp(text: String): String =
+    LEADING_MESSAGE_STAMP.replaceFirst(text, "")
+
 /** 「刚刚」「12 分钟」「3 小时」「2 天」——给模型看的粗略间隔。 */
 fun formatElapsed(millis: Long): String {
     val safe = millis.coerceAtLeast(0L)

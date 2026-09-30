@@ -328,8 +328,8 @@ iKitty/
 ## 测试
 
 ```bash
-./gradlew :shared:jvmTest                # 249
-./gradlew :shared:iosSimulatorArm64Test  # 250
+./gradlew :shared:jvmTest                # 252
+./gradlew :shared:iosSimulatorArm64Test  # 253
 ./gradlew testDebugUnitTest              # 12
 cd worker && node test/local-check.mjs   # 16
 ```

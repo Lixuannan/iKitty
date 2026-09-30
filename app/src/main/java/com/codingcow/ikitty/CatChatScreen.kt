@@ -253,7 +253,9 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
                 item { ThinkingBubble() }
             }
             if (!streamingReply.isNullOrEmpty()) {
-                item { CatTextBubble(text = streamingReply.orEmpty()) }
+                // 流式内容也是猫猫的回复，同样去掉开头被模型照抄回来的时间前缀；
+                // 否则那截前缀会在气泡里显示到这一轮结束、落成消息时才消失。
+                item { CatTextBubble(text = stripLeadingMessageStamp(streamingReply.orEmpty())) }
             }
         }
 
@@ -351,6 +353,10 @@ private val BubbleShape = RoundedCornerShape(20.dp)
 private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (String) -> Unit) {
     val isUser = msg.role == StoredMessage.ROLE_USER
 
+    // 显示与复制都用这一份：猫猫回复开头被模型照抄回来的时间前缀在这里被去掉，
+    // 用户自己打的字原样保留。去前缀只发生在展示层，落盘与请求正文都不动。
+    val displayText = msg.displayContent()
+
     // 长按气泡把整条消息复制走。文字本身用 [SelectionContainer] 包起来，
     // 所以"选中一部分再复制"用的是系统自带的文本选择工具条，两者互不冲突：
     // 长按文字是选择，长按气泡空白处是复制整条。
@@ -358,7 +364,7 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
     val copyMessage = {
         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager
-        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("iKitty", msg.content))
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("iKitty", displayText))
         Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
         Unit
     }
@@ -402,7 +408,7 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
                     .widthIn(max = 292.dp)
                     // 没有文字的消息（纯图片）没有可复制的内容，不给这个手势。
                     .then(
-                        if (msg.content.isNotEmpty()) {
+                        if (displayText.isNotEmpty()) {
                             Modifier.combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 // 不要涟漪：长按复制是隐藏手势，点一下不该有任何视觉反馈。
@@ -437,11 +443,11 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
                         }
                     }
                     // 图片消息允许不带文字，此时不渲染空气泡文本。
-                    if (msg.content.isNotEmpty()) {
+                    if (displayText.isNotEmpty()) {
                         // 选中文字交给系统：长按文字是选择，工具条里的「复制」复制选中的那一段。
                         SelectionContainer {
                             Text(
-                                text = msg.content,
+                                text = displayText,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = when {
                                     isUser -> MaterialTheme.colorScheme.onPrimary

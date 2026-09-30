@@ -753,20 +753,20 @@ shape, storage formats and backup archives all run the same cases on both ends. 
 (Android's in-app update and image viewer) stay in `:app`.
 
 ```bash
-./gradlew :shared:jvmTest                # 249
-./gradlew :shared:iosSimulatorArm64Test  # 250
+./gradlew :shared:jvmTest                # 252
+./gradlew :shared:iosSimulatorArm64Test  # 253
 ./gradlew testDebugUnitTest              # 12 (Android platform tail)
 cd worker && node test/local-check.mjs   # 16 (sync server)
 ```
 
 | Target | Cases | Composition |
 | --- | --- | --- |
-| `:shared:jvmTest` | 249 | `commonTest` 239 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 250 | `commonTest` 239 + `iosTest` 11 |
+| `:shared:jvmTest` | 252 | `commonTest` 242 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 253 | `commonTest` 242 + `iosTest` 11 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | The sync server: real SQL on `node:sqlite` |
 
-### 14.1 `commonTest` (239)
+### 14.1 `commonTest` (242)
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -787,7 +787,7 @@ cd worker && node test/local-check.mjs   # 16 (sync server)
 | `SyncSettingsCodecTest` | 3 | The cloud settings payload carrying the persona's name/traits/speech style/flavor/notes and round-tripping them, the payload covering every `SettingsKeys` entry (a new setting missing from the codec fails here), turning the api key off omitting the field entirely |
 | `SyncFlagTest` | 2 | The sync api-key switch readable from both storage representations (`true` as a boolean on iOS, as a string literal on Android) |
 | `SyncCredentialsTest` | 9 | The device id generated once and then stable, the stored key trimmed and readable, clearing the key keeping the cursor, switching the key forgetting everything tied to the old cloud space, the pushed-id set round tripping with a cap, key strength following the documented thresholds |
-| `PromptTimeTest` | 8 | `formatMoment` byte-identical to the old `SimpleDateFormat` output, following the requested timezone, respecting daylight-saving transitions, zero padding, `formatElapsed` coarseness and boundaries, **the message stamp sharing its source with `formatMoment`**, the stamp stable for the same instant (so the cached prefix survives) |
+| `PromptTimeTest` | 11 | `formatMoment` byte-identical to the old `SimpleDateFormat` output, following the requested timezone, respecting daylight-saving transitions, zero padding, `formatElapsed` coarseness and boundaries, **the message stamp sharing its source with `formatMoment`**, the stamp stable for the same instant (so the cached prefix survives), **the display layer stripping a stamp the model echoed at the start of a reply**, **user input and non-stamp brackets (`[图片]`) left alone**, **only a leading stamp-shaped bracket stripped** |
 | `SettingsPersistenceTest` | 3 | Saving settings updating the engine's in-memory state even over a store that emits only once (the iOS `NSUserDefaults` shape), partial saves composing instead of clobbering earlier fields, one save writing the whole snapshot in a single put |
 | `SettingsRepositoryTest` | 8 | An empty store yielding the built-in defaults, a missing providerId inferred from the Base URL, an unknown Base URL falling back to `custom`, config round trip, persona round trip, an unrecognised enum name falling back instead of throwing, location turning off and staying off, settings written under the canonical key names |
 | `MemoryJsonTest` | 7 | Plain JSON, fenced JSON and Chinese category labels accepted; parse failure returning null (so old memory survives); unknown category falling back rather than dropping the fact; the memory file shape as the cross-platform contract; encode/parse round trip; a corrupt file returning null; `pinned` written only when true |

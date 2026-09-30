@@ -86,4 +86,48 @@ class PromptTimeTest {
         val at = 1_700_000_000_000L
         assertEquals(formatMessageStamp(at, shanghai), formatMessageStamp(at, shanghai))
     }
+
+    /**
+     * 展示层要把模型照抄回来的时间前缀剥掉，而请求正文里的那份必须原样保留。
+     *
+     * 去掉的只有"开头恰好是时间戳"的方括号：用户自己打的 `[图片]` 或普通方括号内容不受影响，
+     * 否则界面就在改写用户的输入。
+     */
+    @Test
+    fun `a leading time stamp is stripped for display`() {
+        assertEquals("喵～在呢", stripLeadingMessageStamp("[2023-11-15 06:13 星期三] 喵～在呢"))
+        // 秒可以省略、前后可以有空白。
+        assertEquals("喵～在呢", stripLeadingMessageStamp("[2023-11-15 06:13]喵～在呢"))
+        assertEquals("喵～在呢", stripLeadingMessageStamp("  [2023-11-15 06:13 星期三]   喵～在呢"))
+        assertEquals("喵～在呢", stripLeadingMessageStamp("[2023-11-15 06:13:07 星期三] 喵～在呢"))
+        // 整条回复只有前缀时，结果为空而不是留一对方括号。
+        assertEquals("", stripLeadingMessageStamp("[2023-11-15 06:13 星期三]"))
+    }
+
+    @Test
+    fun `contents that are not a leading time stamp are left alone`() {
+        assertEquals("你好", stripLeadingMessageStamp("你好"))
+        assertEquals("[图片] 你好", stripLeadingMessageStamp("[图片] 你好"))
+        assertEquals("[1] 你好", stripLeadingMessageStamp("[1] 你好"))
+        // 前缀后面才出现的时间戳不是前缀，保留。
+        assertEquals("你好 [2023-11-15 06:13 星期三]", stripLeadingMessageStamp("你好 [2023-11-15 06:13 星期三]"))
+        // 不是 yyyy-MM-dd HH:mm 的形状，不动。
+        assertEquals("[2023-11-15] 你好", stripLeadingMessageStamp("[2023-11-15] 你好"))
+    }
+
+    /**
+     * 只有猫猫的回复去前缀：用户自己打出来的方括号时间是用户的输入，界面不该改写它。
+     */
+    @Test
+    fun `display content strips the stamp from the cat but never from the user`() {
+        val stamped = "[2023-11-15 06:13 星期三] 喵～"
+        assertEquals(
+            "喵～",
+            StoredMessage(1, StoredMessage.ROLE_ASSISTANT, stamped, 0L).displayContent()
+        )
+        assertEquals(
+            stamped,
+            StoredMessage(2, StoredMessage.ROLE_USER, stamped, 0L).displayContent()
+        )
+    }
 }
