@@ -85,6 +85,8 @@ struct SettingsView: View {
                     Button("保存") { save() }
                 }
             }
+            // 正在等同步时不允许再点一次：连点两次会发出两轮同步、两轮等待。
+            .disabled(isBusy)
             .onAppear(perform: loadCurrentValues)
             .onChange(of: model.state != nil) { _, _ in loadCurrentValues() }
         }
@@ -267,28 +269,36 @@ struct SettingsView: View {
 
             Toggle("把 API Key 一并同步到云端", isOn: $syncIncludeApiKey)
 
-            if let status = model.state?.sync, !status.message.isEmpty {
+            // 正在等同步时要说清楚在等什么：这时按钮是禁用的，没有这行字用户只会觉得点不动。
+            // 有反馈文案时优先显示它——失败原因比"正在同步"更需要被看到。
+            if isBusy && notice == nil {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在保存并同步…").foregroundStyle(AppTheme.onSurfaceVariant)
+                }
+            } else if let status = model.state?.sync, !status.message.isEmpty {
                 Text(status.message)
                     .font(.footnote)
                     .foregroundStyle(status.isFailed ? AppTheme.error : AppTheme.onSurfaceVariant)
             }
 
-            Button("立即同步") {
-                // 地址与密钥要先落盘再同步，否则这次同步用的还是上一份配置。
-                model.setSyncServiceUrl(syncServiceUrl)
-                model.setSyncAccountKey(syncAccountKey)
-                model.setSyncIncludeApiKey(syncIncludeApiKey)
-                model.syncNow()
+            // 点这里会**等**一次同步跑完再收工：用户点完就知道成功还是失败，不需要事后猜。
+            // 等待期间上面的忙碌提示会顶住，超时有兜底，不会永远转下去。
+            Button("保存并同步") {
+                saveSyncCredentials()
             }
             // `state.sync` 本身不是可选的（只有 `state` 是），所以不能再套一层 `?.`。
-            .disabled(model.state?.sync.isWorking == true)
+            .disabled(isBusy || model.state?.sync.isWorking == true)
 
             Button("清空云端数据", role: .destructive) { confirmingCloudDelete = true }
-                .disabled(syncAccountKey.isEmpty && syncServiceUrl.isEmpty)
+                .disabled(isBusy || (syncAccountKey.isEmpty && syncServiceUrl.isEmpty))
         } header: {
             Text("云端同步")
         } footer: {
             Text("填写你自建的 Cloudflare Worker 地址与账号密钥即可在多台设备间同步聊天记录。"
+                + "地址与密钥随「保存」一起写入本机，下次打开会回填；"
+                + "「保存并同步」会立刻上传一次并等它结束，结果就在这一行显示。"
+                + "同步失败不会影响本机数据。"
                 + "云端以最后写入为准，本机记录不会被同步删除。"
                 + "打开上面的开关后，API Key 会以明文存放在你的 D1 数据库里。")
         }
@@ -297,10 +307,46 @@ struct SettingsView: View {
             isPresented: $confirmingCloudDelete,
             titleVisibility: .visible
         ) {
-            Button("清空云端", role: .destructive) { model.deleteCloudData() }
+            Button("清空云端", role: .destructive) {
+                // 先落盘再清：否则用的是上一次保存的凭据，可能清到别的账号上。
+                // 这里刻意**不**顺带同步一次——删完就同步会把云端刚清掉的数据又传回去。
+                // 落盘是同步完成的，所以这里不需要 Task，也不会等任何网络。
+                if let failure = model.saveSyncCredentials(
+                    serviceUrl: syncServiceUrl,
+                    accountKey: syncAccountKey,
+                    includeApiKey: syncIncludeApiKey
+                ) {
+                    notice = failure
+                    noticeIsError = true
+                    return
+                }
+                model.deleteCloudData()
+            }
             Button("取消", role: .cancel) {}
         } message: {
             Text("云端的历史记录会被删除且无法恢复（没有账号找回）。本机记录不受影响。")
+        }
+    }
+
+    /// 保存同步凭据，等一次同步跑完，然后把结果写进 `notice`。
+    ///
+    /// 失败（例如密钥太短）也要显示出来：写入校验不过时本地什么都没改，用户看到的仍是
+    /// 上一次的配置，这一点必须让人知道，而不是静默关掉页面。
+    private func saveSyncCredentials() {
+        isBusy = true
+        notice = nil
+        Task {
+            let failure = await model.syncCredentialsAndSync(
+                serviceUrl: syncServiceUrl,
+                accountKey: syncAccountKey,
+                includeApiKey: syncIncludeApiKey
+            )
+            isBusy = false
+            if let failure {
+                notice = failure
+                // 同步失败只是"这次没成"，本机数据完好——用错误色提示，但不阻止继续操作。
+                noticeIsError = model.state?.sync.isFailed == true
+            }
         }
     }
 
@@ -342,12 +388,15 @@ struct SettingsView: View {
 
         locationEnabled = state.locationEnabled
 
-        // 同步凭据不在状态快照里（它们不是聊天状态），单独异步读一次。
-        Task {
-            syncServiceUrl = await model.syncServiceUrl()
-            syncIncludeApiKey = await model.syncIncludeApiKey()
-            syncAccountKey = await model.syncAccountKey()
-        }
+        // 同步凭据不在状态快照里（它们不是聊天状态），直接读一次本机存储。
+        // 读是同步的，所以没有"读回来之前用户就能编辑"的窗口：输入框能编辑时值已经填好了。
+        //
+        // 整套设置页共用「保存」这一个提交点：地址、密钥、开关都是草稿，点保存才落盘，
+        // 点取消就丢掉。单独给开关开一条"立即生效"的路径会让取消不再是取消。
+        let credentials = model.syncCredentials()
+        syncServiceUrl = credentials.serviceUrl
+        syncAccountKey = credentials.accountKey
+        syncIncludeApiKey = credentials.includeApiKey
     }
 
     private func toggle(_ trait: CatTrait) {
@@ -427,7 +476,30 @@ struct SettingsView: View {
             flavor: flavor
         )
         model.setLocationEnabled(locationEnabled)
-        dismiss()
+
+        // 同步凭据也必须在这里保存。
+        //
+        // 这是"URL 和密钥存不进去"的第二个根因：同步区原来只有一个写入点（「立即同步」），
+        // 点「保存」只是关闭了页面，@State 里的地址与密钥随视图一起丢掉，
+        // 下次打开 `loadCurrentValues` 读到空、再把空值赋回输入框。
+        //
+        // 保存时要**等一次同步**：这样关闭页面之前就能把失败原因显示出来，否则用户带着一个
+        // 没生效的配置离开，还以为已经同步过了。校验不过（例如密钥太短）同样不能关页面。
+        isBusy = true
+        Task {
+            let failure = await model.syncCredentialsAndSync(
+                serviceUrl: syncServiceUrl,
+                accountKey: syncAccountKey,
+                includeApiKey: syncIncludeApiKey
+            )
+            isBusy = false
+            if let failure {
+                notice = failure
+                noticeIsError = model.state?.sync.isFailed == true
+                return
+            }
+            dismiss()
+        }
     }
 }
 

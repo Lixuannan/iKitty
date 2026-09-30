@@ -94,32 +94,19 @@ class DataStoreKeyValueStore(context: Context, name: String = SETTINGS_DATASTORE
     private companion object {
         const val SETTINGS_DATASTORE_NAME = "cat_settings"
 
-        val STRING_KEYS: Map<String, Preferences.Key<String>> = listOf(
-            SettingsKeys.BASE_URL,
-            SettingsKeys.API_KEY,
-            SettingsKeys.MODEL,
-            SettingsKeys.REASONING_EFFORT,
-            SettingsKeys.THINKING,
-            SettingsKeys.PROVIDER_ID,
-            SettingsKeys.CAT_NAME,
-            SettingsKeys.CAT_TRAITS,
-            SettingsKeys.CAT_SPEECH_STYLE,
-            SettingsKeys.CAT_FLAVOR,
-            SettingsKeys.CAT_NOTES
-        ).associateWith { stringPreferencesKey(it) }
+        // 键的清单来自 commonMain 的 StoredKeyRegistry：两端读的必须是同一批键名。
+        // 这里曾经各自抄了一份只有 SettingsKeys 的清单，iOS 那份的后果是同步凭据读不回来。
+        val STRING_KEYS: Map<String, Preferences.Key<String>> =
+            StoredKeyRegistry.string.associateWith { stringPreferencesKey(it) }
 
-        val FLOAT_KEYS: Map<String, Preferences.Key<Float>> = listOf(
-            SettingsKeys.TEMPERATURE,
-            SettingsKeys.TOP_P
-        ).associateWith { floatPreferencesKey(it) }
+        val FLOAT_KEYS: Map<String, Preferences.Key<Float>> =
+            StoredKeyRegistry.floats.associateWith { floatPreferencesKey(it) }
 
-        val INT_KEYS: Map<String, Preferences.Key<Int>> = listOf(
-            SettingsKeys.MAX_TOKENS
-        ).associateWith { intPreferencesKey(it) }
+        val INT_KEYS: Map<String, Preferences.Key<Int>> =
+            StoredKeyRegistry.ints.associateWith { intPreferencesKey(it) }
 
-        val BOOL_KEYS: Map<String, Preferences.Key<Boolean>> = listOf(
-            SettingsKeys.LOCATION_ENABLED
-        ).associateWith { booleanPreferencesKey(it) }
+        val BOOL_KEYS: Map<String, Preferences.Key<Boolean>> =
+            StoredKeyRegistry.flags.associateWith { booleanPreferencesKey(it) }
     }
 }
 

@@ -124,49 +124,66 @@ final class AppModel: ObservableObject {
 
     /// 应用回到前台时同步一次。
     ///
-    /// 没有后台调度（那需要 `BGTaskScheduler` 与 Info.plist 配置），
+    /// 没有系统级后台调度（那需要 `BGTaskScheduler` 与 Info.plist 配置），
     /// 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
     func onForeground() {
         environment.onForeground()
     }
 
-    func syncNow() {
-        environment.syncNow()
+    /// 当前同步凭据（地址、密钥、开关）。
+    ///
+    /// **不 await**：凭据的读取走 `NSUserDefaults` 的直接路径，不再经过 Kotlin 的 suspend 桥。
+    func syncCredentials() -> SyncCredentialWriter.Applied {
+        environment.currentSyncCredentials()
     }
 
-    func syncIsConfigured() async -> Bool {
-        // Kotlin 的 suspend 函数在 Swift 里返回的是装箱的 `KotlinBoolean`，
-        // 不能直接当 `Bool` 用（编译期就会报错，不会退化到运行期）。
-        ((try? await environment.syncIsConfigured())?.boolValue) ?? false
+    /// 保存同步凭据，然后**等一次同步跑完**。
+    ///
+    /// 返回要给用户看的一句话（nil 表示没什么可说的；失败时就是那条失败原因）。
+    ///
+    /// 为什么是两步、又为什么要等：落盘是同步的（`NSUserDefaults` 的写入，返回即生效），
+    /// 而同步是一轮真实网络往返。等它的收益是"保存"这个动作有确定的结果——点完就能看到
+    /// 同步成功还是失败，而不是事后去猜。代价是这段时间界面不响应，所以调用方必须先把
+    /// 忙碌状态显示出来（设置页会显示"正在同步…"并禁用按钮）。
+    ///
+    /// 上一版的问题不在"等"，而在**等的路径**：Swift 要 `await` 三个 Kotlin suspend 写入，
+    /// 中间还夹着一次由门面自己发起的同步，任何一段接不上就挂在主 actor 上。现在只有一次
+    /// `await`，等的是同步自己的终态，而且带超时兜底（见 `IosAppEnvironment.syncNowAndWait`）。
+    func syncCredentialsAndSync(
+        serviceUrl url: String,
+        accountKey: String,
+        includeApiKey: Bool
+    ) async -> String? {
+        if let failure = environment.applySyncCredentials(
+            serviceUrl: url,
+            accountKey: accountKey,
+            includeApiKey: includeApiKey
+        ) {
+            return failure
+        }
+        // Kotlin 的 suspend 导出到 Swift 是 `async throws`：`syncNowAndWait` 自己不会抛
+        // （失败已经折成返回文案），但签名要求这里兜住，否则编译不过。真抛了就等于
+        // "没等到结果"，按超时那一类处理。
+        do {
+            return try await environment.syncNowAndWait()
+        } catch {
+            return "同步没有完成：\(error.localizedDescription)。设置已保存，稍后会自动重试"
+        }
     }
 
-    func syncServiceUrl() async -> String {
-        (try? await environment.syncServiceUrl()) ?? ""
-    }
-
-    func syncIncludeApiKey() async -> Bool {
-        ((try? await environment.syncIncludeApiKey())?.boolValue) ?? false
-    }
-
-    /// 回填密钥输入框：`SecureField` 不回填的话，用户每次进设置页都看到空白。
-    func syncAccountKey() async -> String {
-        (try? await environment.syncAccountKey()) ?? ""
-    }
-
-    func setSyncServiceUrl(_ url: String) {
-        environment.setSyncServiceUrl(url: url)
-    }
-
-    func setSyncAccountKey(_ key: String) {
-        environment.setSyncAccountKey(key: key)
+    /// 只把同步凭据写进本机，**不**发起同步。返回错误文案（nil 表示写入成功）。
+    ///
+    /// 用在不该顺带上传的地方，例如「清空云端数据」：那边删完再同步会把刚清掉的数据传回去。
+    func saveSyncCredentials(serviceUrl url: String, accountKey: String, includeApiKey: Bool) -> String? {
+        environment.applySyncCredentials(
+            serviceUrl: url,
+            accountKey: accountKey,
+            includeApiKey: includeApiKey
+        )
     }
 
     func clearSyncAccountKey() {
         environment.clearSyncAccountKey()
-    }
-
-    func setSyncIncludeApiKey(_ include: Bool) {
-        environment.setSyncIncludeApiKey(include: include)
     }
 
     /// 清空云端。不可撤销，调用方必须先让用户确认。

@@ -34,8 +34,12 @@ sealed interface SyncStatus {
  * 2. **把异常翻译成状态**：[SyncException] → [SyncStatus]，文案只在这里写一次；
  * 3. **同步之后的收尾**：设置要重新读进 [ChatEngine]，否则界面还在用旧配置。
  *
- * 不做后台调度：那需要各平台的原生 API（WorkManager / BGTaskScheduler），
- * 而"应用在前台时同步"已经覆盖了绝大多数使用方式。
+ * [syncNow] 是 **suspend** 的：调用方自己决定在哪个作用域、哪个调度器上跑它。
+ * 落盘（写地址与密钥）与上传是两件事，**不要在同一个入口里串起来**——那会让
+ * "保存设置"变成一个可能耗时几十秒的网络操作，界面只能干等。
+ *
+ * 不做系统级后台调度（那需要各平台的原生 API：WorkManager / BGTaskScheduler）；
+ * 触发点仍限定在应用还活着的时候：前台化、消息落盘后防抖、用户手动点。
  */
 interface SyncFacade {
     val status: StateFlow<SyncStatus>
@@ -66,8 +70,9 @@ interface SyncFacade {
     /**
      * 是否把 API Key 同步到云端。
      *
-     * 开启时会先把本机当前设置推一次：否则"刚打开开关"到"下次改设置"之间，
-     * 云端仍然只有不含 Key 的那份，新设备同步下来还得手填。
+     * 只改开关，**不触发同步**：把"写一个布尔值"和"发一轮网络请求"压在同一个调用里，
+     * 调用方就没法把落盘与上传分开——iOS 的设置页因此卡在主线程上等整轮同步跑完。
+     * 需要把新开关立刻反映到云端时，由调用方在写完凭据之后显式调用一次 [syncNow]。
      */
     suspend fun setIncludeApiKey(include: Boolean)
 
@@ -246,6 +251,9 @@ private class DefaultSyncFacade(
         }
         // 已经在跑就不再起第二个：两次替换会互相覆盖日志。这也是 SyncEngine 内部加锁的原因，
         // 但界面层提前挡掉可以避免状态来回跳。
+        //
+        // 这也让 [syncNow] 成为一个**不阻塞调用方**的入口：本类被界面放在后台作用域上跑，
+        // 而"已经在跑"时它什么都不做就返回，重复触发不会排队堆积。
         if (_status.value is SyncStatus.Working) return
 
         _status.value = SyncStatus.Working("正在同步…")
@@ -299,8 +307,8 @@ private class DefaultSyncFacade(
 
     override suspend fun setIncludeApiKey(include: Boolean) {
         syncEngine.setIncludeApiKey(include)
-        // 打开开关时立刻推一次：把"云端还没有 Key"这个窗口尽量缩短。
-        if (include && syncEngine.isConfigured()) syncNow()
+        // 只落盘。这里刻意**不**顺带同步：调用方的路径是"写完凭据再同步一次"，
+        // 在里面再起一轮会让同一份凭据写两次、发两次请求，而第一次用的还是旧密钥。
     }
 
     override suspend fun includeApiKey(): Boolean = syncEngine.includeApiKey()

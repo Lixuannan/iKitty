@@ -121,6 +121,23 @@ fun SettingsScreen(
     var locationEnabled by rememberSaveable(initialLocationEnabled) { mutableStateOf(initialLocationEnabled) }
     var showKey by remember { mutableStateOf(false) }
 
+    // 同步凭据的草稿放在**屏幕层**而不是 SyncSection 内部：底部的「保存」和顶部的「返回」
+    // 都要能读到它们。放在子 composable 里的话，保存按钮根本看不到用户填的地址与密钥——
+    // 那正是 iOS 上"填了存不进去"的同一个问题。
+    var syncServiceUrl by rememberSaveable { mutableStateOf("") }
+    var syncAccountKey by rememberSaveable { mutableStateOf("") }
+    var syncIncludeApiKey by rememberSaveable { mutableStateOf(false) }
+    var syncLoaded by rememberSaveable { mutableStateOf(false) }
+
+    // 只读一次：这些值由用户自己编辑，每次状态变化都重填会把输入冲掉。
+    LaunchedEffect(Unit) {
+        val snapshot = loadSyncSettings()
+        syncServiceUrl = snapshot.serviceUrl
+        syncAccountKey = snapshot.accountKey
+        syncIncludeApiKey = snapshot.includeApiKey
+        syncLoaded = true
+    }
+
     // 运行态保持 remember，不跨重建恢复：请求跑在 rememberCoroutineScope 上，旋转时随 composition
     // 一起取消；把 testing / loadingModels 恢复成 true 只会留下永远转不完的圈。模型列表与状态文案
     // 会由 LaunchedEffect 在新 composition 里自动重新拉取，测试结果则重置为未测试。
@@ -244,7 +261,13 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = {
+                    // 返回前把同步凭据写下去：它没有"取消"语义，丢掉就是用户白填。
+                    if (syncLoaded) onSaveSyncCredentials(syncServiceUrl, syncAccountKey, syncIncludeApiKey)
+                    onBack()
+                }
+            ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
             }
             Spacer(Modifier.width(4.dp))
@@ -550,7 +573,12 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
 
         Button(
-            onClick = { onSave(current(), currentPersona(), locationEnabled) },
+            onClick = {
+                onSave(current(), currentPersona(), locationEnabled)
+                // 同步凭据也必须在这里写下去。它原来只有「立即同步」一个写入点，
+                // 点「保存」只是关页面，用户填的地址与密钥随 composition 一起丢掉。
+                if (syncLoaded) onSaveSyncCredentials(syncServiceUrl, syncAccountKey, syncIncludeApiKey)
+            },
             enabled = baseUrl.isNotBlank() && model.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -586,7 +614,11 @@ fun SettingsScreen(
 
         SyncSection(
             status = syncStatus,
-            load = loadSyncSettings,
+            serviceUrl = syncServiceUrl,
+            accountKey = syncAccountKey,
+            includeApiKey = syncIncludeApiKey,
+            onServiceUrlChange = { syncServiceUrl = it },
+            onAccountKeyChange = { syncAccountKey = it },
             onSaveCredentials = onSaveSyncCredentials,
             onSetIncludeApiKey = onSetSyncIncludeApiKey,
             onDeleteCloudData = onDeleteCloudData
@@ -1022,25 +1054,18 @@ data class SyncSettingsSnapshot(
 @Composable
 private fun SyncSection(
     status: SyncStatus,
-    load: suspend () -> SyncSettingsSnapshot,
-    /** 写地址与密钥并立刻同步一次；由调用方保证"先写后同步"的顺序。 */
+    serviceUrl: String,
+    accountKey: String,
+    includeApiKey: Boolean,
+    onServiceUrlChange: (String) -> Unit,
+    onAccountKeyChange: (String) -> Unit,
+    /** 写地址与密钥，有密钥时顺带同步一次；由调用方保证"先写后同步"的顺序。 */
     onSaveCredentials: (url: String, accountKey: String, includeApiKey: Boolean) -> Unit,
     onSetIncludeApiKey: (Boolean) -> Unit,
     onDeleteCloudData: () -> Unit
 ) {
-    var serviceUrl by rememberSaveable { mutableStateOf("") }
-    var accountKey by rememberSaveable { mutableStateOf("") }
-    var includeApiKey by rememberSaveable { mutableStateOf(false) }
     var showKey by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-
-    // 只读一次：这些值在设置页里由用户自己编辑，每次状态变化都重填会把输入冲掉。
-    LaunchedEffect(Unit) {
-        val snapshot = load()
-        serviceUrl = snapshot.serviceUrl
-        accountKey = snapshot.accountKey
-        includeApiKey = snapshot.includeApiKey
-    }
 
     // 正在输入的草稿优先：用户一边改一边就该看到警告，而不是等保存之后。
     val keyStrength = SyncKeyStrength.of(accountKey)
@@ -1050,7 +1075,7 @@ private fun SyncSection(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
             value = serviceUrl,
-            onValueChange = { serviceUrl = it },
+            onValueChange = onServiceUrlChange,
             label = { Text("同步服务地址") },
             placeholder = { Text("https://ikitty-sync.xxx.workers.dev") },
             singleLine = true,
@@ -1059,7 +1084,7 @@ private fun SyncSection(
 
         OutlinedTextField(
             value = accountKey,
-            onValueChange = { accountKey = it },
+            onValueChange = onAccountKeyChange,
             label = { Text("账号密钥") },
             singleLine = true,
             visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
@@ -1070,7 +1095,7 @@ private fun SyncSection(
         )
 
         // 警告要可执行：只提示"密钥太短"而不给一条一步就能变强的路，用户只会去编一个更长的弱串。
-        TextButton(onClick = { accountKey = generateAccountKey() }) {
+        TextButton(onClick = { onAccountKeyChange(generateAccountKey()) }) {
             Text("生成随机密钥")
         }
 
@@ -1108,10 +1133,7 @@ private fun SyncSection(
             }
             Switch(
                 checked = includeApiKey,
-                onCheckedChange = {
-                    includeApiKey = it
-                    onSetIncludeApiKey(it)
-                }
+                onCheckedChange = { onSetIncludeApiKey(it) }
             )
         }
 
@@ -1124,7 +1146,7 @@ private fun SyncSection(
                 // （写盘是异步的，睡多久都只是猜），由调用方按顺序 await 才是确定的。
                 onClick = { onSaveCredentials(serviceUrl, accountKey, includeApiKey) }
             ) {
-                Text("立即同步")
+                Text("立即同步并保存")
             }
             OutlinedButton(
                 enabled = serviceUrl.isNotBlank() || accountKey.isNotBlank(),

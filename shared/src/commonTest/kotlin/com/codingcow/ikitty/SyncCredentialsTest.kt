@@ -1,6 +1,5 @@
 package com.codingcow.ikitty
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -79,6 +78,36 @@ class SyncCredentialsTest {
         credentials.addPushedMessageIds(listOf("b", "c"))
         assertEquals(setOf("a", "b", "c"), credentials.pushedMessageIds())
         assertTrue(credentials.pushedMessageIds().none { it.isBlank() })
+    }
+
+    @Test
+    fun `a saved service url is readable back without a sync`() = runTest {
+        // 这条盯的是 iOS 上那个真实缺陷：凭据只在「立即同步」里被写，点「保存」不写，
+        // 于是关掉设置页之后地址与密钥全丢。写入必须能脱离"同步"单独发生。
+        val credentials = store()
+        credentials.setServiceUrl("  https://sync.example.workers.dev/  ")
+        credentials.setAccountKey("my-key-123")
+
+        assertEquals("https://sync.example.workers.dev", credentials.serviceUrl())
+        assertEquals("my-key-123", credentials.accountKey())
+    }
+
+    @Test
+    fun `an unset service url reads back as empty rather than throwing`() = runTest {
+        val credentials = store()
+        assertEquals("", credentials.serviceUrl())
+        assertEquals("", credentials.accountKey())
+        assertTrue(credentials.pushedMessageIds().isEmpty())
+    }
+
+    @Test
+    fun `include api key defaults to off and round trips`() = runTest {
+        val credentials = store()
+        assertTrue(!credentials.includeApiKey(), "默认必须是不上传 API Key")
+        credentials.setIncludeApiKey(true)
+        assertTrue(credentials.includeApiKey())
+        credentials.setIncludeApiKey(false)
+        assertTrue(!credentials.includeApiKey())
     }
 
     @Test

@@ -1,10 +1,14 @@
 package com.codingcow.ikitty
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path.Companion.toPath
 import platform.Foundation.NSBundle
 import platform.Foundation.NSData
@@ -76,6 +80,12 @@ class IosAppEnvironment {
     private val syncDefaults = NSUserDefaults(suiteName = SYNC_DEFAULTS_SUITE)
         ?: NSUserDefaults.standardUserDefaults
 
+    /**
+     * 凭据的同步写入路径。与 [syncFacade] 用**同一个**套件：落盘与读取必须是同一份数据，
+     * 否则"保存成功"与"同步时读到的凭据"会各说各话。
+     */
+    private val credentialsWriter = SyncCredentialWriter(syncDefaults)
+
     private val syncFacade: SyncFacade = createSyncFacade(
         engine = engine,
         transport = transport,
@@ -83,6 +93,8 @@ class IosAppEnvironment {
         credentialsStore = UserDefaultsKeyValueStore(syncDefaults),
         images = IosSyncImages(images),
         ioDispatcher = ioDispatcher,
+        // 防抖任务与一次同步的收尾都排在界面作用域上：这是刻意的取舍——"保存"时前台
+        // 会等这一次同步跑完（见 [awaitSync]），窗口期内界面本来就该显示进度而不是继续响应。
         scope = scope,
         now = ::nowMillis,
         migrateImages = {
@@ -105,54 +117,102 @@ class IosAppEnvironment {
     /**
      * 应用回到前台：先同步一次。
      *
-     * 没有后台调度（那要 `BGTaskScheduler` 与额外的 Info.plist 配置），
+     * 没有系统级后台调度（那要 `BGTaskScheduler` 与额外的 Info.plist 配置），
      * 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
+     * 界面刚回到前台，多一次网络往返不会影响任何可交互的窗口期。
      */
     fun onForeground() {
         scope.launch { syncFacade.syncNow() }
     }
 
-    fun syncNow() {
+    /**
+     * 跑一次同步并**等它结束**，返回给用户看的一句话（nil 表示没什么要说的）。
+     *
+     * 这是设置页「保存」走的路径：落盘（[applySyncCredentials]）之后立刻跑一次，
+     * 结果直接回给界面，用户不需要事后去猜"到底同步了没有"。
+     *
+     * 超时是**兜底**，不是主要的取消手段：超时之后同步协程仍在跑，状态行照旧会更新到
+     * 最终结果。它挡的是"网络一直不回应"时设置页永远关不掉——那才是真正无法接受的卡死。
+     */
+    suspend fun syncNowAndWait(): String? {
+        // 订阅必须在触发之前：Main 是单线程的，先订阅才能保证不漏掉这一次的终态。
+        // 退出条件用"状态与触发前不同"而不是"是终态"：上一次同步留下的终态就摆在
+        // `sync` 里，不排除掉的话这里会立刻返回，等于没等。
+        //
+        // 恰巧有一轮防抖同步在跑时，等到的可能是**它**的终态而不是我们触发的那一轮：
+        // 门面遇到"已经在跑"会直接返回（见 `DefaultSyncFacade.syncNow`），两个调用方等的是
+        // 同一轮同步。那种情况下凭据也已经落盘了，结果对用户是同一件事。
+        val before = syncFacade.status.value
+        val finished: Deferred<SyncStatus> = scope.async {
+            syncFacade.status.first { it !== before }
+        }
         scope.launch { syncFacade.syncNow() }
+        val status = withTimeoutOrNull(SYNC_WAIT_TIMEOUT_MILLIS) { finished.await() }
+            ?: return "同步超时（$SYNC_WAIT_TIMEOUT_SECONDS 秒），已保存；稍后会自动重试"
+        return when (status) {
+            is SyncStatus.Done -> status.message
+            is SyncStatus.Failed -> status.message
+            is SyncStatus.NeedsAccountKey -> status.message
+            // Disabled / Idle / Working：没有可说的结果（Working 只可能出现在超时之外，
+            // 那时上面已经返回了）。
+            else -> null
+        }
     }
 
-    suspend fun syncIsConfigured(): Boolean = syncFacade.isConfigured()
+    /**
+     * 当前同步凭据（地址、密钥、开关）。**不挂起**：设置页要用它回填输入框。
+     *
+     * 不回填的话 `SecureField` 每次打开都是空白，用户会以为没配过而重新填一遍。
+     */
+    fun currentSyncCredentials(): SyncCredentialWriter.Applied = credentialsWriter.current()
 
-    suspend fun syncServiceUrl(): String = syncFacade.serviceUrl()
-
-    fun setSyncServiceUrl(url: String) {
-        scope.launch { syncFacade.setServiceUrl(url) }
-    }
-
-    fun setSyncAccountKey(key: String) {
-        scope.launch { syncFacade.setAccountKey(key) }
+    /**
+     * 写同步凭据。**不挂起、不等待网络**：`NSUserDefaults` 的写入在 Kotlin/Native 上就是
+     * 直接调用 Foundation，函数返回时值已经落盘。返回一句给用户看的话（nil 表示没什么要说的）。
+     *
+     * 上传不在这里：它由 [syncNowAndWait] 单独做。两者分开之后，落盘永远是"函数返回即生效"，
+     * 不会因为网络好坏而时快时慢。
+     *
+     * 密钥太短之类的本地校验失败必须说出来，而不是静默保存一个服务端一定会拒的值；
+     * 这种情况下**什么都不写**，用户看到的仍旧是上一次的配置。
+     */
+    fun applySyncCredentials(serviceUrl: String, accountKey: String, includeApiKey: Boolean): String? {
+        // 与 KeyValueSyncCredentialStore 用同一个下限（commonMain 的 MIN_ACCOUNT_KEY_LENGTH）：
+        // 不一致会让用户拿到一个看不懂的 401。
+        val trimmedKey = accountKey.trim()
+        if (trimmedKey.isNotEmpty() && trimmedKey.length < MIN_ACCOUNT_KEY_LENGTH) {
+            return "账号密钥至少 $MIN_ACCOUNT_KEY_LENGTH 位（现在是 ${trimmedKey.length} 位），没有保存"
+        }
+        credentialsWriter.apply(serviceUrl = serviceUrl, accountKey = trimmedKey, includeApiKey = includeApiKey)
+        return null
     }
 
     fun clearSyncAccountKey() {
-        scope.launch { syncFacade.clearAccountKey() }
+        credentialsWriter.clearAccountKey()
     }
-
-    fun setSyncIncludeApiKey(include: Boolean) {
-        scope.launch { syncFacade.setIncludeApiKey(include) }
-    }
-
-    suspend fun syncIncludeApiKey(): Boolean = syncFacade.includeApiKey()
 
     /**
-     * 当前的账号密钥，供设置页回填。
+     * 清空云端（不可撤销）。本地数据不受影响。
      *
-     * 回填是必要的：密钥输入框是 `SecureField`，不回填的话用户每次打开设置页都看到空白，
-     * 会以为没配过而重新填一遍。
+     * 调用方**必须先**用 [applySyncCredentials] 把当前凭据落盘：否则清的是上一次保存的
+     * 地址与账号，可能清到别人的云空间上。删除与同步走同一条作用域，结果经状态行回报。
      */
-    suspend fun syncAccountKey(): String = syncFacade.accountKey()
-
-    /** 清空云端（不可撤销）。本地数据不受影响。 */
     fun deleteCloudData() {
         scope.launch { syncFacade.deleteCloudData() }
     }
 
     private companion object {
         const val SYNC_DEFAULTS_SUITE = "com.codingcow.ikitty.sync"
+
+        /**
+         * 前台等同步的上限。
+         *
+         * 同步自己的重试预算是 3 次、指数退避（`SyncEngine.MAX_ATTEMPTS`），最坏情况下
+         * 光退避就有 1+2 秒；再加上连接与读超时，一次正常的失败要在十几秒内出结果。
+         * 这个值比那更宽，只在"网络彻底不回应"时才兜住——那时设置页不能永远关不掉。
+         */
+        const val SYNC_WAIT_TIMEOUT_MILLIS = 60_000L
+        const val SYNC_WAIT_TIMEOUT_SECONDS = 60
     }
 
     /**
@@ -378,6 +438,9 @@ class IosAppEnvironment {
 
     /** 应用退出时调用；之后这个环境不可再用。 */
     fun dispose() {
+        // 先收掉同步门面的防抖任务，再取消作用域：只取消作用域也能停住，
+        // 但门面里那个 Job 会被留着直到作用域真正取消，顺序反了会多一次无谓的同步。
+        syncFacade.dispose()
         scope.cancel()
     }
 }

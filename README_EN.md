@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **1.1.0** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **1.1.1** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -387,8 +387,8 @@ iKitty/
 ## Tests
 
 ```bash
-./gradlew :shared:jvmTest                # 232
-./gradlew :shared:iosSimulatorArm64Test  # 228
+./gradlew :shared:jvmTest                # 238
+./gradlew :shared:iosSimulatorArm64Test  # 238
 ./gradlew testDebugUnitTest              # 12
 cd worker && node test/local-check.mjs   # 16
 ```
@@ -401,8 +401,9 @@ prefix**, memory merge and parsing, context assembly (image tokens, image resolu
 block), multimodal request-body structure, persona prompt, the model capability table, image sampling
 ratio, EXIF orientation mapping and viewer pan clamping, IP response parsing, ZIP ↔ `java.util.zip`
 interop in both directions, and `.ikitty` export/import round-trips, settings serialization, and
-rejection of corrupt files and out-of-bounds entries. Cloud sync adds 29 shared cases (push/pull,
-sequence assignment, tombstones, settings LWW, image backfill, 401 and batch splitting), and its server
+rejection of corrupt files and out-of-bounds entries. Cloud sync adds 35 shared cases (push/pull,
+sequence assignment, tombstones, settings LWW, image backfill, 401 and batch splitting, credential
+persistence and the two switch representations), and its server
 has 16 more running real SQL on `node:sqlite`. `:shared:jvmTest` additionally holds 5
 **real-network** integration tests (a real `HttpServer` driven through the production OkHttp transport).
 

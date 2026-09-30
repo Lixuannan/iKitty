@@ -255,7 +255,19 @@ class KeyValueSyncCredentialStore(
         putString(SyncKeys.DELETED_IDS, encodeIds(merged.toList(), MAX_DELETED_IDS))
     }
 
-    override suspend fun includeApiKey(): Boolean = raw(SyncKeys.INCLUDE_API_KEY) == "true"
+    /**
+     * **宽容**地读那个开关。
+     *
+     * 两种表示都要认：Android 的同步命名空间把所有值都按字面量存成字符串，
+     * 而 iOS 的 `NSUserDefaults` 支持布尔，存下去再读回来就是 `Flag`。
+     * 只认其中一种的后果是另一端的开关永远读成 false——"打开同步 API Key"看起来生效了，
+     * 下一次同步却仍然不带 Key。
+     */
+    override suspend fun includeApiKey(): Boolean = when (val value = store.values.first()[SyncKeys.INCLUDE_API_KEY]) {
+        is SettingValue.Flag -> value.value
+        is SettingValue.Str -> value.value == "true"
+        else -> false
+    }
 
     override suspend fun setIncludeApiKey(include: Boolean) {
         putString(SyncKeys.INCLUDE_API_KEY, include.toString())

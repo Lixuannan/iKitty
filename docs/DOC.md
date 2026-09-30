@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：1.1.0 · 包名：`com.codingcow.ikitty`
+- 版本：1.1.1 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
@@ -692,12 +692,12 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 
 | target | 用例 | 组成 |
 | --- | --- | --- |
-| `:shared:jvmTest` | 232 | `commonTest` 222 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 228 | `commonTest` 222 + `iosTest` 6 |
+| `:shared:jvmTest` | 238 | `commonTest` 228 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 238 | `commonTest` 228 + `iosTest` 10 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | 同步服务端：跑在 `node:sqlite` 上的真实 SQL |
 
-### 14.1 `commonTest`（222）
+### 14.1 `commonTest`（228）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -714,8 +714,9 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | `CatMemoryRulesTest` | 8 | 合并只增不减、同 key 覆盖、未变化的条目保留旧时间戳（淘汰才公平）、`forget` 不动固定项、超上限淘汰最久未更新的非固定项、重命名 key 不留旧条目、超长值裁剪而不是拒绝、渲染按分类分组且空记忆渲染为空 |
 | `ChatEngineTest` | 8 | 空记录启动补开场白、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零并重补开场白、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
 | `SyncEngineTest` | 21 | 首次同步上传本地消息并由服务端分配序号、第二次不再重传服务端已有的、拉取带回另一台设备写的、**本地待推消息在拉取后不丢**、被服务端删掉的不被下一次同步复活、图片按需下载一次、设置只在变化时上传、云端设置更新时应用到本地、云端缺 apiKey 时保留本地的、API Key 只在开关打开时上云、关掉开关不会抹掉云端已有的 Key、本地错误行不上传、被拒记录逐条回报但整批不失败、413 拆批重试、只剩一条仍被拒时明确报错而不是静默丢弃、传输失败会重试、401 清掉账号密钥并要求重新配对、没有账号密钥时不发请求、`deleteAll` 清空云端但保留本地、老记录缺 `msgId` 时先固化身份再上传、切换账号时清掉游标 |
-| `SyncIntegrationTest` | 2 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关 |
-| `SyncCredentialsTest` | 6 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
+| `SyncIntegrationTest` | 3 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关、只改同步开关不自己发起同步 |
+| `SyncFlagTest` | 2 | 同步开关的两种存储表示都要读得出来（iOS 存布尔、Android 存字面量字符串） |
+| `SyncCredentialsTest` | 9 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
 | `PromptTimeTest` | 8 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏） |
 | `SettingsRepositoryTest` | 8 | 空存储给出默认值、缺 providerId 时按 Base URL 反查、认不出的 Base URL 落到 `custom`、配置往返、角色设定往返、未知枚举名回退不抛异常、定位开关能关且保持关闭、键名是约定的那些 |
 | `MemoryJsonTest` | 7 | 接受裸 JSON / 围栏 JSON / 中文分类标签、解析失败返回 null（旧记忆因此不会被清空）、未知分类回退而不是丢条目、记忆文件形状是跨端契约、编解码往返、损坏文件返回 null、`pinned` 只在为真时写出 |
@@ -734,7 +735,7 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | --- | --- | --- |
 | `ChatEngineIntegrationTest`（jvmTest） | 5 | 起一个**真实** `HttpServer`，用生产用的 OkHttp 传输跑完整链路：真实 socket → SSE → 落盘；服务商忽略 `stream` 时退化整体解析；HTTP 错误转成本地错误行；请求体符合线上契约（且历史消息带时间戳）；带图片消息以 `image_url` 数据 URL 到达 wire |
 | `ZipInteropTest`（jvmTest） | 5 | 用 `java.util.zip` 写出的 DEFLATE 归档可读、这里写出的归档 `java.util.zip` 可读、大且高压缩比条目在 DEFLATE 下完好、DEFLATE 归档的注释被容忍、STORED 与 DEFLATE 可以混用 |
-| `IosPlatformTest`（iosTest） | 6 | iOS 路径创建根目录并使用约定布局、设置经 NSUserDefaults 往返、未写入时给出默认值、图片存储写文件并返回数据 URL、拒绝空字节、失效缓存后强制重读 |
+| `IosPlatformTest`（iosTest） | 10 | iOS 路径创建根目录并使用约定布局、设置经 NSUserDefaults 往返、未写入时给出默认值、图片存储写文件并返回数据 URL、拒绝空字节、失效缓存后强制重读、同步凭据同步写入并经门面的存储读回、清除密钥解除绑定但保留地址、换密钥作废云空间状态而同键写入不动它、读到直接写进 NSUserDefaults 的值 |
 | `UpdateModelsTest`（`:app`） | 9 | release JSON 解析版本与 APK 地址、多个 APK 时优先同名、无 APK 返回 null、预发布不作为更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、同基线预发布更旧、`v` 前缀归一化 |
 | `ImageViewerTest`（`:app`） | 3 | 未放大时不接受拖动、放大后拖动被钳制在溢出范围内、钳制范围随倍数增长 |
 
@@ -979,12 +980,24 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
 | `HttpTransport` / `JsonHttpTransport` | 窄契约（JSON）与完整契约（+ 原始字节）。同步复用平台层建好的同一个实例 | 不懂协议，不做重试 |
 | `SyncApi` | 拼请求、把响应翻译成 `SyncException` 或数据模型 | 不决定"什么时候同步、失败怎么办" |
 | `SyncEngine` | 推本地的新消息与设置、拉增量、按云端快照重建本地日志、补齐缺图 | 不碰界面状态，不自己重试之外的退避策略 |
-| `SyncCoordinator`（`SyncFacade`） | 触发策略、把异常翻译成 `SyncStatus`、同步后让 `ChatEngine` 重读 | 不直接读写日志 |
+| `SyncCoordinator`（`SyncFacade`） | 触发策略、把异常翻译成 `SyncStatus`、同步后让 `ChatEngine` 重读 | 不直接读写日志；三个 setter 只落盘，不自己发起同步 |
+| `SyncCredentials` / `StoredKeyRegistry` | 用 `KeyValueStore` 存 `account_key` / `install_id` / `since_rev` / 开关；键名清单只有一份 | 不解释设置项含义 |
 | `ChatLogStore` | 追加写（本地路径）与 `replaceAll`（拉取路径，临时文件 + 原子重命名） | 不排序、不去重 |
 | `ChatEngine` | 消息与设置落盘后经 `onContentChanged` 通知同步；`syncCompleted()` 重读日志 | 不认识"同步"这个概念 |
 
 `SyncEngine` 是唯一同时知道"本地日志"和"云端协议"的地方；把它与界面分开，
 单个 `ChatEngine` 与"带同步的 ChatEngine"之间就没有分叉。
+
+**落盘与上传是两件事**，这是 iOS 上付出过代价的一条边界：写凭据不该等网络。门面里的
+setter 都只写本地存储、不发起请求；一次同步由调用方在凭据**全部落盘之后**显式触发。
+设置页的「保存并同步」在前台**等这一次同步结束**（带超时兜底）再关页面，等待期间显示
+忙碌状态——用户点完就知道成功还是失败，不必事后去猜。
+
+**两端的 `KeyValueStore` 读同一批键名**，清单在 commonMain 的 `StoredKeyRegistry`。
+这里踩过一个把云端同步整个废掉的坑：iOS 的实现自己列了一份只有 `SettingsKeys` 的清单，
+同步凭据写得进 `NSUserDefaults` 却读不回来——设置页回显空白、`isConfigured()` 恒为 false。
+另有一条同类：`includeApiKey` 曾只认字符串表示，而 iOS 存布尔、读回来是 `Flag`，
+于是"打开同步 API Key"看起来生效了、下一次同步却仍然不带 Key。
 
 ### 21.3 三条不变量
 

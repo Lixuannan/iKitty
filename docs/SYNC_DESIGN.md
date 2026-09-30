@@ -269,6 +269,13 @@ README 的隐私章节必须写明：开启后 API Key 以**明文**存放在 D1
 | `SyncEngine.kt` | 同步编排：上传待推、拉取、整体替换本地日志、图片补齐 |
 | `SyncCoordinator.kt` | `SyncFacade`：触发策略、状态翻译、同步后重读引擎 |
 | `SyncCredentials.kt` | 基于 `KeyValueStore` 存 `account_key` / `install_id` / `since_rev` / 开关 |
+| `SyncCredentialWriter.kt`（iosMain） | 凭据的**同步写入**：不挂起、不等网络，写完立刻在后台同步一次 |
+
+两个平台的 `KeyValueStore` 读的必须是**同一批键名**，清单在 commonMain 的
+`StoredKeyRegistry`。这里踩过一次真实的坑：iOS 的 `UserDefaultsKeyValueStore`
+自己列了一份只有 `SettingsKeys` 的清单，于是同步凭据写得进 `NSUserDefaults`、
+永远读不回来——设置页回显空白、`isConfigured()` 恒为 false，整个云端同步都用不了。
+后来加进来的每类键（`SyncKeys`）都必须同时进这份清单。
 
 同步复用**同一个** `HttpTransport` 实例（图片要 `postBytes` / `getBytes`，聊天只用 JSON 那三个
 方法，所以 `ApiClient` 的字段是更窄的 `JsonHttpTransport`）。该实例由平台层在装配处同时喂给
@@ -286,9 +293,23 @@ README 的隐私章节必须写明：开启后 API Key 以**明文**存放在 D1
 
 ### 7.2 触发器
 
+三个入口，全部汇到 `SyncFacade.syncNow()`：
+
 - 应用前台化（Android `ProcessLifecycleOwner` / iOS `scenePhase`）；
 - 每条助手回复落盘后，防抖 5 秒；
-- 用户手动"立即同步"。
+- 用户手动"保存并同步"。
+
+**落盘与上传必须是两件事**。门面里的三个 setter（地址、密钥、开关）都只写本地存储，
+不发起网络请求；一次同步只能由调用方在凭据**全部写完之后**显式触发。把两者压进同一个入口
+的代价在 iOS 上暴露过：设置页在等那三个 `suspend` 写入和紧随其后的一轮同步跑完，
+网络一动整个界面就没反应了。
+
+设置页的「保存并同步」会在**前台等这一次同步结束**（带超时兜底），然后才关页面：
+用户点完就知道成功还是失败，而不是事后去猜。这是刻意的取舍——等待期间界面不响应，
+所以要把忙碌状态显示出来。等的是同步自己的终态，而不是"等一段时间看看"。
+
+不做系统级后台调度（`WorkManager` / `BGTaskScheduler`）：触发点都要求应用还活着，
+前台化与消息落盘的防抖都发生在可交互窗口之外，等不等对体验没有差别。
 
 不做实时同步：没有后端推送，另一台设备的新消息要等下次前台才出现。
 

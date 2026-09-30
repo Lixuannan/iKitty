@@ -199,26 +199,43 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun syncIncludeApiKey(): Boolean = syncFacade.includeApiKey()
 
     /**
-     * 写同步凭据并立刻同步一次。
+     * 写同步凭据；有密钥就顺带同步一次。
      *
-     * 三个动作在**同一个协程里按顺序 await**：先落盘再同步不能靠"UI 层等一会儿"来保证，
-     * 写盘是异步的，等多久都只是猜——顺序在这里才是确定的。
+     * 三个写入在**同一个协程里按顺序 await**，最后显式同步一次。门面里的三个 setter
+     * 都是**纯写入**（不再各自触发同步），否则这里会发出两轮请求，而第一轮用的还是旧密钥。
+     *
+     * 把"写凭据"与"跑同步"合成一个入口，是因为**两个入口迟早会漂移**：iOS 那边曾经
+     * 只有「立即同步」会写凭据，点「保存」就只是关页面，于是用户填的地址与密钥直接丢掉了。
+     * 现在两端都只有这一条路径：保存即写入，有密钥才同步。
      */
     fun saveSyncCredentials(url: String, accountKey: String, includeApiKey: Boolean) {
-        viewModelScope.launch {
-            syncFacade.setServiceUrl(url)
-            syncFacade.setAccountKey(accountKey)
-            syncFacade.setIncludeApiKey(includeApiKey)
-            syncFacade.syncNow()
-        }
+        viewModelScope.launch { writeSyncCredentials(url, accountKey, includeApiKey) }
     }
 
     fun clearSyncAccountKey() {
         viewModelScope.launch { syncFacade.clearAccountKey() }
     }
 
+    /**
+     * 只改"是否把 API Key 一并同步"。
+     *
+     * 打开开关要立刻推一次，把"云端还没有 Key"这个窗口尽量缩短；但**还没配密钥时不要推**，
+     * 否则 `syncNow` 会把状态设成「还没有填写账号密钥」，在用户正填一半的时候报一个错。
+     */
     fun setSyncIncludeApiKey(include: Boolean) {
-        viewModelScope.launch { syncFacade.setIncludeApiKey(include) }
+        viewModelScope.launch {
+            syncFacade.setIncludeApiKey(include)
+            if (include && syncFacade.isConfigured()) syncFacade.syncNow()
+        }
+    }
+
+    /** 三个 setter 都只落盘；同步由调用方在写完之后显式发起一次。 */
+    private suspend fun writeSyncCredentials(url: String, accountKey: String, includeApiKey: Boolean) {
+        syncFacade.setServiceUrl(url)
+        syncFacade.setIncludeApiKey(includeApiKey)
+        // 密钥最后写：换密钥会把云空间状态整体作废，写完之后再同步才是拿新密钥对新账号。
+        syncFacade.setAccountKey(accountKey)
+        if (accountKey.isNotBlank()) syncFacade.syncNow()
     }
 
     /** 清空云端。不可撤销，调用方必须先让用户确认。 */

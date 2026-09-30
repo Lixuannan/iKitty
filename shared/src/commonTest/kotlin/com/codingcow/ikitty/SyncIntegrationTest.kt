@@ -51,6 +51,15 @@ class SyncIntegrationTest {
         val settings = SettingsRepository(settingsStore)
         val credentialsStore = FakeStore()
 
+        /**
+         * 这台设备看到的墙钟，喂给同步的 `now()`。
+         *
+         * 必须**每台设备各有一份**、并且由测试显式推进：设置的 LWW 判据是墙钟时间戳，
+         * 两台设备共用一个返回值会让"谁更新"变成"谁最后写"——那样测出来的就不是
+         * "新设置覆盖旧设置"，而是服务端在同一毫秒内的覆盖顺序。
+         */
+        var clock = NOW
+
         /** 同步下来的图片；这条测试只关心它在不在，不关心像素。 */
         val images = mutableMapOf<String, ByteArray>()
 
@@ -72,8 +81,9 @@ class SyncIntegrationTest {
      * 门面在引擎之后创建，但引擎的回调要在门面就绪后才可能被调用 —— 与 Android / iOS
      * 用可空引用解决的是同一个先后顺序问题，这里用 `lateinit`。
      */
-    private fun CoroutineScope.buildDevice(id: String): Device {
+    private fun CoroutineScope.buildDevice(id: String, clockStart: Long = NOW): Device {
         val device = Device(id)
+        device.clock = clockStart
         // 与平台层一样：同一个传输同时喂给 ApiClient 与同步门面。
         // `FakeSyncServer` 本身就是完整的 `HttpTransport`，所以它的 JSON 路径也够聊天用
         // （这条测试里聊天并不真的发请求）。
@@ -106,10 +116,63 @@ class SyncIntegrationTest {
             },
             ioDispatcher = Dispatchers.Unconfined,
             scope = this,
-            // 真实实现要 5 秒防抖；测试里立刻同步，避免依赖虚拟时间推进。
+            // 每台设备一个**独立的、显式推进的**墙钟：同毫秒的两份设置谁赢是服务端的
+            // 覆盖顺序，不是这条测试要验的东西。见 [Device.clock]。
+            now = { device.clock },
+            // 真实实现要 5 秒防抖；测试里立刻同步，避免用例依赖虚拟时间推进。
             debounceMillis = 0L
         )
         return device
+    }
+
+    /** 把某台设备的墙钟往前拨，让它下一次推上去的设置**严格更新**。 */
+    private fun Device.advanceClock(millis: Long = 1_000L) {
+        clock += millis
+    }
+
+    /**
+     * 只改"是否把 API Key 一并同步"不该触发同步。
+     *
+     * 门面里那个 setter 原来会顺手调一次 [SyncFacade.syncNow]。后果是每一条"写凭据"的路径
+     * 都会发两轮请求（第一轮用的还是旧密钥），而 iOS 的设置页会把这个网络操作等在主线程上——
+     * 也就是那个"点保存就卡住"的来源。同步现在只能由调用方在**凭据全部落盘之后**显式发起。
+     */
+    @Test
+    fun `toggling the api key switch does not start a sync`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val marker = "只改开关不该被推上去的消息"
+            val device = scope.buildDevice("device-a")
+            // 直接写日志，不走 send 那条路径：这条用例要观测的是"改开关有没有发起同步"，
+            // 而内容落盘后本来就会触发一次防抖同步，会把观测搅浑。
+            device.log.append(
+                StoredMessage(
+                    seq = 1,
+                    role = StoredMessage.ROLE_USER,
+                    content = marker,
+                    createdAt = NOW,
+                    msgId = newMessageId(now = NOW)
+                )
+            )
+            device.facade.enable()
+            advanceUntilIdle()
+            assertTrue(server.messages.none { it.content == marker }, "这条消息不该已经在云端")
+
+            device.facade.setIncludeApiKey(true)
+            advanceUntilIdle()
+
+            assertTrue(
+                server.messages.none { it.content == marker },
+                "只改开关不该发起同步：消息被推上去就说明同步跑了"
+            )
+
+            // 显式同步一次之后它才该上去——证明网络通路本身是好的，上一条断言不是因为别的原因通过。
+            device.facade.syncNow()
+            advanceUntilIdle()
+            assertTrue(server.messages.any { it.content == marker }, "显式调用 syncNow 之后消息要上云")
+        } finally {
+            scope.cancel()
+        }
     }
 
     private suspend fun SyncFacade.enable() {
@@ -185,6 +248,13 @@ class SyncIntegrationTest {
             deviceA.engine.start()
             advanceUntilIdle()
             deviceA.facade.enable()
+
+            // A 先同步一次：模拟"这台设备早就配好了"。它会在云端写下当前的默认设置，
+            // 之后墙钟继续往前走——用户改设置总是发生在别的设备上一次同步之后，
+            // 而不是同一毫秒里。
+            deviceA.facade.syncNow()
+            deviceA.advanceClock(60_000L)
+
             // 顺序要紧：先打开开关，再改设置。
             // 反过来的话，第一轮推送用的还是"开关关着"的那一份快照，而指纹已经记成了
             // "开关打开"的状态——于是这一轮什么都没推，设置却再也不会被重推。
@@ -204,8 +274,13 @@ class SyncIntegrationTest {
                 "打开开关后 API Key 要进云端"
             )
 
-            // 设备 B：拿到云端设置。
-            val deviceB = scope.buildDevice("device-b")
+            // 设备 B：新设备。它的墙钟落在 A"上一次同步"与"A 改设置"之间，于是：
+            // - B 这一轮推上去的是本机默认设置（本地设置从没被用户改过）；
+            // - 但 A 那份**更新**，按 LWW 该由 A 赢，所以 B 拉下来之后本机该变成 A 的设置。
+            //
+            // 两边的墙钟刻意错开：时间戳相等时服务端按到达顺序覆盖，那时测出来的是覆盖顺序
+            // 而不是 LWW。这条用例盯的是"更新的那份能落到本机"。
+            val deviceB = scope.buildDevice("device-b", clockStart = deviceA.clock - 30_000L)
             deviceB.engine.start()
             advanceUntilIdle()
             deviceB.facade.enable()
@@ -218,6 +293,8 @@ class SyncIntegrationTest {
 
             // 设备 B 关掉开关再改一次设置：云端已有的 Key 不能被抹掉。
             deviceB.facade.setIncludeApiKey(false)
+            // 也要拨到 A 那份之后：设置是 LWW，只有更新的那一份才盖得住云端 A 写的设置。
+            deviceB.advanceClock(120_000L)
             deviceB.engine.saveSettings(
                 deviceB.engine.config.value.copy(model = "cat-2"),
                 CatPersona(),

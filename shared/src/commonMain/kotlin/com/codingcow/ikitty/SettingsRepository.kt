@@ -43,6 +43,51 @@ sealed interface SettingValue {
 }
 
 /**
+ * **全部可存储键的类型清单**，按 [SettingValue] 的四种形态分组。
+ *
+ * 这是"一个 [KeyValueStore] 可以装哪些键"的唯一答案，两端都用它来决定读哪些键：
+ *
+ * - iOS 的 `UserDefaultsKeyValueStore` 在 `NSUserDefaults` 上看不到"这个键存过没有"的类型，
+ *   只能按清单逐个问；清单少了哪一批，那批值就永远读不回来。
+ * - Android 的 `DataStoreKeyValueStore` 走的存储介质有类型化键，但读的仍是同一批名字。
+ *
+ * 加一类键（例如后来新增的 [SyncKeys]）**必须只改这里**：iOS 与 Android 曾各自抄了一份
+ * 只有 [SettingsKeys] 的清单，结果是同步凭据能写进 `NSUserDefaults`、却永远读不回来——
+ * 设置页回显空白、`isConfigured()` 恒为 false，云端同步整体用不了。
+ */
+internal object StoredKeyRegistry {
+    val string: List<String> = listOf(
+        SettingsKeys.BASE_URL,
+        SettingsKeys.API_KEY,
+        SettingsKeys.MODEL,
+        SettingsKeys.REASONING_EFFORT,
+        SettingsKeys.THINKING,
+        SettingsKeys.PROVIDER_ID,
+        SettingsKeys.CAT_NAME,
+        SettingsKeys.CAT_TRAITS,
+        SettingsKeys.CAT_SPEECH_STYLE,
+        SettingsKeys.CAT_FLAVOR,
+        SettingsKeys.CAT_NOTES,
+        // 同步凭据（[SyncKeys]）全是字符串。
+        SyncKeys.ACCOUNT_KEY,
+        SyncKeys.SERVICE_URL,
+        SyncKeys.DEVICE_ID,
+        SyncKeys.SINCE_REV,
+        SyncKeys.SETTINGS_UPDATED_AT,
+        SyncKeys.PUSHED_IDS,
+        SyncKeys.DELETED_IDS,
+        SyncKeys.SETTINGS_FINGERPRINT,
+        SyncKeys.CLOUD_SETTINGS_AT
+    )
+
+    val floats: List<String> = listOf(SettingsKeys.TEMPERATURE, SettingsKeys.TOP_P)
+
+    val ints: List<String> = listOf(SettingsKeys.MAX_TOKENS)
+
+    val flags: List<String> = listOf(SettingsKeys.LOCATION_ENABLED, SyncKeys.INCLUDE_API_KEY)
+}
+
+/**
  * 键值持久化的契约。
  *
  * 只要求两件事：能读出一个快照流，能写入一批键值。介质由平台决定
