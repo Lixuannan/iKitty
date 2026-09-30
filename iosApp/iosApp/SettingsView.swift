@@ -296,8 +296,8 @@ struct SettingsView: View {
             Text("云端同步")
         } footer: {
             Text("填写你自建的 Cloudflare Worker 地址与账号密钥即可在多台设备间同步聊天记录。"
-                + "地址与密钥随「保存」一起写入本机，下次打开会回填；"
-                + "「保存并同步」会立刻上传一次并等它结束，结果就在这一行显示。"
+                + "地址与密钥随「保存」一起写入本机并顺带同步一次，下次打开会回填；"
+                + "「保存并同步」会等这一次同步结束再收工，结果就在这一行显示。"
                 + "同步失败不会影响本机数据。"
                 + "云端以最后写入为准，本机记录不会被同步删除。"
                 + "打开上面的开关后，API Key 会以明文存放在你的 D1 数据库里。")
@@ -481,23 +481,19 @@ struct SettingsView: View {
         // 点「保存」只是关闭了页面，@State 里的地址与密钥随视图一起丢掉，
         // 下次打开 `loadCurrentValues` 读到空、再把空值赋回输入框。
         //
-        // 保存时要**等一次同步**：这样关闭页面之前就能把失败原因显示出来，否则用户带着一个
-        // 没生效的配置离开，还以为已经同步过了。校验不过（例如密钥太短）同样不能关页面。
-        isBusy = true
-        Task {
-            let failure = await model.syncCredentialsAndSync(
-                serviceUrl: syncServiceUrl,
-                accountKey: syncAccountKey,
-                includeApiKey: syncIncludeApiKey
-            )
-            isBusy = false
-            if let failure {
-                notice = failure
-                noticeIsError = model.state?.sync.isFailed == true
-                return
-            }
-            dismiss()
+        // 但「保存」**不等**同步：凭据落盘是同步的（函数返回即生效），上传由后台作用域去做，
+        // 结果更新到同步状态行。要"点完就知道同步成功还是失败"走下面那个「保存并同步」按钮。
+        // 把整轮网络往返等在这里，就是"填完 API Key 点保存就卡住"的那条路径。
+        if let failure = model.saveSyncCredentialsAndSyncInBackground(
+            serviceUrl: syncServiceUrl,
+            accountKey: syncAccountKey,
+            includeApiKey: syncIncludeApiKey
+        ) {
+            notice = failure
+            noticeIsError = true
+            return
         }
+        dismiss()
     }
 }
 

@@ -328,8 +328,8 @@ iKitty/
 ## 测试
 
 ```bash
-./gradlew :shared:jvmTest                # 238
-./gradlew :shared:iosSimulatorArm64Test  # 238
+./gradlew :shared:jvmTest                # 249
+./gradlew :shared:iosSimulatorArm64Test  # 250
 ./gradlew testDebugUnitTest              # 12
 cd worker && node test/local-check.mjs   # 16
 ```
@@ -340,9 +340,9 @@ cd worker && node test/local-check.mjs   # 16
 记忆合并与解析、上下文装配（含图片 token、图片解析与「此刻」背景块）、多模态请求体结构、
 角色 prompt、模型能力表、图片采样倍率、EXIF 方向映射与大图拖动钳制、IP 返回解析、
 ZIP 与 `java.util.zip` 双向互操作，以及 `.ikitty` 备份的导出/导入往返、设置序列化、
-坏文件与越界条目的拒绝。云同步另有 35 条共享用例（推拉、序号分配、墓碑、设置 LWW、
-图片补齐、401 与拆批重试、凭据落盘与两种开关表示），服务端的 16 条跑在 `node:sqlite`
-上的真实 SQL 里。
+坏文件与越界条目的拒绝。云同步另有 43 条共享用例（推拉、序号分配、墓碑、设置 LWW、
+图片补齐、401 与拆批重试、凭据落盘与两种开关表示、同步终态直传），服务端的 16 条跑在
+`node:sqlite` 上的真实 SQL 里。
 `:shared:jvmTest` 里还有 5 条**真实网络往返**的集成测试
 （起一个真的 `HttpServer`，用生产用的 OkHttp 传输跑完整链路）。
 

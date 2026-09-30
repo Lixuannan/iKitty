@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -59,6 +60,19 @@ interface SyncFacade {
     suspend fun setServiceUrl(url: String)
 
     suspend fun syncNow()
+
+    /**
+     * 跑一轮同步，并**把这一轮的终态直接返回**。
+     *
+     * 与 [syncNow] 的区别只在"结果怎么给"：[syncNow] 把终态写进 [status]，调用方要靠
+     * "状态变了"去推断结束。当这一轮的前后状态**相等**（例如本来就没配服务地址，
+     * 触发前后都是 [SyncStatus.Disabled]）时状态流不会重新发射，那个推断就永远不会发生——
+     * 调用方只能一直等到超时。这个方法由发起者自己拿到返回值，不依赖任何状态发射。
+     *
+     * 已经有一轮在跑时等它那一轮的终态，不另起一轮：两轮替换会互相覆盖日志，而调用方要的
+     * 只是"这次同步到底成没成"。凭据没配好时不做任何网络请求，直接返回对应的终态。
+     */
+    suspend fun syncNowAndAwait(): SyncStatus
 
     suspend fun setAccountKey(key: String)
 
@@ -242,29 +256,58 @@ private class DefaultSyncFacade(
     }
 
     override suspend fun syncNow() {
-        if (!refreshServiceUrl()) {
-            _status.value = SyncStatus.Disabled
-            return
-        }
-        if (!syncEngine.isConfigured()) {
-            _status.value = SyncStatus.NeedsAccountKey("还没有填写账号密钥")
-            return
-        }
+        if (!prepare()) return
         // 已经在跑就不再起第二个：两次替换会互相覆盖日志。这也是 SyncEngine 内部加锁的原因，
         // 但界面层提前挡掉可以避免状态来回跳。
         //
         // 这也让 [syncNow] 成为一个**不阻塞调用方**的入口：本类被界面放在后台作用域上跑，
         // 而"已经在跑"时它什么都不做就返回，重复触发不会排队堆积。
         if (_status.value is SyncStatus.Working) return
+        runSync()
+    }
 
+    override suspend fun syncNowAndAwait(): SyncStatus {
+        if (!prepare()) return _status.value
+        // 恰巧有一轮在跑（防抖触发的、或上一次保存触发的）就等它：两个调用方等的是同一轮，
+        // 结果对用户是同一件事，也不该为此再发一轮请求。
+        if (_status.value is SyncStatus.Working) {
+            return _status.first { it !is SyncStatus.Working }
+        }
+        return runSync()
+    }
+
+    /**
+     * 凭据检查：能同步返回 true；否则把状态置成对应的终态并返回 false。
+     *
+     * 抽出来是因为 [syncNow] 与 [syncNowAndAwait] 必须用同一套判断，否则"能不能同步"
+     * 会在两条路径上漂移——iOS 侧那条等待路径就曾因为漏掉这个分支而卡到超时。
+     */
+    private suspend fun prepare(): Boolean {
+        if (!refreshServiceUrl()) {
+            _status.value = SyncStatus.Disabled
+            return false
+        }
+        if (!syncEngine.isConfigured()) {
+            _status.value = SyncStatus.NeedsAccountKey("还没有填写账号密钥")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * 真正跑一轮同步并把终态同时写进 [status] 与返回值。
+     *
+     * 调用方必须先经过 [prepare]；这里只负责"跑 + 翻译异常"，不再判断能不能跑。
+     */
+    private suspend fun runSync(): SyncStatus {
         _status.value = SyncStatus.Working("正在同步…")
-        try {
+        val result = try {
             val report = syncEngine.sync()
             // 同步已经把日志重写过，界面要跟上；否则顺序与序号都停在旧快照。
             engine.syncCompleted()
             val warning = drainWarnings()
             val summary = report.summary()
-            _status.value = when {
+            when {
                 warning != null -> SyncStatus.Done(warning)
                 summary != null -> SyncStatus.Done("同步完成：$summary")
                 else -> SyncStatus.Idle
@@ -272,14 +315,16 @@ private class DefaultSyncFacade(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: SyncException) {
-            _status.value = if (e.reauthorize) {
+            if (e.reauthorize) {
                 SyncStatus.NeedsAccountKey(e.message ?: "账号密钥无效")
             } else {
                 SyncStatus.Failed(e.message ?: "同步失败")
             }
         } catch (e: Exception) {
-            _status.value = SyncStatus.Failed(e.message ?: "同步失败")
+            SyncStatus.Failed(e.message ?: "同步失败")
         }
+        _status.value = result
+        return result
     }
 
     override suspend fun accountKey(): String = credentials.accountKey()

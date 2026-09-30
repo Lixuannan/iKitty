@@ -753,20 +753,20 @@ shape, storage formats and backup archives all run the same cases on both ends. 
 (Android's in-app update and image viewer) stay in `:app`.
 
 ```bash
-./gradlew :shared:jvmTest                # 232
-./gradlew :shared:iosSimulatorArm64Test  # 228
+./gradlew :shared:jvmTest                # 249
+./gradlew :shared:iosSimulatorArm64Test  # 250
 ./gradlew testDebugUnitTest              # 12 (Android platform tail)
 cd worker && node test/local-check.mjs   # 16 (sync server)
 ```
 
 | Target | Cases | Composition |
 | --- | --- | --- |
-| `:shared:jvmTest` | 238 | `commonTest` 228 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 238 | `commonTest` 228 + `iosTest` 10 |
+| `:shared:jvmTest` | 249 | `commonTest` 239 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 250 | `commonTest` 239 + `iosTest` 11 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | The sync server: real SQL on `node:sqlite` |
 
-### 14.1 `commonTest` (236)
+### 14.1 `commonTest` (239)
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -783,7 +783,7 @@ cd worker && node test/local-check.mjs   # 16 (sync server)
 | `CatMemoryRulesTest` | 8 | Additive merge, same-key overwrite, an unchanged fact keeping its timestamp (so eviction stays fair), `forget` leaving pinned alone, over-cap eviction of the least recently updated unpinned fact, key rename leaving no old entry, over-long values clamped rather than rejected, rendering grouped by category and empty for no facts |
 | `ChatEngineTest` | 8 | An empty log **not** getting a welcome message on start (the greeting is a UI state, not a message), a send appending the user message and the streamed reply, a failing stream keeping the partial reply and adding an error line, a blank send ignored, clearing restarting the sequence, input changes driving `LISTENING`, a failed memory extraction recording the error without advancing the cursor, a successful one merging facts and advancing the cursor |
 | `SyncEngineTest` | 21 | The first sync uploading local messages and the server assigning sequence numbers, a second sync not re-uploading what the server already has, a pull bringing down what another device wrote, **local pending messages surviving a pull**, a message deleted on the server not resurrected, images downloaded once on demand, settings uploaded only when they change, newer cloud settings applied locally, cloud settings without an api key keeping the local one, the api key going to the cloud only when the switch is on, turning the switch off not wiping the key already in the cloud, local error notices never uploaded, rejected records reported per record without failing the batch, a 413 split and retried, a single undeliverable message failing loudly instead of being dropped silently, a transient failure retried, a 401 clearing the account key and asking the user to re-pair, nothing sent without an account key, `deleteAll` clearing the cloud but keeping local data, legacy records without a `msgId` getting a stable identity before uploading, switching accounts forgetting the cursor |
-| `SyncIntegrationTest` | 5 | Two real `ChatEngine`s converging on one record through the same fake server; settings and the api key following the switch; toggling the api-key switch not starting a sync on its own; **a brand-new device with a later wall clock adopting cloud settings instead of overwriting them with defaults**; **turning the api-key switch on uploading a key the cloud did not have** |
+| `SyncIntegrationTest` | 8 | Two real `ChatEngine`s converging on one record through the same fake server; settings and the api key following the switch; toggling the api-key switch not starting a sync on its own; **a brand-new device with a later wall clock adopting cloud settings instead of overwriting them with defaults**; **turning the api-key switch on uploading a key the cloud did not have**; **an unconfigured sync returning `Disabled` at once instead of waiting for a status change**; **a URL without a key returning `NeedsAccountKey` at once**; **a configured sync returning the terminal status it also publishes** |
 | `SyncSettingsCodecTest` | 3 | The cloud settings payload carrying the persona's name/traits/speech style/flavor/notes and round-tripping them, the payload covering every `SettingsKeys` entry (a new setting missing from the codec fails here), turning the api key off omitting the field entirely |
 | `SyncFlagTest` | 2 | The sync api-key switch readable from both storage representations (`true` as a boolean on iOS, as a string literal on Android) |
 | `SyncCredentialsTest` | 9 | The device id generated once and then stable, the stored key trimmed and readable, clearing the key keeping the cursor, switching the key forgetting everything tied to the old cloud space, the pushed-id set round tripping with a cap, key strength following the documented thresholds |

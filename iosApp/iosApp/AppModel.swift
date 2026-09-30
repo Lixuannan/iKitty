@@ -182,6 +182,28 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// 保存同步凭据，然后把一次同步丢给后台作用域，**立刻返回**。
+    ///
+    /// 工具栏的「保存」走这条：凭据落盘是同步的（返回即生效），上传只是顺带，不该让
+    /// 关闭设置页这个动作挂在一次网络往返上——那正是"点保存就卡死"的来源。
+    /// 同步结果照旧更新到 `state.sync`，下次打开设置页能在同步状态行看到。
+    ///
+    /// 返回校验失败的原因（nil 表示已落盘并已排上一次同步）。
+    func saveSyncCredentialsAndSyncInBackground(
+        serviceUrl url: String,
+        accountKey: String,
+        includeApiKey: Bool
+    ) -> String? {
+        let failure = environment.applySyncCredentials(
+            serviceUrl: url,
+            accountKey: accountKey,
+            includeApiKey: includeApiKey
+        )
+        // 校验没过时本地什么都没写，不该顺手发起一轮用旧凭据的同步。
+        if failure == nil { environment.syncInBackground() }
+        return failure
+    }
+
     func clearSyncAccountKey() {
         environment.clearSyncAccountKey()
     }

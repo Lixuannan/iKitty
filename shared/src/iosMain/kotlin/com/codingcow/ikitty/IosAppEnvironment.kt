@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path.Companion.toPath
@@ -122,32 +121,36 @@ class IosAppEnvironment {
      * 界面刚回到前台，多一次网络往返不会影响任何可交互的窗口期。
      */
     fun onForeground() {
+        syncInBackground()
+    }
+
+    /**
+     * 在后台作用域上发起一次同步，**不等结果**。
+     *
+     * 设置页「保存」走这条路径：凭据已经同步落盘，上传只是顺带，不该让"保存"这个动作
+     * 挂在一次网络往返上。结果照旧会更新到同步状态行（`state.sync`）。
+     */
+    fun syncInBackground() {
         scope.launch { syncFacade.syncNow() }
     }
 
     /**
      * 跑一次同步并**等它结束**，返回给用户看的一句话（nil 表示没什么要说的）。
      *
-     * 这是设置页「保存」走的路径：落盘（[applySyncCredentials]）之后立刻跑一次，
+     * 这是设置页「保存并同步」走的路径：落盘（[applySyncCredentials]）之后立刻跑一次，
      * 结果直接回给界面，用户不需要事后去猜"到底同步了没有"。
      *
-     * 超时是**兜底**，不是主要的取消手段：超时之后同步协程仍在跑，状态行照旧会更新到
-     * 最终结果。它挡的是"网络一直不回应"时设置页永远关不掉——那才是真正无法接受的卡死。
+     * 等的是 [SyncFacade.syncNowAndAwait] 的**返回值**，而不是"状态变了"：状态没变时
+     * （例如没配服务地址，前后都是 `Disabled`）状态流不会重新发射，靠它推断结束会一直等到
+     * 超时——那正是"点保存就卡住"的来源。
+     *
+     * 超时是**兜底**，不是主要的取消手段：超时只放弃"等"，这一轮同步本身仍在跑，状态行
+     * 照旧会更新到最终结果。它挡的是"网络一直不回应"时设置页永远关不掉。
      */
     suspend fun syncNowAndWait(): String? {
-        // 订阅必须在触发之前：Main 是单线程的，先订阅才能保证不漏掉这一次的终态。
-        // 退出条件用"状态与触发前不同"而不是"是终态"：上一次同步留下的终态就摆在
-        // `sync` 里，不排除掉的话这里会立刻返回，等于没等。
-        //
-        // 恰巧有一轮防抖同步在跑时，等到的可能是**它**的终态而不是我们触发的那一轮：
-        // 门面遇到"已经在跑"会直接返回（见 `DefaultSyncFacade.syncNow`），两个调用方等的是
-        // 同一轮同步。那种情况下凭据也已经落盘了，结果对用户是同一件事。
-        val before = syncFacade.status.value
-        val finished: Deferred<SyncStatus> = scope.async {
-            syncFacade.status.first { it !== before }
-        }
-        scope.launch { syncFacade.syncNow() }
-        val status = withTimeoutOrNull(SYNC_WAIT_TIMEOUT_MILLIS) { finished.await() }
+        // 在界面作用域上发起：同步的状态更新因此仍在主线程，SwiftUI 可以直接消费。
+        val started: Deferred<SyncStatus> = scope.async { syncFacade.syncNowAndAwait() }
+        val status = withTimeoutOrNull(SYNC_WAIT_TIMEOUT_MILLIS) { started.await() }
             ?: return "同步超时（$SYNC_WAIT_TIMEOUT_SECONDS 秒），已保存；稍后会自动重试"
         return when (status) {
             is SyncStatus.Done -> status.message

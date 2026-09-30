@@ -699,20 +699,20 @@ iOS 的 `UserDefaultsKeyValueStore` 现在也按契约在 `put` 之后重新发�
 （Android 的应用内更新、图片查看器）留在 `:app`。
 
 ```bash
-./gradlew :shared:jvmTest                # 232
-./gradlew :shared:iosSimulatorArm64Test  # 228
+./gradlew :shared:jvmTest                # 249
+./gradlew :shared:iosSimulatorArm64Test  # 250
 ./gradlew testDebugUnitTest              # 12（Android 平台尾巴）
 cd worker && node test/local-check.mjs   # 16（同步服务端）
 ```
 
 | target | 用例 | 组成 |
 | --- | --- | --- |
-| `:shared:jvmTest` | 238 | `commonTest` 228 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 238 | `commonTest` 228 + `iosTest` 10 |
+| `:shared:jvmTest` | 249 | `commonTest` 239 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 250 | `commonTest` 239 + `iosTest` 11 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | 同步服务端：跑在 `node:sqlite` 上的真实 SQL |
 
-### 14.1 `commonTest`（236）
+### 14.1 `commonTest`（239）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -729,7 +729,7 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | `CatMemoryRulesTest` | 8 | 合并只增不减、同 key 覆盖、未变化的条目保留旧时间戳（淘汰才公平）、`forget` 不动固定项、超上限淘汰最久未更新的非固定项、重命名 key 不留旧条目、超长值裁剪而不是拒绝、渲染按分类分组且空记忆渲染为空 |
 | `ChatEngineTest` | 8 | 空记录启动**不再**补开场白（开场白是界面状态，不是消息）、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
 | `SyncEngineTest` | 21 | 首次同步上传本地消息并由服务端分配序号、第二次不再重传服务端已有的、拉取带回另一台设备写的、**本地待推消息在拉取后不丢**、被服务端删掉的不被下一次同步复活、图片按需下载一次、设置只在变化时上传、云端设置更新时应用到本地、云端缺 apiKey 时保留本地的、API Key 只在开关打开时上云、关掉开关不会抹掉云端已有的 Key、本地错误行不上传、被拒记录逐条回报但整批不失败、413 拆批重试、只剩一条仍被拒时明确报错而不是静默丢弃、传输失败会重试、401 清掉账号密钥并要求重新配对、没有账号密钥时不发请求、`deleteAll` 清空云端但保留本地、老记录缺 `msgId` 时先固化身份再上传、切换账号时清掉游标 |
-| `SyncIntegrationTest` | 5 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关、只改同步开关不自己发起同步、**新设备墙钟更晚时也继承云端设置而不是用默认值覆盖**、**只打开 API Key 开关也会把云端没有的 Key 补上去** |
+| `SyncIntegrationTest` | 8 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关、只改同步开关不自己发起同步、**新设备墙钟更晚时也继承云端设置而不是用默认值覆盖**、**只打开 API Key 开关也会把云端没有的 Key 补上去**、**没配服务地址时 `syncNowAndAwait` 立刻返回 `Disabled` 而不是等状态变化**、**只有地址没有密钥时立刻返回 `NeedsAccountKey`**、**配好凭据时返回值就是这一轮的终态且与状态行一致** |
 | `SyncSettingsCodecTest` | 3 | 云端设置载荷里含角色的名字/性格/说话风格/猫味浓度/补充设定且往返一致、载荷覆盖 `SettingsKeys` 的每一项（新增设置项漏进 codec 就红）、关掉开关时 `api_key` 字段整个不出现 |
 | `SyncFlagTest` | 2 | 同步开关的两种存储表示都要读得出来（iOS 存布尔、Android 存字面量字符串） |
 | `SyncCredentialsTest` | 9 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
@@ -1008,8 +1008,16 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
 
 **落盘与上传是两件事**，这是 iOS 上付出过代价的一条边界：写凭据不该等网络。门面里的
 setter 都只写本地存储、不发起请求；一次同步由调用方在凭据**全部落盘之后**显式触发。
-设置页的「保存并同步」在前台**等这一次同步结束**（带超时兜底）再关页面，等待期间显示
-忙碌状态——用户点完就知道成功还是失败，不必事后去猜。
+设置页的「保存」只落盘、顺带在后台起一次同步就关页面，不等结果；「保存并同步」才会在前台
+**等这一次同步结束**（带超时兜底）再关页面，等待期间显示忙碌状态——用户点完就知道成功还是失败，
+不必事后去猜。
+
+**"等同步结束"不能靠状态变化来推断**：这是"填完 API Key 点保存就卡死"的第二个根因。
+旧实现订阅 `SyncStatus`、等"状态与触发前不同"，而没配服务地址时触发前后都是同一个
+`Disabled`（`data object` 相等，StateFlow 不会重新发射），于是永远等不到，只能熬到 60 秒
+超时。现在由 `SyncFacade.syncNowAndAwait()` 把这一轮的终态**直接返回**给发起者，不经过
+状态流：凭据没配好就当场返回对应的终态（`Disabled` / `NeedsAccountKey`），配好了就等这一轮
+跑完，并同时写进 `status` 供界面订阅。
 
 **两端的 `KeyValueStore` 读同一批键名**，清单在 commonMain 的 `StoredKeyRegistry`。
 这里踩过一个把云端同步整个废掉的坑：iOS 的实现自己列了一份只有 `SettingsKeys` 的清单，

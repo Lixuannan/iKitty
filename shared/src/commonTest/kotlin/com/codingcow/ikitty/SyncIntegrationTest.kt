@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 import kotlin.test.Test
@@ -178,6 +179,77 @@ class SyncIntegrationTest {
     private suspend fun SyncFacade.enable() {
         setServiceUrl("https://sync.test")
         setAccountKey(accountKey)
+    }
+
+    /**
+     * 没配服务地址时 [SyncFacade.syncNowAndAwait] 必须**立刻**返回 `Disabled`。
+     *
+     * 这是"填完 API Key 点保存就卡死"的根因回归。旧实现等的是"状态与触发前不同"，而触发
+     * 前后都是同一个 `Disabled`——`data object` 相等、StateFlow 不会重新发射，于是永远等不到，
+     * 调用方只能熬到超时（iOS 设置页那 60 秒里整页禁用）。用 `withTimeoutOrNull` 把它变成
+     * "等超时就失败"的断言：旧写法在这里返回 null 而不是 Disabled。
+     */
+    @Test
+    fun `an unconfigured sync returns its status at once instead of waiting for a change`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val device = scope.buildDevice("device-a")
+            val status = withTimeoutOrNull(1_000L) { device.facade.syncNowAndAwait() }
+            assertEquals(
+                SyncStatus.Disabled,
+                status,
+                "没配服务地址要立刻返回 Disabled，而不是等到超时"
+            )
+            assertEquals(SyncStatus.Disabled, device.facade.status.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /** 填了地址但没填密钥同样是 [SyncStatus.NeedsAccountKey]，同样不能等网络。 */
+    @Test
+    fun `a service url without an account key returns needs-account-key at once`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val device = scope.buildDevice("device-a")
+            device.facade.setServiceUrl("https://sync.test")
+            val status = withTimeoutOrNull(1_000L) { device.facade.syncNowAndAwait() }
+            assertTrue(status is SyncStatus.NeedsAccountKey, "要立刻返回 NeedsAccountKey，实际是 $status")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * 配好凭据时返回值就是这一轮的终态，且与写进 [SyncFacade.status] 的那份一致。
+     *
+     * 先写一条本地消息再同步：这样这一轮确实推了东西，终态是 `Done` 而不是"没什么可说的"
+     * `Idle`——两种都是终态，但只有 `Done` 能证明返回值来自**这一轮**的结果。
+     */
+    @Test
+    fun `a configured sync returns the terminal status it also publishes`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val marker = "要上云的一条"
+            val device = scope.buildDevice("device-a")
+            device.log.append(
+                StoredMessage(
+                    seq = 1,
+                    role = StoredMessage.ROLE_USER,
+                    content = marker,
+                    createdAt = NOW,
+                    msgId = newMessageId(now = NOW)
+                )
+            )
+            device.facade.enable()
+            val status = withTimeoutOrNull(5_000L) { device.facade.syncNowAndAwait() }
+            assertTrue(status is SyncStatus.Done, "推了一条消息，终态应当是 Done，实际是 $status")
+            assertEquals(status, device.facade.status.value, "返回值与状态行不能各说各话")
+            // 断言的是外部状态（云端真的收到了），不是组件自己的汇报。
+            assertTrue(server.messages.any { it.content == marker }, "消息要真的到了云端")
+        } finally {
+            scope.cancel()
+        }
     }
 
     /** 本机产生一条用户消息：写成引擎会写的那种记录，再走引擎的"内容变了"通知。 */

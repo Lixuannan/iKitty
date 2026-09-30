@@ -393,8 +393,8 @@ iKitty/
 ## Tests
 
 ```bash
-./gradlew :shared:jvmTest                # 238
-./gradlew :shared:iosSimulatorArm64Test  # 238
+./gradlew :shared:jvmTest                # 249
+./gradlew :shared:iosSimulatorArm64Test  # 250
 ./gradlew testDebugUnitTest              # 12
 cd worker && node test/local-check.mjs   # 16
 ```
@@ -407,9 +407,9 @@ prefix**, memory merge and parsing, context assembly (image tokens, image resolu
 block), multimodal request-body structure, persona prompt, the model capability table, image sampling
 ratio, EXIF orientation mapping and viewer pan clamping, IP response parsing, ZIP ↔ `java.util.zip`
 interop in both directions, and `.ikitty` export/import round-trips, settings serialization, and
-rejection of corrupt files and out-of-bounds entries. Cloud sync adds 35 shared cases (push/pull,
+rejection of corrupt files and out-of-bounds entries. Cloud sync adds 43 shared cases (push/pull,
 sequence assignment, tombstones, settings LWW, image backfill, 401 and batch splitting, credential
-persistence and the two switch representations), and its server
+persistence and the two switch representations, and the terminal status returned directly), and its server
 has 16 more running real SQL on `node:sqlite`. `:shared:jvmTest` additionally holds 5
 **real-network** integration tests (a real `HttpServer` driven through the production OkHttp transport).
 
