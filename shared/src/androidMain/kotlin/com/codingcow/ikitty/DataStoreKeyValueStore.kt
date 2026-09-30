@@ -1,6 +1,7 @@
 package com.codingcow.ikitty
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -15,28 +16,62 @@ import kotlinx.coroutines.flow.map
 private val Context.settingsDataStore by preferencesDataStore(name = "cat_settings")
 
 /**
+ * 同步凭据用的 DataStore 文件。
+ *
+ * 与 `cat_settings` 分开是刻意的：同步凭据（账号密钥、服务地址、推过哪些消息）
+ * 的生命周期与用户设置完全不同——换账号要整块作废，而设置不该被牵连。
+ * 混在同一个文件里还会让"清空设置"和"退出云空间"变成两个互相影响的操作。
+ */
+private val Context.syncDataStore by preferencesDataStore(name = SYNC_DATASTORE_NAME)
+
+/** 同步凭据的 DataStore 文件名。改了等于让已配对的用户重新配对一次。 */
+const val SYNC_DATASTORE_NAME = "sync_credentials"
+
+/**
  * DataStore 支撑的 [KeyValueStore]。
  *
- * 只负责"把键值放进 DataStore"和"读出来"，不懂任何设置项的含义；
- * 默认值与回退在 commonMain 的 [SettingsRepository] 里。
+ * 有两个命名空间，必须显式选一个：
+ * - **设置**（默认）：只认 [SettingsKeys] 里登记过的键与类型。写一个没登记的键会被丢掉，
+ *   这是刻意的——它挡住"拼错键名导致设置静默丢失"，而且能保住"没存过"与"存过默认值"
+ *   的区别（旧版本没有 providerId 时靠这个区别反推服务商）。
+ * - **同步凭据**：键是 [SyncKeys] 那批，全是字符串，没有默认值语义。
+ *
+ * 不允许调用方传任意名字：DataStore 的委托只能在顶层创建，动态文件名做不到。
  */
-class DataStoreKeyValueStore(context: Context) : KeyValueStore {
+class DataStoreKeyValueStore(context: Context, name: String = SETTINGS_DATASTORE_NAME) : KeyValueStore {
 
     private val appContext = context.applicationContext
+    private val namespace = if (name == SYNC_DATASTORE_NAME) Namespace.Sync else Namespace.Settings
+
+    private val target: DataStore<Preferences>
+        get() = if (namespace == Namespace.Sync) appContext.syncDataStore else appContext.settingsDataStore
 
     override val values: Flow<Map<String, SettingValue>> =
-        appContext.settingsDataStore.data.map { prefs -> prefs.toSettings() }
+        target.data.map { prefs ->
+            when (namespace) {
+                Namespace.Settings -> prefs.toSettings()
+                Namespace.Sync -> prefs.toSyncStrings()
+            }
+        }
 
     override suspend fun put(entries: Map<String, SettingValue>) {
-        appContext.settingsDataStore.edit { prefs ->
+        target.edit { prefs ->
             entries.forEach { (name, value) ->
-                when (value) {
-                    is SettingValue.Str -> STRING_KEYS[name]?.let { prefs[it] = value.value }
-                    is SettingValue.Num -> FLOAT_KEYS[name]?.let { prefs[it] = value.value }
-                    is SettingValue.IntValue -> INT_KEYS[name]?.let { prefs[it] = value.value }
-                    is SettingValue.Flag -> BOOL_KEYS[name]?.let { prefs[it] = value.value }
+                when (namespace) {
+                    Namespace.Settings -> writeSetting(prefs, name, value)
+                    // 同步凭据全是字符串；非字符串也按字面量存，读取侧统一当成字符串。
+                    Namespace.Sync -> prefs[stringPreferencesKey(name)] = value.asLiteral()
                 }
             }
+        }
+    }
+
+    private fun writeSetting(prefs: androidx.datastore.preferences.core.MutablePreferences, name: String, value: SettingValue) {
+        when (value) {
+            is SettingValue.Str -> STRING_KEYS[name]?.let { prefs[it] = value.value }
+            is SettingValue.Num -> FLOAT_KEYS[name]?.let { prefs[it] = value.value }
+            is SettingValue.IntValue -> INT_KEYS[name]?.let { prefs[it] = value.value }
+            is SettingValue.Flag -> BOOL_KEYS[name]?.let { prefs[it] = value.value }
         }
     }
 
@@ -47,7 +82,18 @@ class DataStoreKeyValueStore(context: Context) : KeyValueStore {
         BOOL_KEYS.forEach { (name, key) -> this@toSettings[key]?.let { put(name, SettingValue.Flag(it)) } }
     }
 
+    /** 同步命名空间：把所有字符串键读出来。只有 [SyncKeys] 会写这个文件。 */
+    private fun Preferences.toSyncStrings(): Map<String, SettingValue> = buildMap {
+        asMap().forEach { (key, value) ->
+            if (value is String) put(key.name, SettingValue.Str(value))
+        }
+    }
+
+    private enum class Namespace { Settings, Sync }
+
     private companion object {
+        const val SETTINGS_DATASTORE_NAME = "cat_settings"
+
         val STRING_KEYS: Map<String, Preferences.Key<String>> = listOf(
             SettingsKeys.BASE_URL,
             SettingsKeys.API_KEY,
@@ -75,6 +121,13 @@ class DataStoreKeyValueStore(context: Context) : KeyValueStore {
             SettingsKeys.LOCATION_ENABLED
         ).associateWith { booleanPreferencesKey(it) }
     }
+}
+
+private fun SettingValue.asLiteral(): String = when (this) {
+    is SettingValue.Str -> value
+    is SettingValue.Num -> value.toString()
+    is SettingValue.IntValue -> value.toString()
+    is SettingValue.Flag -> value.toString()
 }
 
 /** Android 侧默认设置仓库。 */

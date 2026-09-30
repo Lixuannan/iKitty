@@ -10,17 +10,23 @@ import kotlinx.serialization.json.put
 /**
  * 一条落盘的对话消息。
  *
- * [seq] 是会话内单调递增的序号，同时也是消息的稳定 id：排序不依赖墙钟，
- * 因为用户改系统时间或 NTP 校正都会让时间戳倒退。
+ * [msgId] 是消息的**稳定身份**，也是跨端去重与幂等的唯一键：创建时生成一次，之后永不改变。
+ * 它必须与 [seq] 分开，因为同步时序号会变：[seq] 在本地是草稿值，被云端接受后由服务端
+ * 重新分配权威序号（见 `docs/SYNC_DESIGN.md`）。用 [seq] 当身份会让同一条消息在同步前后
+ * 变成两条。
+ *
+ * [seq] 是会话内单调递增的序号，用来排序：排序不依赖墙钟，因为用户改系统时间或 NTP
+ * 校正都会让时间戳倒退。未同步的消息排在本机已知序号之后，同步后被云端值覆盖。
  *
  * [localError] 标记本地生成的错误提示：它要出现在聊天流里，
  * 但不进请求上下文，也不参与记忆提取。
  *
  * [images] 是本机图片文件名（见 `ImageStore`），不是 URI：借用相册的 `content://`
  * URI 重启后会失效，所以图片先复制进应用私有目录，这里只记录文件名。
+ * 同步之后文件名是内容哈希（`img_<sha256 前 32 位>.jpg`），因此也等于云端的 image id。
  *
  * [createdAt] 是 UTC 毫秒墙钟，界面上显示给人看，也作为时间前缀进请求正文（见 [contentForPrompt]）。
- * 排序与去重一律用 [seq]，墙钟可以被用户改表或 NTP 校正弄倒退。
+ * 排序与去重一律用 [seq] 与 [msgId]，墙钟可以被用户改表或 NTP 校正弄倒退。
  */
 data class StoredMessage(
     val seq: Long,
@@ -28,7 +34,8 @@ data class StoredMessage(
     val content: String,
     val createdAt: Long,
     val localError: Boolean = false,
-    val images: List<String> = emptyList()
+    val images: List<String> = emptyList(),
+    val msgId: String = newMessageId()
 ) {
     /**
      * 发给服务商时正文的内容：时间前缀 + 原文。
@@ -63,9 +70,10 @@ data class StoredMessage(
 
     /**
      * - 有图片才写 `images`；
-     * - 只有 [localError] 为真才写 `error`。
+     * - 只有 [localError] 为真才写 `error`；
+     * - [msgId] 总是写：它是跨端身份，缺了就没法同步。
      *
-     * 这两条条件写入是落盘契约的一部分：多写一个 `false` 会让老版本的解析结果不变，
+     * 前两条条件写入是落盘契约的一部分：多写一个 `false` 会让老版本的解析结果不变，
      * 但会让归档文件的字节发生变化，所以保持原样。
      */
     fun toJson(): JsonObject = buildJsonObject {
@@ -73,6 +81,7 @@ data class StoredMessage(
         put("role", role)
         put("content", content)
         put("at", createdAt)
+        put("id", msgId)
         if (localError) put("error", true)
         if (images.isNotEmpty()) {
             put("images", buildJsonArray { images.forEach { add(JsonPrimitive(it)) } })
@@ -97,7 +106,10 @@ data class StoredMessage(
                 content = content,
                 createdAt = obj.longOrZero("at"),
                 localError = obj.booleanOr("error", false),
-                images = images
+                images = images,
+                // 老记录没有 `id`：补一个随机 id。这样"缺 id"不会被误当成身份，
+                // 而且补出来的 id 与 seq 无关，同步前后不会变成两条消息。
+                msgId = obj.stringOrEmpty("id").ifBlank { newMessageId() }
             )
         }
     }

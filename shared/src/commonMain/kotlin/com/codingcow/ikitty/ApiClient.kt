@@ -43,7 +43,14 @@ sealed interface ModelListOutcome {
  * 所以同一份状态机与容错逻辑两端共用，不会出现"某一边的流式解析更宽松"。
  */
 class ApiClient(
-    private val transport: HttpTransport,
+    /**
+     * 底层传输（窄契约）。
+     *
+     * 类型是 [JsonHttpTransport] 而不是 [HttpTransport]：聊天只用得上 JSON，
+     * 假装它需要收发图片只会让"谁负责构造完整的传输"这件事变得含糊。
+     * 同步要的那一份由平台层在装配处直接给（同一个对象，见 `createSyncFacade` 的 `transport`）。
+     */
+    val transport: JsonHttpTransport,
     private val ioDispatcher: CoroutineDispatcher
 ) {
     /** 正常聊天请求（非流式）。记忆整理等需要完整 JSON 的场景用它。 */

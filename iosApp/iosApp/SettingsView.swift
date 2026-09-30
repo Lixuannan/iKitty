@@ -31,6 +31,15 @@ struct SettingsView: View {
     // 隐私
     @State private var locationEnabled = true
 
+    // 同步（与设置分开存放，见 IosAppEnvironment.syncDefaults）
+    @State private var syncServiceUrl = ""
+    @State private var syncAccountKey = ""
+    @State private var syncIncludeApiKey = false
+    @State private var confirmingCloudDelete = false
+
+    /// 与服务端 `MIN_KEY_LENGTH` 一致；不一致会让用户拿到一个看不懂的 401。
+    private let minAccountKeyLength = 5
+
     // 异步反馈
     @State private var isBusy = false
     @State private var notice: String?
@@ -59,6 +68,7 @@ struct SettingsView: View {
                 personaSection
                 traitsSection
                 privacySection
+                syncSection
                 if let notice {
                     Section {
                         Text(notice).foregroundStyle(noticeIsError ? AppTheme.error : AppTheme.onSurface)
@@ -231,6 +241,81 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 同步
+
+    private var syncSection: some View {
+        Section {
+            TextField("同步服务地址", text: $syncServiceUrl)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+            SecureField("账号密钥", text: $syncAccountKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            // 警告要可执行：只提示"太短"而不给一条一步变强的路，用户只会去编一个更长的弱串。
+            Button("生成随机密钥") { syncAccountKey = Self.randomAccountKey() }
+
+            // 短密钥只有在被离线枚举时才会出问题，而那正是用户最难自己意识到的事：
+            // 所以这里明说后果，而不是只写"建议更长"。
+            if !syncAccountKey.isEmpty && syncAccountKey.count < minAccountKeyLength {
+                Text("密钥太短：云端数据的账号 id 就是它的哈希，短串可以被离线枚举出来——"
+                    + "别人能读到你的聊天记录和同步上去的 API Key。")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.error)
+            }
+
+            Toggle("把 API Key 一并同步到云端", isOn: $syncIncludeApiKey)
+
+            if let status = model.state?.sync, !status.message.isEmpty {
+                Text(status.message)
+                    .font(.footnote)
+                    .foregroundStyle(status.isFailed ? AppTheme.error : AppTheme.onSurfaceVariant)
+            }
+
+            Button("立即同步") {
+                // 地址与密钥要先落盘再同步，否则这次同步用的还是上一份配置。
+                model.setSyncServiceUrl(syncServiceUrl)
+                model.setSyncAccountKey(syncAccountKey)
+                model.setSyncIncludeApiKey(syncIncludeApiKey)
+                model.syncNow()
+            }
+            // `state.sync` 本身不是可选的（只有 `state` 是），所以不能再套一层 `?.`。
+            .disabled(model.state?.sync.isWorking == true)
+
+            Button("清空云端数据", role: .destructive) { confirmingCloudDelete = true }
+                .disabled(syncAccountKey.isEmpty && syncServiceUrl.isEmpty)
+        } header: {
+            Text("云端同步")
+        } footer: {
+            Text("填写你自建的 Cloudflare Worker 地址与账号密钥即可在多台设备间同步聊天记录。"
+                + "云端以最后写入为准，本机记录不会被同步删除。"
+                + "打开上面的开关后，API Key 会以明文存放在你的 D1 数据库里。")
+        }
+        .confirmationDialog(
+            "清空云端数据？",
+            isPresented: $confirmingCloudDelete,
+            titleVisibility: .visible
+        ) {
+            Button("清空云端", role: .destructive) { model.deleteCloudData() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("云端的历史记录会被删除且无法恢复（没有账号找回）。本机记录不受影响。")
+        }
+    }
+
+    /// 32 字节 → base64url。不做任何"让它好记"的加工：这一步存在的唯一理由就是不可枚举。
+    private static func randomAccountKey() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        for index in bytes.indices { bytes[index] = UInt8.random(in: 0...255) }
+        let base64 = Data(bytes).base64EncodedString()
+        let urlSafe = base64
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "ikitty-" + urlSafe
+    }
+
     // MARK: - 行为
 
     private func loadCurrentValues() {
@@ -256,6 +341,13 @@ struct SettingsView: View {
         flavor = state.persona.flavor
 
         locationEnabled = state.locationEnabled
+
+        // 同步凭据不在状态快照里（它们不是聊天状态），单独异步读一次。
+        Task {
+            syncServiceUrl = await model.syncServiceUrl()
+            syncIncludeApiKey = await model.syncIncludeApiKey()
+            syncAccountKey = await model.syncAccountKey()
+        }
     }
 
     private func toggle(_ trait: CatTrait) {

@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **1.0.2** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **1.1.0** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -45,7 +45,11 @@ model service you configure and the optional IP geolocation, nothing goes throug
   for a newer version, downloads it, and hands it to the system installer — chat history and memory survive.
 - **Full backup and restore**: the settings screen packs chat history, images, memory, and settings into a
   single `.ikitty` file, and restores them in one step after a reinstall or on a new device.
-- **No backend required.**
+- **Optional cloud sync**: fill in the address of your own Cloudflare Worker plus an account key and your
+  chat history and images sync across devices (stored in your own D1 and R2). **Off by default** — leave it
+  empty and the app behaves exactly like a local-only app.
+- **No backend required** (cloud sync uses a serverless Cloudflare Worker; see
+  [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md)).
 
 ## Current shape: chat only
 
@@ -281,11 +285,22 @@ and restores from such a file in one step:
 | Chat images | `filesDir/chat/images/*.jpg` | Downscaled JPEG; camera temp files live in the cache and are adopted on success |
 | Structured memory | `filesDir/chat/cat_memory.json` | Plaintext JSON including the extraction cursor |
 | Exported backup | Chosen by the user (SAF) | `.ikitty` file, **contains the API key**, keep it somewhere trusted |
+| Sync credentials | DataStore file `sync_credentials` (Android) / `com.codingcow.ikitty.sync` suite (iOS) | Worker URL, account key, sync cursors; kept apart from settings |
 | Downloaded update | `cacheDir/updates/*.apk` | Transient file, reclaimed by the system after installation |
+| **Cloud** chat history and images | Your own Cloudflare D1 / R2 | **Only exists after you turn cloud sync on** |
 
 - The app requests two permissions: `INTERNET` and `REQUEST_INSTALL_PACKAGES`; the latter is used only to
   hand the official update package to the system installer.
-- There is no backend; chat content goes only to the model service you configured.
+- There is no backend; chat content goes only to the model service you configured. **Only when you turn
+  cloud sync on** do chat history and images go to the Worker you deployed, stored in your own Cloudflare
+  account.
+- Cloud sync is off by default. You choose the account key yourself (the server only requires 5+
+  characters; the settings screen warns and offers a "generate random key" button); the server stores only
+  its SHA-256, so there is **no recovery** — losing the key means losing access to that cloud copy (local
+  data is unaffected).
+- **The key's strength is the only protection for that cloud copy**: the account id is the key's hash and
+  hashes can be enumerated offline, so a short key exposes your cloud records (including the API key you
+  chose to sync) to anyone willing to scan for it. The app warns when a key is short.
 - With location enabled, the egress IP is shared with third-party geolocation services
   (ip-api / ipwho.is / ipapi.co).
 - Checking for updates only reads release metadata from `api.github.com` and downloads the APK; no local
@@ -294,6 +309,8 @@ and restores from such a file in one step:
   limitation.
 - An exported backup contains that plaintext key as well; the app only warns before exporting and does not
   encrypt the file.
+- The API key is **not** uploaded by cloud sync unless you turn that switch on in the settings screen, in
+  which case it is stored in plaintext in your D1 database.
 
 ## Model capability table
 
@@ -370,9 +387,10 @@ iKitty/
 ## Tests
 
 ```bash
-./gradlew :shared:jvmTest                # 199
-./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew :shared:jvmTest                # 232
+./gradlew :shared:iosSimulatorArm64Test  # 228
 ./gradlew testDebugUnitTest              # 12
+cd worker && node test/local-check.mjs   # 16
 ```
 
 Pure-logic cases all live in `:shared`'s `commonTest`, so **a single body of code runs the same
@@ -383,7 +401,9 @@ prefix**, memory merge and parsing, context assembly (image tokens, image resolu
 block), multimodal request-body structure, persona prompt, the model capability table, image sampling
 ratio, EXIF orientation mapping and viewer pan clamping, IP response parsing, ZIP ↔ `java.util.zip`
 interop in both directions, and `.ikitty` export/import round-trips, settings serialization, and
-rejection of corrupt files and out-of-bounds entries. `:shared:jvmTest` additionally holds 5
+rejection of corrupt files and out-of-bounds entries. Cloud sync adds 29 shared cases (push/pull,
+sequence assignment, tombstones, settings LWW, image backfill, 401 and batch splitting), and its server
+has 16 more running real SQL on `node:sqlite`. `:shared:jvmTest` additionally holds 5
 **real-network** integration tests (a real `HttpServer` driven through the production OkHttp transport).
 
 UI, real image decoding/compression, Android's DataStore/SAF, and `UpdateClient`'s real downloads are
@@ -405,6 +425,9 @@ outside unit-test scope and need a device. See
    most 9 per message.
 10. Historical images are re-sent every turn, so many images noticeably enlarge the request body and traffic.
 11. Images open to a full-screen in-app viewer with pinch-to-zoom, but cannot be saved to the gallery or shared.
+12. Cloud sync is not realtime and has no background scheduling, so a message written on another device only
+    shows up the next time this one returns to the foreground; there is also no account recovery — losing the
+    key means losing access to that cloud copy (local data is unaffected).
 
 Planned work: put the cat canvas back (optionally toggled), move to Rive/Lottie animation, save per-provider
 configurations, paginate history upwards, record the timezone offset at write time, add a system-location

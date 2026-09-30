@@ -12,8 +12,8 @@ android {
         applicationId = "com.codingcow.ikitty"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.2"
+        versionCode = 9
+        versionName = "1.1.0"
     }
 
     compileOptions {
@@ -47,6 +47,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    // ProcessLifecycleOwner：云同步要在"应用回到前台"时触发，而且要的是进程级前台，
+    // 不是 Activity 级（旋转屏幕不该算一次回到前台）。
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     // 读取相册/相机图片的 EXIF 方向；BitmapFactory 自己不看这个标签，
     // 不处理的话竖拍照片会被当成横图存下来。

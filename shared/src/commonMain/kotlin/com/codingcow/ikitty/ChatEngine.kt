@@ -32,7 +32,15 @@ class ChatEngine(
     private val imageDataUrls: suspend (Collection<String>) -> Map<String, String>,
     private val locationSource: LocationSource?,
     private val invalidateImageCache: () -> Unit,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /**
+     * 本地内容发生了变化（消息落盘、设置保存）时回调。
+     *
+     * 由同步用它触发一次防抖同步。做成**回调而不是让 ChatEngine 认识同步**：
+     * 聊天不需要知道"有没有云端"，而同步的实现细节（Worker 地址、账号密钥）更不该
+     * 渗进聊天逻辑。默认空实现，所以测试与不用同步的调用方不必关心它。
+     */
+    private val onContentChanged: () -> Unit = {}
 ) {
     private val _messages = MutableStateFlow<List<StoredMessage>>(emptyList())
     val messages: StateFlow<List<StoredMessage>> = _messages.asStateFlow()
@@ -107,6 +115,8 @@ class ChatEngine(
             settings.save(newConfig)
             settings.save(newPersona)
             settings.saveLocationEnabled(locationEnabled)
+            // 保存在协程里，通知也放进来：否则界面刚显示"已保存"、同步却还没看到新设置。
+            notifyContentChanged()
         }
     }
 
@@ -312,6 +322,35 @@ class ChatEngine(
         updateMemory { emptyList() }
     }
 
+    /**
+     * 一次成功的同步之后重读日志。
+     *
+     * 同步已经把云端快照整体写回磁盘（见 `SyncEngine`），这里只负责让界面与本地状态
+     * 跟上：消息列表、[nextSeq] 与图片缓存。不重新读盘的话，界面会一直显示旧顺序，
+     * 而且 [nextSeq] 会继续在旧的草稿序号上往上加，与云端分配的权威序号错开。
+     *
+     * 与 [reloadFromDisk] 分开：那个是"备份导入"用的，会跟着重读设置与记忆；
+     * 同步不改记忆，也没必要把设置流重新订阅一遍。
+     */
+    suspend fun syncCompleted() {
+        // 从云端下来的图片是新的文件名，缓存里的旧编码不能再沿用。
+        invalidateImageCache()
+        _messages.value = log.tail(LOAD_LIMIT)
+        nextSeq = (_messages.value.maxOfOrNull { it.seq } ?: 0L) + 1L
+        if (_messages.value.isEmpty()) ensureWelcome()
+    }
+
+    /** 同步应用了云端设置之后重读设置。
+     *
+     * 分开一个入口是因为同步只在**云端那份更新**时才需要走这一步；每次都重读设置会让
+     * 设置页里还没保存的草稿被覆盖。
+     */
+    suspend fun syncAppliedSettings() {
+        _config.value = settings.config.first()
+        _persona.value = settings.persona.first()
+        _locationEnabled.value = settings.locationEnabled.first()
+    }
+
     private suspend fun loadHistory() {
         val loaded = log.tail(LOAD_LIMIT)
         _messages.value = loaded
@@ -334,7 +373,21 @@ class ChatEngine(
 
     private fun append(message: StoredMessage) {
         _messages.value = _messages.value + message
-        scope.launch { log.append(message) }
+        scope.launch {
+            log.append(message)
+            // 落盘之后才通知同步：发送方看到"已同步"时，消息一定已经在磁盘上了。
+            notifyContentChanged()
+        }
+    }
+
+    /**
+     * 告知"本地内容变了"。
+     *
+     * 收在引擎里而不是让调用方各自去碰回调：这样"什么时候算内容变了"只有一个地方定义，
+     * 平台层与测试都不需要知道回调挂在哪个字段上。
+     */
+    internal fun notifyContentChanged() {
+        onContentChanged()
     }
 
     /** 攒够一批新消息就后台整理一次记忆；整理失败不影响聊天。 */

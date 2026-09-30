@@ -83,6 +83,40 @@ class OkHttpTransport(
         }
     }
 
+    override suspend fun postBytes(
+        url: String,
+        headers: Map<String, String>,
+        contentType: String,
+        body: ByteArray
+    ): HttpResponse = execute(
+        Request.Builder()
+            .url(url)
+            .apply { addHeaders(headers) }
+            .post(body.toRequestBody(contentType.toMediaType()))
+            .build()
+    )
+
+    override suspend fun getBytes(url: String, headers: Map<String, String>): HttpBytesResponse =
+        withContext(ioDispatcher) {
+            val call = client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .apply { addHeaders(headers) }
+                    .get()
+                    .build()
+            )
+            val cancellation = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
+            try {
+                call.execute().use { response ->
+                    HttpBytesResponse(response.code, response.body?.bytes() ?: ByteArray(0))
+                }
+            } catch (e: IOException) {
+                throw HttpTransportException(e.message ?: e.javaClass.simpleName, e)
+            } finally {
+                cancellation?.dispose()
+            }
+        }
+
     private fun postRequest(url: String, headers: Map<String, String>, body: String): Request =
         Request.Builder()
             .url(url)

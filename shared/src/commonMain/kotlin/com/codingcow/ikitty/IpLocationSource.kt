@@ -18,7 +18,7 @@ import kotlin.concurrent.Volatile
  * 这样 OkHttp 与 Ktor 的行为是一致的。
  */
 class IpLocationSource(
-    private val transport: HttpTransport,
+    private val transport: JsonHttpTransport,
     private val endpoints: List<String> = DEFAULT_ENDPOINTS,
     private val ttlMillis: Long = TTL_MILLIS,
     private val timeoutMillis: Long = REQUEST_TIMEOUT_MILLIS

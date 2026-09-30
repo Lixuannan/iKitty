@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** 带图片的消息落盘契约：重启后聊天记录里的图片不能丢。 */
 class StoredMessageTest {
@@ -128,7 +129,7 @@ class StoredMessageTest {
     fun `json shape is the on-disk contract`() {
         val withImages = StoredMessage(
             seq = 1, role = "user", content = "看看这两张", createdAt = 1000,
-            images = listOf("a.jpg", "b.jpg")
+            images = listOf("a.jpg", "b.jpg"), msgId = ID_A
         ).toJson()
         assertEquals(
             buildJsonObject {
@@ -136,6 +137,9 @@ class StoredMessageTest {
                 put("role", "user")
                 put("content", "看看这两张")
                 put("at", 1000)
+                // `id` 总是写：它是跨端身份，同步靠它去重。缺了它，同一条消息
+                // 在同步前后会被当成两条。
+                put("id", ID_A)
                 put(
                     "images",
                     buildJsonArray {
@@ -147,13 +151,14 @@ class StoredMessageTest {
             withImages
         )
 
-        val plain = StoredMessage(3, "assistant", "你好", 3000).toJson()
+        val plain = StoredMessage(3, "assistant", "你好", 3000, msgId = ID_B).toJson()
         assertEquals(
             buildJsonObject {
                 put("seq", 3)
                 put("role", "assistant")
                 put("content", "你好")
                 put("at", 3000)
+                put("id", ID_B)
             },
             plain
         )
@@ -161,5 +166,22 @@ class StoredMessageTest {
         val failed = StoredMessage(4, "assistant", "网络请求失败", 4000, localError = true).toJson()
         assertEquals(JsonPrimitive(true), failed["error"])
         assertFalse(plain.containsKey("error"))
+    }
+
+    @Test
+    fun `an id survives the round trip and is generated when missing`() {
+        val original = StoredMessage(5, "user", "带身份", 5000, msgId = ID_A)
+        assertEquals(ID_A, StoredMessage.fromJson(original.toJson().toString())!!.msgId)
+
+        // 老记录没有 `id`：解析时必须补一个，而不是留空（留空会让同步无法区分身份）。
+        val legacy = StoredMessage.fromJson("""{"seq":6,"role":"user","content":"老记录","at":6000}""")!!
+        assertTrue(legacy.msgId.isNotBlank())
+        assertEquals(36, legacy.msgId.length, legacy.msgId)
+    }
+
+    private companion object {
+        // 固定 id，让 JSON 断言逐字节可读；随机 id 会让断言必须用变量拼装。
+        const val ID_A = "11111111-1111-4111-8111-111111111111"
+        const val ID_B = "22222222-2222-4222-8222-222222222222"
     }
 }

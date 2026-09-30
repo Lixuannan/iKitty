@@ -17,7 +17,7 @@ class IpLocationSourceTest {
 
     private class FakeTransport(
         private val handler: suspend (String) -> HttpResponse
-    ) : HttpTransport {
+    ) : JsonHttpTransport {
         val requested = mutableListOf<String>()
 
         override suspend fun get(url: String, headers: Map<String, String>): HttpResponse {

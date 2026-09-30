@@ -4,9 +4,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import okio.Path.Companion.toPath
 import platform.Foundation.NSBundle
 import platform.Foundation.NSData
+import platform.Foundation.NSUserDefaults
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -30,18 +32,23 @@ class IosAppEnvironment {
     private val paths = iosAppPaths()
     private val fileSystem = iosFileSystem()
     private val ioDispatcher = iosIoDispatcher()
-    private val api = iosApiClient()
+    /** 只建一个传输：聊天与同步共用连接池、超时与取消语义。 */
+    private val transport = KtorTransport()
+    private val api = ApiClient(transport, Dispatchers.Default)
     private val images = IosImageStore(fileSystem, paths.imagesDir, ioDispatcher)
+
+    /** 聊天日志：同步要直接重写同一个文件，所以在这里建一次、两处共用。 */
+    private val chatLog = ChatLogStore(
+        fileSystem = fileSystem,
+        path = paths.chatLog,
+        ioDispatcher = ioDispatcher,
+        now = ::nowMillis
+    )
 
     val engine: ChatEngine = ChatEngine(
         api = api,
         settings = iosSettingsRepository(),
-        log = ChatLogStore(
-            fileSystem = fileSystem,
-            path = paths.chatLog,
-            ioDispatcher = ioDispatcher,
-            now = ::nowMillis
-        ),
+        log = chatLog,
         memoryStore = CatMemoryStore(
             fileSystem = fileSystem,
             path = paths.catMemory,
@@ -51,10 +58,102 @@ class IosAppEnvironment {
         imageDataUrls = { names -> images.dataUrls(names) },
         locationSource = IpLocationSource(KtorTransport()),
         invalidateImageCache = { images.invalidateCache() },
-        scope = scope
+        scope = scope,
+        // 消息落盘与设置保存都会走到这里；同步门面可能在引擎之后才建好，所以用可空引用。
+        onContentChanged = { sync?.notifyContentChanged() }
     )
 
-    val observer = ChatEngineObserver(engine, scope)
+    /**
+     * 云端同步。
+     *
+     * 服务地址与账号密钥都在设置页里填，不编译进代码：这是自托管应用，
+     * 每个人的 Worker 地址都不同。凭据存在**独立的** `NSUserDefaults` 套件里，
+     * 与用户设置分开——换账号时整块作废，不该混进 `SettingsKeys`。
+     */
+    private var sync: SyncFacade? = null
+
+    /** 同步用的 NSUserDefaults 套件：与设置分开，换账号时整块作废。 */
+    private val syncDefaults = NSUserDefaults(suiteName = SYNC_DEFAULTS_SUITE)
+        ?: NSUserDefaults.standardUserDefaults
+
+    private val syncFacade: SyncFacade = createSyncFacade(
+        engine = engine,
+        transport = transport,
+        log = chatLog,
+        credentialsStore = UserDefaultsKeyValueStore(syncDefaults),
+        images = IosSyncImages(images),
+        ioDispatcher = ioDispatcher,
+        scope = scope,
+        now = ::nowMillis,
+        migrateImages = {
+            val result = migrateLegacyImageNames(
+                fileSystem = fileSystem,
+                imagesDir = paths.imagesDir,
+                log = chatLog,
+                ioDispatcher = ioDispatcher
+            )
+            if (result.renamedFiles > 0) {
+                listOf("已把 ${result.renamedFiles} 张旧图片改名为内容哈希")
+            } else {
+                emptyList()
+            }
+        }
+    ).also { sync = it }
+
+    val observer = ChatEngineObserver(engine, scope, syncFacade.status)
+
+    /**
+     * 应用回到前台：先同步一次。
+     *
+     * 没有后台调度（那要 `BGTaskScheduler` 与额外的 Info.plist 配置），
+     * 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
+     */
+    fun onForeground() {
+        scope.launch { syncFacade.syncNow() }
+    }
+
+    fun syncNow() {
+        scope.launch { syncFacade.syncNow() }
+    }
+
+    suspend fun syncIsConfigured(): Boolean = syncFacade.isConfigured()
+
+    suspend fun syncServiceUrl(): String = syncFacade.serviceUrl()
+
+    fun setSyncServiceUrl(url: String) {
+        scope.launch { syncFacade.setServiceUrl(url) }
+    }
+
+    fun setSyncAccountKey(key: String) {
+        scope.launch { syncFacade.setAccountKey(key) }
+    }
+
+    fun clearSyncAccountKey() {
+        scope.launch { syncFacade.clearAccountKey() }
+    }
+
+    fun setSyncIncludeApiKey(include: Boolean) {
+        scope.launch { syncFacade.setIncludeApiKey(include) }
+    }
+
+    suspend fun syncIncludeApiKey(): Boolean = syncFacade.includeApiKey()
+
+    /**
+     * 当前的账号密钥，供设置页回填。
+     *
+     * 回填是必要的：密钥输入框是 `SecureField`，不回填的话用户每次打开设置页都看到空白，
+     * 会以为没配过而重新填一遍。
+     */
+    suspend fun syncAccountKey(): String = syncFacade.accountKey()
+
+    /** 清空云端（不可撤销）。本地数据不受影响。 */
+    fun deleteCloudData() {
+        scope.launch { syncFacade.deleteCloudData() }
+    }
+
+    private companion object {
+        const val SYNC_DEFAULTS_SUITE = "com.codingcow.ikitty.sync"
+    }
 
     /**
      * 保存一张已经归一化好的 JPEG（Swift 侧用 CoreGraphics 处理好），返回本机文件名。

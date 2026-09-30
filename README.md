@@ -8,7 +8,7 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
 拼成 system prompt 直接发给任意 OpenAI 兼容服务。聊天记录、图片、记忆和设置全部存在本机，
 除了你自己配置的模型服务和可选的 IP 定位，不经过任何第三方服务器。
 
-- 应用名：**iKitty** · 版本：**1.0.2** · 包名：`com.codingcow.ikitty`
+- 应用名：**iKitty** · 版本：**1.1.0** · 包名：`com.codingcow.ikitty`
 - 仓库：<https://github.com/Lixuannan/iKitty>
 
 ---
@@ -35,7 +35,9 @@ iKitty 用 Jetpack Compose 写了一个极简聊天界面，把「角色设定 +
   检查新版本、下载并交给系统覆盖安装，聊天记录与记忆都会保留。
 - **完整备份与恢复**：设置页可把聊天记录、图片、记忆和设置打包成一个 `.ikitty` 文件导出，
   换机或重装后一键还原。
-- **不需要后端**。
+- **可选的云端同步**：填上自己部署的 Cloudflare Worker 地址与一个账号密钥，就能在多台设备间
+  同步聊天记录与图片（数据存在你的 D1 与 R2 里）。**默认关闭**，不填就完全等价于纯本地应用。
+- **不需要后端**（云同步用的也是 Cloudflare 的无服务器 Worker，见 [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md)）。
 
 ## 当前形态：只有聊天
 
@@ -231,15 +233,24 @@ system prompt 还会要求模型在合适时用一个 JSON 回答，从而驱动
 | 聊天记录 | `filesDir/chat/chat_log.jsonl` | 明文 JSONL，只在本应用私有目录 |
 | 聊天图片 | `filesDir/chat/images/*.jpg` | 降采样后的 JPEG；拍照临时文件在缓存目录，成功后收编 |
 | 结构化记忆 | `filesDir/chat/cat_memory.json` | 明文 JSON，含提取游标 |
+| 同步凭据 | DataStore 文件 `sync_credentials`（Android）/ `com.codingcow.ikitty.sync` 套件（iOS） | Worker 地址、账号密钥、同步游标；与设置分开存放 |
 | 导出的备份 | 由用户选择（SAF） | `.ikitty` 文件，**含 API Key**，只应保存在可信位置 |
 | 下载的更新包 | `cacheDir/updates/*.apk` | 临时文件，安装后由系统回收 |
+| **云端**聊天记录与图片 | 你自己的 Cloudflare D1 / R2 | **仅在你打开云同步后才有** |
 
 - 应用申请 `INTERNET` 和 `REQUEST_INSTALL_PACKAGES` 两个权限，后者只用于把官方更新包交给系统安装器；
-- 没有后端，聊天内容只发给你配置的模型服务；
+- 没有后端，聊天内容只发给你配置的模型服务；**只有你主动打开云同步**时，聊天记录与图片才会
+  发往你自己部署的 Worker（存在你自己的 Cloudflare 账号里）；
+- 云同步默认关闭；账号密钥由你自己指定（服务端只要求 5 位以上，见设置页的提示与
+  「生成随机密钥」按钮），服务端只保存它的 SHA-256，因此**没有找回**——
+  密钥丢了就等于这份云端数据打不开了（本机数据不受影响）；
+- **账号密钥的强度就是这份云端数据的保护强度**：`account_id` 是密钥的哈希，可被离线枚举，
+  短密钥等于把云端记录（含同步上去的 API Key）公开给愿意扫一遍的人。应用会在密钥偏短时警告；
 - 开启定位时，出口 IP 会交给第三方定位服务（ip-api / ipwho.is / ipapi.co）；
 - 检查更新时只向 `api.github.com` 读取 release 元数据并下载 APK，不上报任何本机信息；
 - API Key 以明文存放在应用私有 DataStore 中，未做额外加密——这是当前的已知限制；
-- 导出的备份里同样含明文 API Key，应用只负责在导出前提示，文件本身不加密码。
+- 导出的备份里同样含明文 API Key，应用只负责在导出前提示，文件本身不加密码；
+- 云同步里的 API Key 默认**不上传**；在设置页打开那个开关后才会上传，且在你的 D1 里是明文。
 
 ## 模型能力表
 
@@ -313,9 +324,10 @@ iKitty/
 ## 测试
 
 ```bash
-./gradlew :shared:jvmTest                # 199
-./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew :shared:jvmTest                # 232
+./gradlew :shared:iosSimulatorArm64Test  # 228
 ./gradlew testDebugUnitTest              # 12
+cd worker && node test/local-check.mjs   # 16
 ```
 
 纯逻辑用例都放在 `:shared` 的 `commonTest`，**一份代码在三个 target 上跑同一套断言**
@@ -324,7 +336,9 @@ iKitty/
 记忆合并与解析、上下文装配（含图片 token、图片解析与「此刻」背景块）、多模态请求体结构、
 角色 prompt、模型能力表、图片采样倍率、EXIF 方向映射与大图拖动钳制、IP 返回解析、
 ZIP 与 `java.util.zip` 双向互操作，以及 `.ikitty` 备份的导出/导入往返、设置序列化、
-坏文件与越界条目的拒绝。`:shared:jvmTest` 里还有 5 条**真实网络往返**的集成测试
+坏文件与越界条目的拒绝。云同步另有 29 条共享用例（推拉、序号分配、墓碑、设置 LWW、
+图片补齐、401 与拆批重试），服务端的 16 条跑在 `node:sqlite` 上的真实 SQL 里。
+`:shared:jvmTest` 里还有 5 条**真实网络往返**的集成测试
 （起一个真的 `HttpServer`，用生产用的 OkHttp 传输跑完整链路）。
 
 UI、图片的真实解码压缩、Android 的 DataStore/SAF 与 `UpdateClient` 的真实下载不在单元测试范围内，
@@ -343,6 +357,8 @@ UI、图片的真实解码压缩、Android 的 DataStore/SAF 与 `UpdateClient` 
 9. 图片统一降采样并转成 JPEG：画质有损，透明区域会被填白，单条消息最多 9 张；
 10. 上下文里的历史图片每轮都会重发，图片多时请求体和流量明显变大；
 11. 图片点开可以在应用内看大图并双指缩放，但不能保存到相册或分享。
+12. 云同步不是实时的，也没有后台调度：另一台设备的新消息要等本机下次回到前台才出现；
+    账号没有找回，密钥丢了就等于那份云端数据打不开（本机数据不受影响）。
 
 后续可做：把猫咪画布放回聊天页或做成可开关、换 Rive/Lottie 动画、
 按服务商分别保存配置、聊天记录向上分页、写入时记录时区偏移、

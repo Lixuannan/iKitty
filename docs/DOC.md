@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：1.0.2 · 包名：`com.codingcow.ikitty`
+- 版本：1.1.0 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
@@ -90,6 +90,9 @@ the app requires full screen`。选补齐方向而不是声明全屏要求，是
 | `BackupArchive` / `settingsToJson` / `settingsFromJson` / `parseCatMemory` | 备份归档的读写、设置序列化、记忆解析 |
 | `exifTransformFor` | EXIF 方向标签 → 旋转角度与是否镜像 |
 | `clampPan` | 大图放大后的拖动范围钳制 |
+| `SyncApi` / `SyncModels` / `SyncSettingsCodec` | 同步协议编解码（见 [21. 云端同步](#21-云端同步)） |
+| `SyncEngine` / `SyncCoordinator` | 同步编排与界面门面（同上） |
+| `newMessageId` / `imageIdFor` / `isImageId` | 消息身份与图片内容寻址 |
 
 Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Context` 构造函数）、
 `SettingsStore`（DataStore）、`IpLocationSource`（OkHttp）、`CatChatViewModel`（`AndroidViewModel`）、
@@ -113,6 +116,7 @@ Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Conte
 | `locationEnabled` | `Boolean` | 是否允许 IP 定位 |
 | `updateStatus` | `UpdateStatus` | 更新流程状态（见 [18. 软件更新](#18-软件更新)） |
 | `backupStatus` | `BackupStatus` | 导出 / 导入的进行状态（见 [19. 备份与恢复](#19-备份与恢复)） |
+| `syncStatus` | `SyncStatus` | 云同步状态（见 [21. 云端同步](#21-云端同步)） |
 
 ---
 
@@ -680,25 +684,27 @@ DataStore Preferences，文件名 `cat_settings`。键：
 （Android 的应用内更新、图片查看器）留在 `:app`。
 
 ```bash
-./gradlew :shared:jvmTest                # 199
-./gradlew :shared:iosSimulatorArm64Test  # 195
+./gradlew :shared:jvmTest                # 232
+./gradlew :shared:iosSimulatorArm64Test  # 228
 ./gradlew testDebugUnitTest              # 12（Android 平台尾巴）
+cd worker && node test/local-check.mjs   # 16（同步服务端）
 ```
 
 | target | 用例 | 组成 |
 | --- | --- | --- |
-| `:shared:jvmTest` | 199 | `commonTest` 189 + `jvmTest` 10 |
-| `:shared:iosSimulatorArm64Test` | 195 | `commonTest` 189 + `iosTest` 6 |
+| `:shared:jvmTest` | 232 | `commonTest` 222 + `jvmTest` 10 |
+| `:shared:iosSimulatorArm64Test` | 228 | `commonTest` 222 + `iosTest` 6 |
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
+| `worker/test/local-check.mjs` | 16 | 同步服务端：跑在 `node:sqlite` 上的真实 SQL |
 
-### 14.1 `commonTest`（189）
+### 14.1 `commonTest`（222）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
 | `ContextAssemblerTest` | 18 | 以 system 开头且不以 assistant 开头、超预算整轮丢弃、最后一轮永远保留、本地错误不进请求、人设与记忆进首条 system 而「此刻」不进、**每条进请求的消息都带自己的时间戳**、**同一段历史两轮装配字节一致**、背景块位于历史之后且不因预算被挤掉、没有背景块就不多出空 system、预算非负、中文比等长 ASCII 贵、模型名带窗口、背景块与图片各自计入预算、图片解析进 wire |
 | `ApiClientTest` | 15 | 补全解析与 usage、content 为空时用 reasoning、Bearer 头与 JSON content type、空 Key 不发 Authorization、HTTP 错误带服务商详情与本地提示、非 JSON 错误体截断展示、传输失败转成网络错误、SSE 增量累积、reasoning 与正文分开、服务商忽略 `stream` 时退化整体解析、坏 SSE 行跳过、空流报无内容、模型列表解析与排序、缺 `/models` 不算错误、测试连接回报端点与实际发送参数 |
 | `BackupArchiveTest` | 12 | 导出/导入往返还原消息、记忆、图片与设置、非 zip 与缺清单被拒、格式版本过新被拒、越界图片条目被忽略、空备份清空本机历史、聊天记录损坏时拒绝覆盖、设置序列化全字段往返、容忍缺字段、显式的 `max_tokens = 0` 能往返、记忆解析容忍垃圾、默认文件名带后缀 |
-| `StoredMessageTest` | 12 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、**每条 prompt 消息带自己的时间戳**、纯图片消息也有时间戳、没有 `at` 的老记录不加前缀、落盘 JSON 形状是契约、坏行返回 null |
+| `StoredMessageTest` | 13 | 带图片消息 JSON 往返、纯图片消息合法、纯文字不写 `images`、无文字无图片被拒、空图片名被丢弃、`toWire` 解析并跳过缺失图片、**每条 prompt 消息带自己的时间戳**、纯图片消息也有时间戳、没有 `at` 的老记录不加前缀、落盘 JSON 形状是契约、**`id` 往返且缺失时生成**、坏行返回 null |
 | `ModelCatalogTest` | 11 | 每个预设的默认模型都命中自己的内置能力表、预设清单覆盖全部厂商、新增预设都有 Base URL 且能反查、GLM-5.3 走 `reasoning_effort` 且 1M 窗口、`glm-5` 名称启发式、GPT-5.5 只发 `reasoning_effort`、Meta Llama 经聚合平台与本地接入、旧模型仍能走通用兜底、默认模型是 `deepseek-flash`、`deepseek-flash` 可调思考深度、参数格式化保留固定小数位 |
 | `ChatLogStoreTest` | 7 | 追加/读末尾往返、只返回最新、跨 8192 字节块的中文不损坏、`readAfter` 游标、坏行不影响其余、清空、记录文件在约定路径 |
 | `CatMemoryStoreTest` | 4 | 记忆保存/加载往返、不可读文件读成空记忆而不是崩溃、文件缺失读成空记忆、记忆文件在约定路径 |
@@ -707,6 +713,9 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `CatPersonaTest` | 8 | 默认 prompt 含名字/性格/JSON 契约、性格渲染顺序与可空、补充设定、`HUMAN` 无「喵」、只有非「像朋友」的猫味建议带猫的动作、空名回退、性格存储往返、枚举反查 |
 | `CatMemoryRulesTest` | 8 | 合并只增不减、同 key 覆盖、未变化的条目保留旧时间戳（淘汰才公平）、`forget` 不动固定项、超上限淘汰最久未更新的非固定项、重命名 key 不留旧条目、超长值裁剪而不是拒绝、渲染按分类分组且空记忆渲染为空 |
 | `ChatEngineTest` | 8 | 空记录启动补开场白、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零并重补开场白、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
+| `SyncEngineTest` | 21 | 首次同步上传本地消息并由服务端分配序号、第二次不再重传服务端已有的、拉取带回另一台设备写的、**本地待推消息在拉取后不丢**、被服务端删掉的不被下一次同步复活、图片按需下载一次、设置只在变化时上传、云端设置更新时应用到本地、云端缺 apiKey 时保留本地的、API Key 只在开关打开时上云、关掉开关不会抹掉云端已有的 Key、本地错误行不上传、被拒记录逐条回报但整批不失败、413 拆批重试、只剩一条仍被拒时明确报错而不是静默丢弃、传输失败会重试、401 清掉账号密钥并要求重新配对、没有账号密钥时不发请求、`deleteAll` 清空云端但保留本地、老记录缺 `msgId` 时先固化身份再上传、切换账号时清掉游标 |
+| `SyncIntegrationTest` | 2 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关 |
+| `SyncCredentialsTest` | 6 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
 | `PromptTimeTest` | 8 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏） |
 | `SettingsRepositoryTest` | 8 | 空存储给出默认值、缺 providerId 时按 Base URL 反查、认不出的 Base URL 落到 `custom`、配置往返、角色设定往返、未知枚举名回退不抛异常、定位开关能关且保持关闭、键名是约定的那些 |
 | `MemoryJsonTest` | 7 | 接受裸 JSON / 围栏 JSON / 中文分类标签、解析失败返回 null（旧记忆因此不会被清空）、未知分类回退而不是丢条目、记忆文件形状是跨端契约、编解码往返、损坏文件返回 null、`pinned` 只在为真时写出 |
@@ -716,7 +725,7 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `IpLocationSourceTest` | 7 | 第一个给出城市的端点胜出、结果新鲜时不再请求、过期不算新鲜、全部失败保留上一次结果、不可用响应体落到下一个端点、挂起的端点超时放弃、传输失败被吞掉 |
 | `IpPlaceParseTest` | 5 | 解析 ip-api 中文响应、解析 ipapi.co 的回退字段名、解析 ipwho.is 形状、JSON null 不会变成字符串 `"null"`、失败响应与垃圾被拒绝而不是缓存 |
 | `PlaceTest` | 1 | `display` 依次回退 city → region → country |
-| `ImageSupportTest` | 3 | 数据 URL 用标准 base64 字母表且不换行、空图片也产出合法前缀、文件名是 jpeg hex 且唯一 |
+| `ImageSupportTest` | 6 | 数据 URL 用标准 base64 字母表且不换行、空图片也产出合法前缀、同一份字节总是同一个 id、不同字节给出不同 id、id 是 32 位 hex 且形状固定、不是内容哈希的一律拒绝 |
 | `ZipTest` | 10 | CRC32 标准校验值、单条目往返、多条目保持顺序与名字、空条目往返、无条目也是合法 zip、写出可复现、非 ASCII 文件名往返、非 zip 输入被拒而不是半解析、CRC 检出损坏条目、尾部注释不遮住目录 |
 
 ### 14.2 平台专有（`jvmTest` / `iosTest` / `:app`）
@@ -944,3 +953,59 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
   文件本身就是横的，显示阶段无法还原；备份里的图片按原样搬运，同样是修复前就躺倒的仍旧躺倒。
 
 
+
+
+---
+
+## 21. 云端同步
+
+把聊天记录与图片同步到用户**自己**的 Cloudflare 账号（D1 存消息与设置，R2 存图片）。
+完整的协议、数据模型与验收标准在 [SYNC_DESIGN.md](SYNC_DESIGN.md)，这里只讲清代码里
+各对象的边界与几条不变量。
+
+### 21.1 冲突模型：云端权威
+
+**云端是唯一的权威，本地是"云端快照 + 尚未推送的本地消息"。**
+拉取就是整体替换本地日志，因此代码里没有任何合并算法——没有 `origin_device` 命名空间、
+没有时间戳排序合并、没有版本向量。
+
+代价说明白：两台设备都离线各写各的时，后同步的一方排在后面（接收顺序）。
+收益是客户端没有一行合并代码，而 `replaceAll` 与备份导入用的是同一套"整体覆盖"语义。
+
+### 21.2 对象边界
+
+| 对象 | 职责 | 不该做的事 |
+| --- | --- | --- |
+| `HttpTransport` / `JsonHttpTransport` | 窄契约（JSON）与完整契约（+ 原始字节）。同步复用平台层建好的同一个实例 | 不懂协议，不做重试 |
+| `SyncApi` | 拼请求、把响应翻译成 `SyncException` 或数据模型 | 不决定"什么时候同步、失败怎么办" |
+| `SyncEngine` | 推本地的新消息与设置、拉增量、按云端快照重建本地日志、补齐缺图 | 不碰界面状态，不自己重试之外的退避策略 |
+| `SyncCoordinator`（`SyncFacade`） | 触发策略、把异常翻译成 `SyncStatus`、同步后让 `ChatEngine` 重读 | 不直接读写日志 |
+| `ChatLogStore` | 追加写（本地路径）与 `replaceAll`（拉取路径，临时文件 + 原子重命名） | 不排序、不去重 |
+| `ChatEngine` | 消息与设置落盘后经 `onContentChanged` 通知同步；`syncCompleted()` 重读日志 | 不认识"同步"这个概念 |
+
+`SyncEngine` 是唯一同时知道"本地日志"和"云端协议"的地方；把它与界面分开，
+单个 `ChatEngine` 与"带同步的 ChatEngine"之间就没有分叉。
+
+### 21.3 三条不变量
+
+1. **失败不删数据**：任何同步失败都不动本地文件。只有一次**完整成功的拉取**才会替换日志。
+2. **本地先落盘**：消息先写盘再谈上传；`onContentChanged` 在 `log.append` 之后触发。
+3. **同一时刻只有一次同步**：`SyncEngine` 内部用 `Mutex` 串行化，两次替换互相覆盖是静默的数据丢失。
+
+### 21.4 三个容易踩的点
+
+- **消息身份**：`StoredMessage.msgId` 与 `seq` 必须分开。`seq` 在同步后会被服务端重新分配，
+  拿它当身份会让同一条消息在同步前后变成两条。老记录（缺 `id`）必须在**第一次同步之前**
+  用 `migrateMissingIds()` 把 id 固化到磁盘上，否则每读一次就换一个身份，云端会越积越多。
+- **删除必须有显式墓碑**：消息按 `rev` 增量拉，所以"这次响应里没有某条消息"既可能是被删了、
+  也可能是它属于更早的一页。靠后者推断删除会把正常历史全部误删。客户端因此要定期带
+  `tombstonesOnly: true` 要一次全量墓碑（墓碑的 `rev` 早已落在游标后面，增量拉不到它）。
+- **设置的 LWW 判据是"严格更早才拒绝"**：用"不更新就拒绝"的话，两台设备的 `updatedAt`
+  完全相等时旧内容永远改不掉；客户端那边则保证自己的时间戳严格单调。
+
+### 21.5 图片
+
+`imageIdFor(bytes)` 的 SHA-256 前 32 位就是文件名、也是云端 id：本地文件名、D1 登记、
+R2 对象键三者天然一致，不需要映射表，同一张图在多台设备之间只存一份、只传一次。
+`migrateLegacyImageNames` 在首次同步前把老的随机名换成内容哈希名，并且**先重命名文件、
+再改写日志引用**——反过来会留下一批指向不存在文件的引用，等于删掉用户的图。

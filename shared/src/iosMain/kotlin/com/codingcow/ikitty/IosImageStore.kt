@@ -27,10 +27,10 @@ class IosImageStore(
 ) {
     private val cache = LruCache<String, String>(CACHE_LIMIT)
 
-    /** 保存一段 JPEG，返回本机文件名；写失败返回 null（调用方跳过这张图）。 */
+    /** 保存一段 JPEG，返回本机文件名（= 内容哈希 = 云端 image id）；写失败返回 null。 */
     suspend fun save(jpegBytes: ByteArray): String? = withContext(ioDispatcher) {
         if (jpegBytes.isEmpty()) return@withContext null
-        val name = newImageFileName()
+        val name = imageIdFor(jpegBytes)
         val target = imagesDir / name
         try {
             fileSystem.createDirectories(imagesDir)
@@ -39,6 +39,37 @@ class IosImageStore(
         } catch (_: okio.IOException) {
             // 存储空间不足等：这张图就当作没选。
             null
+        }
+    }
+
+    /** 同步拉取用：某张图片在本机是否已经有了。 */
+    fun exists(name: String): Boolean =
+        isImageId(name) && fileSystem.exists(imagesDir / name)
+
+    /** 同步拉取用：读取本机图片的原始字节。 */
+    suspend fun read(name: String): ByteArray? = withContext(ioDispatcher) {
+        if (!isImageId(name)) return@withContext null
+        val target = imagesDir / name
+        if (!fileSystem.exists(target)) return@withContext null
+        try {
+            fileSystem.read(target) { readByteArray() }
+        } catch (_: okio.IOException) {
+            null
+        }
+    }
+
+    /** 同步拉取用：把云端下来的图片原样落盘。 */
+    suspend fun write(name: String, bytes: ByteArray): Boolean = withContext(ioDispatcher) {
+        if (!isImageId(name) || bytes.isEmpty()) return@withContext false
+        try {
+            fileSystem.createDirectories(imagesDir)
+            fileSystem.write(imagesDir / name) { write(bytes) }
+            // 内容寻址下同名必然同内容，但手工放进来的文件可能碰巧重名，
+            // 清缓存是为了"显示的是磁盘上的那张"这个保证不被旧编码破坏。
+            invalidateCache()
+            true
+        } catch (_: okio.IOException) {
+            false
         }
     }
 

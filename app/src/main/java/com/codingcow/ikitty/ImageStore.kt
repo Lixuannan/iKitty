@@ -12,6 +12,7 @@ import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -69,6 +70,31 @@ class ImageStore(context: Context) {
         names.distinct().mapNotNull { name -> dataUrlBlocking(name)?.let { name to it } }.toMap()
     }
 
+    /** 同步用：这张内容寻址的图片在本机是否已经有了。 */
+    fun existsImage(imageId: String): Boolean = isImageId(imageId) && file(imageId).isFile
+
+    /** 同步用：读取一张本机图片的原始字节。 */
+    suspend fun readImage(imageId: String): ByteArray? = withContext(Dispatchers.IO) {
+        val target = file(imageId)
+        if (!isImageId(imageId) || !target.isFile) null else runCatching { target.readBytes() }.getOrNull()
+    }
+
+    /**
+     * 同步用：把云端下来的图片原样落盘。
+     *
+     * 写成功之后必须清掉编码缓存：如果本地恰好有同名的旧内容（不该发生，但手工放进来的
+     * 文件可能碰巧重名），缓存的 base64 就与磁盘不一致了。
+     */
+    suspend fun writeSyncedImage(imageId: String, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        if (!isImageId(imageId) || bytes.isEmpty()) return@withContext false
+        runCatching {
+            dir.mkdirs()
+            file(imageId).writeBytes(bytes)
+            invalidateCache()
+            true
+        }.getOrDefault(false)
+    }
+
     /**
      * 丢掉编码缓存。
      *
@@ -114,14 +140,19 @@ class ImageStore(context: Context) {
         val upright = applyExifOrientation(scaled, orientation)
         val flat = flattenAlpha(upright)
         dir.mkdirs()
-        val name = "img_${UUID.randomUUID()}.jpg"
+        // 文件名就是内容哈希（见 ImageId.kt）：这样同一张图重复选取只存一份，
+        // 而且本地名字直接就是云端的 image id，同步不需要任何映射表。
+        // 编码是确定性的（同一份像素、同样的质量参数），所以先编码到内存再算哈希。
+        val encoded = ByteArrayOutputStream().use { out ->
+            if (!flat.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)) null else out.toByteArray()
+        }
         return try {
-            val written = file(name).outputStream().use { out ->
-                flat.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-            }
-            if (written) name else {
-                file(name).delete()
+            if (encoded == null) {
                 null
+            } else {
+                val name = imageIdFor(encoded)
+                file(name).writeBytes(encoded)
+                name
             }
         } finally {
             if (flat !== upright) flat.recycle()

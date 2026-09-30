@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -61,6 +62,22 @@ class KtorTransport(private val client: HttpClient = defaultClient()) : HttpTran
         return HttpResponse(response.status.value, whole.toString())
     }
 
+    override suspend fun postBytes(
+        url: String,
+        headers: Map<String, String>,
+        contentType: String,
+        body: ByteArray
+    ): HttpResponse = client.post(url) {
+        applyHeaders(headers)
+        contentType(ContentType.parse(contentType))
+        setBody(body)
+    }.toHttpResponse()
+
+    override suspend fun getBytes(url: String, headers: Map<String, String>): HttpBytesResponse {
+        val response = client.get(url) { applyHeaders(headers) }
+        return HttpBytesResponse(response.status.value, response.readRawBytes())
+    }
+
     private fun io.ktor.client.request.HttpRequestBuilder.applyHeaders(
         headers: Map<String, String>
     ) {
@@ -80,6 +97,14 @@ class KtorTransport(private val client: HttpClient = defaultClient()) : HttpTran
 
 private suspend fun KtorResponse.toHttpResponse(): HttpResponse =
     HttpResponse(status.value, bodyAsText())
+
+/**
+ * 原始字节读取。
+ *
+ * 与 [toHttpResponse] 的 `bodyAsText()` 区分开：图片响应经过一次文本解码就损坏了，
+ * 所以下载路径只能走这个函数。
+ */
+private suspend fun KtorResponse.readRawBytes(): ByteArray = bodyAsBytes()
 
 /** iOS 侧默认客户端：Ktor Darwin 传输 + iOS 的 IO 调度器。 */
 fun iosApiClient(): ApiClient = ApiClient(KtorTransport(), Dispatchers.Default)

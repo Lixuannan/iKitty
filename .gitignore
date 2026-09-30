@@ -18,3 +18,9 @@
 
 # macOS
 .DS_Store
+
+# Cloudflare Worker（部署时的本地状态；本项目不需要 node_modules，
+# Worker 只用运行时内建能力，测试跑在 node:sqlite 上）
+/worker/node_modules
+/worker/.wrangler
+/worker/package-lock.json

@@ -40,10 +40,27 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         const val MAX_BACKUP_FILE_BYTES = 256L * 1024 * 1024
     }
 
-    private val api = okHttpApiClient()
+    /**
+     * HTTP 传输。
+     *
+     * 只建一个：聊天与同步共用同一个连接池、同一组超时与取消语义，
+     * "同步失败"与"聊天失败"的网络行为就不会出现两套。
+     */
+    private val transport = OkHttpTransport()
+    private val api = ApiClient(transport, Dispatchers.IO)
     private val images = ImageStore(app)
     private val locationSource: LocationSource = okHttpLocationSource()
     private val updateClient = UpdateClient()
+
+    /** 聊天记录的路径与存储：同步要直接读写同一个文件，所以在这里建一次、两处共用。 */
+    private val appPaths = androidAppPaths(app)
+    private val fileSystem = androidFileSystem()
+    private val chatLogStore = ChatLogStore(
+        fileSystem = fileSystem,
+        path = appPaths.chatLog,
+        ioDispatcher = Dispatchers.IO,
+        now = System::currentTimeMillis
+    )
 
     /**
      * 聊天的编排逻辑全在 `:shared` 的 [ChatEngine] 里。
@@ -54,14 +71,47 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = ChatEngine(
         api = api,
         settings = androidSettingsRepository(app),
-        log = androidChatLogStore(app),
+        log = chatLogStore,
         memoryStore = androidCatMemoryStore(app),
         extractor = MemoryExtractor(api),
         imageDataUrls = { names -> images.dataUrls(names) },
         locationSource = locationSource,
         invalidateImageCache = { images.invalidateCache() },
-        scope = viewModelScope
+        scope = viewModelScope,
+        // 消息落盘与设置保存都会走到这里；同步本身可能在门面建好之前就被通知，
+        // 所以用可空引用而不是直接捕获。
+        onContentChanged = { sync?.notifyContentChanged() }
     )
+
+    /**
+     * 云端同步。
+     *
+     * 服务地址与账号密钥都在设置页里填，不编译进代码：这是自托管应用，
+     * 每个人的 Worker 地址都不同。凭据存在**独立的** DataStore 文件里，
+     * 与用户设置分开——换账号时整块作废，不该混进 `SettingsKeys`。
+     */
+    private var sync: SyncFacade? = null
+
+    private val syncFacade: SyncFacade = createSyncFacade(
+        engine = engine,
+        transport = transport,
+        log = chatLogStore,
+        credentialsStore = DataStoreKeyValueStore(app, SYNC_DATASTORE_NAME),
+        images = AndroidSyncImages(images),
+        ioDispatcher = Dispatchers.IO,
+        scope = viewModelScope,
+        now = System::currentTimeMillis,
+        migrateImages = {
+            migrateLegacyImageNames(
+                fileSystem = fileSystem,
+                imagesDir = appPaths.imagesDir,
+                log = chatLogStore,
+                ioDispatcher = Dispatchers.IO
+            ).let { result ->
+                if (result.renamedFiles > 0) listOf("已把 ${result.renamedFiles} 张旧图片改名为内容哈希") else emptyList()
+            }
+        }
+    ).also { sync = it }
 
     /** 当前安装包的版本名，用来和 release 的 tag 比较。 */
     val appVersion: String = runCatching {
@@ -114,15 +164,84 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     val persona = engine.persona
     val locationEnabled = engine.locationEnabled
 
+    /** 同步状态，界面只读。 */
+    val syncStatus = syncFacade.status
+
     /** 相机拍照的目标文件；拍照返回后由 [finishCamera] 收编或删除。 */
     private var pendingCameraFile: File? = null
 
     init {
         engine.start()
+        // 这里**不**同步：首次同步由 [onAppForeground] 承担，而进程启动必然走到那一次
+        // （见 `MainActivity` 对 `ProcessLifecycleOwner` 的观察）。两处都触发的话，
+        // 冷启动会并排跑两轮同步，其中一轮纯属多余。
     }
 
-    fun saveSettings(newConfig: ApiConfig, newPersona: CatPersona, locationEnabled: Boolean) =
+    fun saveSettings(newConfig: ApiConfig, newPersona: CatPersona, locationEnabled: Boolean) {
         engine.saveSettings(newConfig, newPersona, locationEnabled)
+        // 设置也是同步内容的一部分：改完就排队推一次，不必等用户下次发消息。
+        sync?.notifyContentChanged()
+    }
+
+    // ---- 云端同步 ----
+
+    /** 用户在设置页点「立即同步」。 */
+    fun syncNow() {
+        viewModelScope.launch { syncFacade.syncNow() }
+    }
+
+    suspend fun syncIsConfigured(): Boolean = syncFacade.isConfigured()
+
+    suspend fun syncServiceUrl(): String = syncFacade.serviceUrl()
+
+    suspend fun syncAccountKey(): String = syncFacade.accountKey()
+
+    suspend fun syncIncludeApiKey(): Boolean = syncFacade.includeApiKey()
+
+    /**
+     * 写同步凭据并立刻同步一次。
+     *
+     * 三个动作在**同一个协程里按顺序 await**：先落盘再同步不能靠"UI 层等一会儿"来保证，
+     * 写盘是异步的，等多久都只是猜——顺序在这里才是确定的。
+     */
+    fun saveSyncCredentials(url: String, accountKey: String, includeApiKey: Boolean) {
+        viewModelScope.launch {
+            syncFacade.setServiceUrl(url)
+            syncFacade.setAccountKey(accountKey)
+            syncFacade.setIncludeApiKey(includeApiKey)
+            syncFacade.syncNow()
+        }
+    }
+
+    fun clearSyncAccountKey() {
+        viewModelScope.launch { syncFacade.clearAccountKey() }
+    }
+
+    fun setSyncIncludeApiKey(include: Boolean) {
+        viewModelScope.launch { syncFacade.setIncludeApiKey(include) }
+    }
+
+    /** 清空云端。不可撤销，调用方必须先让用户确认。 */
+    fun deleteCloudData() {
+        viewModelScope.launch { syncFacade.deleteCloudData() }
+    }
+
+    /**
+     * 应用（重新）回到前台：同步一次。
+     *
+     * 调用方是 `MainActivity` 里对 `ProcessLifecycleOwner` 的观察，覆盖两件事：
+     * **冷启动**与**从后台切回来**——另一台设备刚写的消息在这两个时刻才可能出现。
+     * 刻意不挂在 Activity 的生命周期上：旋转屏幕也会走一次 Activity 的 `ON_START`，
+     * 那种"前台"并没有真的离开过应用。
+     */
+    fun onAppForeground() {
+        viewModelScope.launch { syncFacade.syncNow() }
+    }
+
+    override fun onCleared() {
+        syncFacade.dispose()
+        super.onCleared()
+    }
 
     /** 测试连接，返回本次请求的完整结果或错误信息。 */
     suspend fun testConnection(candidate: ApiConfig): Result<TestOutcome> =

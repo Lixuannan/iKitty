@@ -24,7 +24,7 @@ class ApiClientTest {
     private class FakeTransport(
         var response: HttpResponse = HttpResponse(200, "{}"),
         var streamLines: List<String> = emptyList()
-    ) : HttpTransport {
+    ) : JsonHttpTransport {
         val requests = mutableListOf<RecordedRequest>()
 
         override suspend fun get(url: String, headers: Map<String, String>): HttpResponse {
@@ -60,7 +60,7 @@ class ApiClientTest {
         model = "deepseek-flash"
     )
 
-    private fun client(transport: HttpTransport) = ApiClient(transport, Dispatchers.Unconfined)
+    private fun client(transport: JsonHttpTransport) = ApiClient(transport, Dispatchers.Unconfined)
 
     private fun jsonCompletion(content: String, reasoning: String? = null): String {
         val reasoningField = if (reasoning == null) "" else ""","reasoning_content":"$reasoning""""
@@ -135,7 +135,7 @@ class ApiClientTest {
 
     @Test
     fun `a transport failure becomes a network error message`() = runTest {
-        val transport = object : HttpTransport {
+        val transport = object : JsonHttpTransport {
             override suspend fun get(url: String, headers: Map<String, String>) =
                 throw HttpTransportException("Connection refused")
 

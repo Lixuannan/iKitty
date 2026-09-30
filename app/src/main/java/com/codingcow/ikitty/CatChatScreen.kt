@@ -92,6 +92,7 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
     val locationEnabled by vm.locationEnabled.collectAsState()
     val updateStatus by vm.updateStatus.collectAsState()
     val backupStatus by vm.backupStatus.collectAsState()
+    val syncStatus by vm.syncStatus.collectAsState()
 
     // 输入框与待发图片用 rememberSaveable 持有：旋转屏幕会重建 Activity，
     // 只靠 remember 的话用户已经打好的文字和选好的图片会在重建时消失。
@@ -137,6 +138,19 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             appVersion = vm.appVersion,
             updateStatus = updateStatus,
             backupStatus = backupStatus,
+            syncStatus = syncStatus,
+            loadSyncSettings = {
+                SyncSettingsSnapshot(
+                    serviceUrl = vm.syncServiceUrl(),
+                    accountKey = vm.syncAccountKey(),
+                    includeApiKey = vm.syncIncludeApiKey()
+                )
+            },
+            onSaveSyncCredentials = { url, key, includeApiKey ->
+                vm.saveSyncCredentials(url, key, includeApiKey)
+            },
+            onSetSyncIncludeApiKey = { vm.setSyncIncludeApiKey(it) },
+            onDeleteCloudData = { vm.deleteCloudData() },
             onSave = { newConfig, newPersona, enableLocation ->
                 vm.saveSettings(newConfig, newPersona, enableLocation)
                 showSettings = false

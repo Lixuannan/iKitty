@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.random.Random
 import java.util.Locale
 
 private const val AUTO_FETCH_DEBOUNCE_MILLIS = 700L
@@ -73,6 +74,7 @@ fun SettingsScreen(
     appVersion: String,
     updateStatus: UpdateStatus,
     backupStatus: BackupStatus,
+    syncStatus: SyncStatus,
     onSave: (ApiConfig, CatPersona, Boolean) -> Unit,
     onTest: suspend (ApiConfig) -> Result<TestOutcome>,
     onListModels: suspend (ApiConfig) -> Result<ModelListOutcome>,
@@ -80,6 +82,10 @@ fun SettingsScreen(
     onDownloadUpdate: () -> Unit,
     onExportBackup: (Uri) -> Unit,
     onImportBackup: (Uri) -> Unit,
+    loadSyncSettings: suspend () -> SyncSettingsSnapshot,
+    onSaveSyncCredentials: (String, String, Boolean) -> Unit,
+    onSetSyncIncludeApiKey: (Boolean) -> Unit,
+    onDeleteCloudData: () -> Unit,
     onBack: () -> Unit
 ) {
     // 这里的每一项都是用户已经输入/选择、但还没点「保存」的草稿，用 rememberSaveable 跨旋转保留，
@@ -578,6 +584,18 @@ fun SettingsScreen(
         HorizontalDivider()
         Spacer(Modifier.height(20.dp))
 
+        SyncSection(
+            status = syncStatus,
+            load = loadSyncSettings,
+            onSaveCredentials = onSaveSyncCredentials,
+            onSetIncludeApiKey = onSetSyncIncludeApiKey,
+            onDeleteCloudData = onDeleteCloudData
+        )
+
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(20.dp))
+
         UpdateSection(
             currentVersion = appVersion,
             status = updateStatus,
@@ -982,6 +1000,193 @@ private fun <T> MultiChipRow(
         }
     }
 }
+
+/**
+ * 同步设置页里那几个**不在聊天状态快照里**的值。
+ *
+ * 单独一个类型而不是塞进 `ChatUiState`：同步凭据不是聊天状态，它们只在设置页打开时读一次，
+ * 放进快照会让每次聊天状态更新都多带三个用不到的字段。
+ */
+data class SyncSettingsSnapshot(
+    val serviceUrl: String,
+    val accountKey: String,
+    val includeApiKey: Boolean
+)
+
+/**
+ * 「云端同步」区。
+ *
+ * 服务地址与账号密钥都由用户填写：这是自托管应用，每个人的 Worker 地址都不同，
+ * 编译期写死某个人的域名会让别人没法用。
+ */
+@Composable
+private fun SyncSection(
+    status: SyncStatus,
+    load: suspend () -> SyncSettingsSnapshot,
+    /** 写地址与密钥并立刻同步一次；由调用方保证"先写后同步"的顺序。 */
+    onSaveCredentials: (url: String, accountKey: String, includeApiKey: Boolean) -> Unit,
+    onSetIncludeApiKey: (Boolean) -> Unit,
+    onDeleteCloudData: () -> Unit
+) {
+    var serviceUrl by rememberSaveable { mutableStateOf("") }
+    var accountKey by rememberSaveable { mutableStateOf("") }
+    var includeApiKey by rememberSaveable { mutableStateOf(false) }
+    var showKey by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    // 只读一次：这些值在设置页里由用户自己编辑，每次状态变化都重填会把输入冲掉。
+    LaunchedEffect(Unit) {
+        val snapshot = load()
+        serviceUrl = snapshot.serviceUrl
+        accountKey = snapshot.accountKey
+        includeApiKey = snapshot.includeApiKey
+    }
+
+    // 正在输入的草稿优先：用户一边改一边就该看到警告，而不是等保存之后。
+    val keyStrength = SyncKeyStrength.of(accountKey)
+
+    SectionTitle("云端同步")
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = serviceUrl,
+            onValueChange = { serviceUrl = it },
+            label = { Text("同步服务地址") },
+            placeholder = { Text("https://ikitty-sync.xxx.workers.dev") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = accountKey,
+            onValueChange = { accountKey = it },
+            label = { Text("账号密钥") },
+            singleLine = true,
+            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "隐藏" else "显示") }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // 警告要可执行：只提示"密钥太短"而不给一条一步就能变强的路，用户只会去编一个更长的弱串。
+        TextButton(onClick = { accountKey = generateAccountKey() }) {
+            Text("生成随机密钥")
+        }
+
+        // 短密钥只有在被离线枚举时才会出问题，而那正是用户最难自己意识到的事：
+        // 所以这里明说后果，而不是只提示"建议更长"。
+        if (keyStrength == SyncKeyStrength.TOO_SHORT || keyStrength == SyncKeyStrength.WEAK) {
+            Text(
+                text = if (keyStrength == SyncKeyStrength.TOO_SHORT) {
+                    "密钥太短：云端数据的账号 id 就是它的哈希，短串可以被离线枚举出来——" +
+                        "别人能读到你的聊天记录和同步上去的 API Key。建议点「生成随机密钥」。"
+                } else {
+                    "这个密钥靠别人没想到去猜，而不是靠强度。想更稳就点「生成随机密钥」。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (keyStrength == SyncKeyStrength.TOO_SHORT) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("把 API Key 一并同步到云端", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "打开后 Key 会以明文存放在你的 D1 数据库里",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = includeApiKey,
+                onCheckedChange = {
+                    includeApiKey = it
+                    onSetIncludeApiKey(it)
+                }
+            )
+        }
+
+        SyncStatusText(status)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                enabled = status !is SyncStatus.Working,
+                // 写凭据与同步交给同一个调用：在 UI 层"先写、睡一会儿、再同步"是不可靠的
+                // （写盘是异步的，睡多久都只是猜），由调用方按顺序 await 才是确定的。
+                onClick = { onSaveCredentials(serviceUrl, accountKey, includeApiKey) }
+            ) {
+                Text("立即同步")
+            }
+            OutlinedButton(
+                enabled = serviceUrl.isNotBlank() || accountKey.isNotBlank(),
+                onClick = { confirmDelete = true }
+            ) {
+                Text("清空云端数据")
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("清空云端数据？") },
+            text = {
+                Text(
+                    "云端的历史记录会被删除且无法恢复（没有账号找回）。本机记录不受影响，" +
+                        "但下次同步会把本机现有的消息重新上传。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDeleteCloudData()
+                }) {
+                    Text("清空云端", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SyncStatusText(status: SyncStatus) {
+    val text = when (status) {
+        is SyncStatus.Disabled -> "还没有配置同步服务"
+        is SyncStatus.Idle -> ""
+        is SyncStatus.Working -> status.label
+        is SyncStatus.Done -> status.message
+        is SyncStatus.Failed -> status.message
+        is SyncStatus.NeedsAccountKey -> status.message
+    }
+    if (text.isEmpty()) return
+    val isError = status is SyncStatus.Failed || status is SyncStatus.NeedsAccountKey
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/**
+ * 生成一个高熵的账号密钥。
+ *
+ * 32 字节 → base64url 43 个字符。**不要**在这里做任何"让它好记"的加工（缩短、去掉连字符、
+ * 换成单词表）：这一步存在的唯一理由就是让密钥不可枚举。
+ */
+private fun generateAccountKey(): String =
+    "ikitty-" + kotlin.io.encoding.Base64.UrlSafe.encode(Random.nextBytes(32))
 
 /** 分组小标题，和 [SectionTitle] 区分开，用于段内的字段名。 */
 @Composable

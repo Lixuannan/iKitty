@@ -1,0 +1,32 @@
+# iKitty 云端同步 Worker（Cloudflare Workers + D1 + R2）
+#
+# 部署：
+#   npx wrangler d1 create ikitty-sync      # 把输出的 database_id 填到下面
+#   npx wrangler r2 bucket create ikitty-images
+#   npx wrangler deploy
+#
+# 表结构不需要单独 migrate：Worker 在首次带鉴权的请求上会自动建表（见 worker/src/index.js）。
+
+name = "ikitty-sync"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ikitty-sync"
+# 运行 `npx wrangler d1 create ikitty-sync` 后把 database_id 填到这里。
+database_id = "fd26369f-51e3-4795-bc19-63ce4bb1057d"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "ikitty-images"
+
+[vars]
+# 每个账号每分钟允许的请求数；触发后返回 429 并带 Retry-After。
+rate_limit_per_minute = "60"
+# 单次请求体上限（字节）。超过返回 413，客户端对半拆批重试。
+max_body_bytes = "1048576"
+# 单批消息条数上限。
+max_batch_messages = "500"
+# 单张图片上限（归一化后的 JPEG 约 200 KB，2 MB 已远超正常值）。
+max_image_bytes = "2097152"

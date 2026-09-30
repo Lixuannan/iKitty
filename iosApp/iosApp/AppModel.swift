@@ -120,6 +120,60 @@ final class AppModel: ObservableObject {
         )
     }
 
+    // MARK: - 同步
+
+    /// 应用回到前台时同步一次。
+    ///
+    /// 没有后台调度（那需要 `BGTaskScheduler` 与 Info.plist 配置），
+    /// 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
+    func onForeground() {
+        environment.onForeground()
+    }
+
+    func syncNow() {
+        environment.syncNow()
+    }
+
+    func syncIsConfigured() async -> Bool {
+        // Kotlin 的 suspend 函数在 Swift 里返回的是装箱的 `KotlinBoolean`，
+        // 不能直接当 `Bool` 用（编译期就会报错，不会退化到运行期）。
+        ((try? await environment.syncIsConfigured())?.boolValue) ?? false
+    }
+
+    func syncServiceUrl() async -> String {
+        (try? await environment.syncServiceUrl()) ?? ""
+    }
+
+    func syncIncludeApiKey() async -> Bool {
+        ((try? await environment.syncIncludeApiKey())?.boolValue) ?? false
+    }
+
+    /// 回填密钥输入框：`SecureField` 不回填的话，用户每次进设置页都看到空白。
+    func syncAccountKey() async -> String {
+        (try? await environment.syncAccountKey()) ?? ""
+    }
+
+    func setSyncServiceUrl(_ url: String) {
+        environment.setSyncServiceUrl(url: url)
+    }
+
+    func setSyncAccountKey(_ key: String) {
+        environment.setSyncAccountKey(key: key)
+    }
+
+    func clearSyncAccountKey() {
+        environment.clearSyncAccountKey()
+    }
+
+    func setSyncIncludeApiKey(_ include: Bool) {
+        environment.setSyncIncludeApiKey(include: include)
+    }
+
+    /// 清空云端。不可撤销，调用方必须先让用户确认。
+    func deleteCloudData() {
+        environment.deleteCloudData()
+    }
+
     // MARK: - 图片
 
     /// 归一化并保存一张刚选中的图片。

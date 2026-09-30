@@ -42,7 +42,7 @@ class ChatEngineTest {
         var streamLines: List<String> = emptyList(),
         /** 流出这么多行之后抛网络错误；-1 表示不失败。用来验证"半截回复"的处理。 */
         var failAfterLines: Int = -1
-    ) : HttpTransport {
+    ) : JsonHttpTransport {
         override suspend fun get(url: String, headers: Map<String, String>) = response
 
         override suspend fun postJson(

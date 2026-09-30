@@ -1,15 +1,16 @@
 package com.codingcow.ikitty
 
-import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
  * 图片的共享约定。
  *
- * 数据 URL 是请求体的一部分，所以拼法必须逐字节固定；文件名只要求随机且形状正确。
+ * 数据 URL 是请求体的一部分，所以拼法必须逐字节固定；文件名由内容哈希决定，
+ * 所以形状与"内容相同则名字相同"都必须稳定——云端按它去重。
  */
 class ImageSupportTest {
 
@@ -27,16 +28,35 @@ class ImageSupportTest {
     }
 
     @Test
-    fun `file names are jpeg hex and unique`() {
-        val random = Random(1234)
-        val names = (1..50).map { newImageFileName(random) }
-        names.forEach { name ->
-            assertTrue(name.startsWith("img_"), name)
-            assertTrue(name.endsWith(".jpg"), name)
-            assertEquals(4 + 16 + 4, name.length, name)
-            assertTrue(name.substring(4, 20).all { it in "0123456789abcdef" }, name)
-        }
-        // 撞名会让不同图片互相覆盖，所以必须基本不可能重复。
-        assertEquals(names.size, names.toSet().size)
+    fun `an image id is a 32 hex content hash with the expected shape`() {
+        val id = imageIdFor(byteArrayOf(0, 1, 2, 3))
+        assertTrue(id.startsWith("img_"), id)
+        assertTrue(id.endsWith(".jpg"), id)
+        assertEquals(40, id.length, id)
+        assertTrue(id.substring(4, 36).all { it in "0123456789abcdef" }, id)
+        assertTrue(isImageId(id))
+    }
+
+    @Test
+    fun `the same bytes always produce the same id`() {
+        // 内容寻址的前提：同一张图在两台设备上必须得到同一个名字，否则去重就失效了。
+        val bytes = "同一张图".encodeToByteArray()
+        assertEquals(imageIdFor(bytes), imageIdFor(bytes.copyOf()))
+    }
+
+    @Test
+    fun `different bytes produce different ids`() {
+        assertNotEquals(imageIdFor(byteArrayOf(1)), imageIdFor(byteArrayOf(2)))
+    }
+
+    @Test
+    fun `anything that is not a content hash is rejected`() {
+        // 这些名字可能来自旧版本、手工放进来的文件，或者云端清单（外部输入），
+        // 一律不能当作本地路径或上传标识使用。
+        assertFalse(isImageId("img_abc.jpg"))
+        assertFalse(isImageId("img_" + "g".repeat(32) + ".jpg"))
+        assertFalse(isImageId("../../etc/passwd"))
+        assertFalse(isImageId("img_" + "a".repeat(33) + ".jpg"))
+        assertFalse(isImageId(""))
     }
 }
