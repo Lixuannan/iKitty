@@ -9,7 +9,7 @@ structured long-term memory, and a token-budgeted context window, then sends it 
 OpenAI-compatible endpoint. Chat history, images, memory, and settings stay on the device. Apart from the
 model service you configure and the optional IP geolocation, nothing goes through a third-party server.
 
-- App name: **iKitty** · Version: **1.1.1** · Package: `com.codingcow.ikitty`
+- App name: **iKitty** · Version: **1.1.3** · Package: `com.codingcow.ikitty`
 - Repository: <https://github.com/Lixuannan/iKitty>
 
 ---
@@ -35,6 +35,9 @@ model service you configure and the optional IP geolocation, nothing goes throug
   look-around, tail-wag, bounce, shake, and yawn. The model can select them via JSON, or answer as plain text.
 - **Local chat history**: append-only JSONL that survives restarts; reading the last N entries does not
   slow down as history grows.
+- **Copy messages**: select any part of a bubble's text to copy it, or long-press the bubble to copy the
+  whole message. The greeting is just UI text for an empty chat — not a message, so it is never persisted
+  or synced and cannot pile up in the cloud.
 - **Structured long-term memory**: periodically distills durable facts into category + key + value
   entries that are injected into the system prompt. Additive by default, and fully viewable and editable.
 - **Token-budgeted context**: assembled newest-first within the model's context window, never splitting a
@@ -46,8 +49,11 @@ model service you configure and the optional IP geolocation, nothing goes throug
 - **Full backup and restore**: the settings screen packs chat history, images, memory, and settings into a
   single `.ikitty` file, and restores them in one step after a reinstall or on a new device.
 - **Optional cloud sync**: fill in the address of your own Cloudflare Worker plus an account key and your
-  chat history and images sync across devices (stored in your own D1 and R2). **Off by default** — leave it
-  empty and the app behaves exactly like a local-only app.
+  chat history, images and **all settings** (persona name/traits/speech style/notes, model service and
+  parameters, location switch; the API key is not synced unless you opt in) sync across devices (stored in
+  your own D1 and R2). **Off by default** — leave it empty and the app behaves exactly like a local-only
+  app. A brand-new device **adopts the settings already in the cloud** on its first sync instead of
+  overwriting them with its defaults.
 - **No backend required** (cloud sync uses a serverless Cloudflare Worker; see
   [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md)).
 
@@ -177,7 +183,7 @@ changing the system clock or an NTP correction can move timestamps backwards.
 - The input budget is what remains after reserving room for the reply and an estimation margin; the
   estimator deliberately overestimates.
 - Turns are packed newest-first as whole **turns**, never splitting a question from its answer. A request
-  never begins with an assistant message (so the greeting never enters the request), and the most recent
+  never begins with an assistant message, and the most recent
   turn is always kept.
 - Omitted older messages are still on the device, just no longer sent; the memory screen shows how many
   were included last time.
@@ -287,13 +293,13 @@ and restores from such a file in one step:
 | Exported backup | Chosen by the user (SAF) | `.ikitty` file, **contains the API key**, keep it somewhere trusted |
 | Sync credentials | DataStore file `sync_credentials` (Android) / `com.codingcow.ikitty.sync` suite (iOS) | Worker URL, account key, sync cursors; kept apart from settings |
 | Downloaded update | `cacheDir/updates/*.apk` | Transient file, reclaimed by the system after installation |
-| **Cloud** chat history and images | Your own Cloudflare D1 / R2 | **Only exists after you turn cloud sync on** |
+| **Cloud** chat history, images and settings | Your own Cloudflare D1 / R2 | **Only exists after you turn cloud sync on**; settings include the persona and the model service, the API key is not uploaded by default |
 
 - The app requests two permissions: `INTERNET` and `REQUEST_INSTALL_PACKAGES`; the latter is used only to
   hand the official update package to the system installer.
 - There is no backend; chat content goes only to the model service you configured. **Only when you turn
-  cloud sync on** do chat history and images go to the Worker you deployed, stored in your own Cloudflare
-  account.
+  cloud sync on** do chat history, images and settings go to the Worker you deployed, stored in your own
+  Cloudflare account.
 - Cloud sync is off by default. You choose the account key yourself (the server only requires 5+
   characters; the settings screen warns and offers a "generate random key" button); the server stores only
   its SHA-256, so there is **no recovery** — losing the key means losing access to that cloud copy (local

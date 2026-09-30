@@ -202,8 +202,9 @@ private class DefaultSyncFacade(
         currentApiKey = { engine.config.value.apiKey },
         applySettings = { settings, _ ->
             if (settings != null) {
+                // 一次写入：`saveSettings` 会同步更新内存状态，所以云端设置立刻对界面生效，
+                // 不需要（也不能）再"从存储重读一遍"——那会读到还没写完的旧值。
                 engine.saveSettings(settings.config, settings.persona, settings.locationEnabled)
-                engine.syncAppliedSettings()
             }
         },
         migrateImages = migrateImages,
@@ -355,6 +356,10 @@ private class DefaultSyncFacade(
      *
      * 不含 API Key：Key 变不变由同步开关决定是否上行，把它算进指纹会导致"只改了 Key"
      * 触发一次设置推送，而开关关着时那次推送只是写一遍同样不含 Key 的内容。
+     *
+     * 开关本身也不进指纹：**打开开关**这一动作由 `SyncEngine` 用"云端那份还有没有 Key"
+     * 单独判断（见 `SyncCredentialStore.cloudSettingsHasApiKey`），这样"只把开关打开"
+     * 也能把那把一直没上过云的 Key 推上去，同时**关闭**开关不会因此触发一次抹掉云端 Key 的推送。
      */
     private fun settingsFingerprint(
         config: ApiConfig,

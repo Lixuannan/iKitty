@@ -6,7 +6,7 @@ This is iKitty's architecture map and reference manual: module contracts, data f
 extension points, and testing strategy. It is aimed at anyone modifying or extending the code. Usage,
 configuration steps, and privacy notes live in the [README](../README_EN.md).
 
-- Version: 1.1.1 · Package: `com.codingcow.ikitty`
+- Version: 1.1.3 · Package: `com.codingcow.ikitty`
 - Sources: Android `app/src/main/java/com/codingcow/ikitty/` · shared `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - Stack: Kotlin 2.4.20, Jetpack Compose (Material3), Kotlin Multiplatform (`:shared`, with iOS targets), OkHttp 4.12.0 / Ktor 3.6.0, okio 3.18.2, kotlinx-serialization 1.11.0
 - Build: AGP 8.7.3, Gradle 9.7.0, Java 17 bytecode target, minSdk 26 / targetSdk 35, iOS 17+ (Xcode 27.0)
@@ -147,7 +147,8 @@ Every state flow exposed by `CatChatViewModel`:
 
 Clearing chat history resets `nextSeq` to 1, clears `contextPlan`, and resets the memory's
 `lastExtractedSeq` to zero; otherwise new `seq` values would look "already extracted" to the old cursor.
-An empty conversation gets a greeting.
+No message is added for an empty conversation: the greeting is rendered by the UI when the chat is
+empty (it is not a message, so it is never persisted or synced).
 
 ---
 
@@ -216,7 +217,8 @@ cat-action rule: "like a friend" only says "do not overuse kaomoji" and pushes n
 "occasional meow" and "strong cat flavor" explicitly suggest describing cat actions in the reply. The
 `emotion` and `animation` values in the JSON contract are exactly the inputs to the `CatReply` lookup tables.
 
-`welcome()` varies with flavor: the `HUMAN` greeting contains no "meow", the others do. `displayName()`
+`welcome()` varies with flavor: the `HUMAN` greeting contains no "meow", the others do. It is **display
+text**: not persisted, not synced, not part of the context. `displayName()`
 falls back to the default name when the name is blank, and every UI location reads the name through it.
 
 Persistence encoding: traits are written as comma-separated enum names in declaration order
@@ -397,7 +399,7 @@ produce a negative budget.
    server report an over-long context than to send a request with only a system message), then
    `while (used + costs[index] + ambientTokens <= budget - systemTokens)` continues backwards. The
    background block is charged against the budget because it really is sent.
-6. `dropWhile { role != user }` removes a leading assistant message (such as the greeting), so a request
+6. `dropWhile { role != user }` removes a leading assistant message if history contains one, so a request
    never begins with an assistant message.
 7. The output is `[system] + kept + ["right now" system?]`:
    - each kept message goes through `toWire(timeZone, imageUrl)` — the content becomes
@@ -413,7 +415,7 @@ moment the message is written, so the same history is byte-identical every turn 
 prompt prefix still hits. "Now" and "how long ago" change every turn; putting them in history would
 invalidate that prefix, so they appear only in the trailing system message.
 
-`droppedMessages` is "sendable messages − messages actually sent", so a dropped greeting counts.
+`droppedMessages` is "sendable messages − messages actually sent", so a dropped leading assistant counts.
 
 ---
 
@@ -764,7 +766,7 @@ cd worker && node test/local-check.mjs   # 16 (sync server)
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | The sync server: real SQL on `node:sqlite` |
 
-### 14.1 `commonTest` (228)
+### 14.1 `commonTest` (236)
 
 | Test file | Cases | Contracts covered |
 | --- | --- | --- |
@@ -779,12 +781,14 @@ cd worker && node test/local-check.mjs   # 16 (sync server)
 | `LruCacheTest` | 9 | Store/read round trip, missing key returning null, the limit enforced, `getAndTouch` keeping an entry alive, a plain `get` not changing eviction order, overwriting not growing the cache, clear, non-positive limits rejected, entries surviving until the limit is actually reached |
 | `CatPersonaTest` | 8 | Default prompt carries name/traits/JSON contract, trait render order and empty set, extra notes, `HUMAN` has no "meow", only non-"like a friend" flavors suggesting cat actions, blank-name fallback, trait storage round trip, enum lookup |
 | `CatMemoryRulesTest` | 8 | Additive merge, same-key overwrite, an unchanged fact keeping its timestamp (so eviction stays fair), `forget` leaving pinned alone, over-cap eviction of the least recently updated unpinned fact, key rename leaving no old entry, over-long values clamped rather than rejected, rendering grouped by category and empty for no facts |
-| `ChatEngineTest` | 8 | An empty log getting a welcome message on start, a send appending the user message and the streamed reply, a failing stream keeping the partial reply and adding an error line, a blank send ignored, clearing restarting the sequence and re-adding the welcome, input changes driving `LISTENING`, a failed memory extraction recording the error without advancing the cursor, a successful one merging facts and advancing the cursor |
+| `ChatEngineTest` | 8 | An empty log **not** getting a welcome message on start (the greeting is a UI state, not a message), a send appending the user message and the streamed reply, a failing stream keeping the partial reply and adding an error line, a blank send ignored, clearing restarting the sequence, input changes driving `LISTENING`, a failed memory extraction recording the error without advancing the cursor, a successful one merging facts and advancing the cursor |
 | `SyncEngineTest` | 21 | The first sync uploading local messages and the server assigning sequence numbers, a second sync not re-uploading what the server already has, a pull bringing down what another device wrote, **local pending messages surviving a pull**, a message deleted on the server not resurrected, images downloaded once on demand, settings uploaded only when they change, newer cloud settings applied locally, cloud settings without an api key keeping the local one, the api key going to the cloud only when the switch is on, turning the switch off not wiping the key already in the cloud, local error notices never uploaded, rejected records reported per record without failing the batch, a 413 split and retried, a single undeliverable message failing loudly instead of being dropped silently, a transient failure retried, a 401 clearing the account key and asking the user to re-pair, nothing sent without an account key, `deleteAll` clearing the cloud but keeping local data, legacy records without a `msgId` getting a stable identity before uploading, switching accounts forgetting the cursor |
-| `SyncIntegrationTest` | 3 | Two real `ChatEngine`s converging on one record through the same fake server; settings and the api key following the switch; toggling the api-key switch not starting a sync on its own |
+| `SyncIntegrationTest` | 5 | Two real `ChatEngine`s converging on one record through the same fake server; settings and the api key following the switch; toggling the api-key switch not starting a sync on its own; **a brand-new device with a later wall clock adopting cloud settings instead of overwriting them with defaults**; **turning the api-key switch on uploading a key the cloud did not have** |
+| `SyncSettingsCodecTest` | 3 | The cloud settings payload carrying the persona's name/traits/speech style/flavor/notes and round-tripping them, the payload covering every `SettingsKeys` entry (a new setting missing from the codec fails here), turning the api key off omitting the field entirely |
 | `SyncFlagTest` | 2 | The sync api-key switch readable from both storage representations (`true` as a boolean on iOS, as a string literal on Android) |
 | `SyncCredentialsTest` | 9 | The device id generated once and then stable, the stored key trimmed and readable, clearing the key keeping the cursor, switching the key forgetting everything tied to the old cloud space, the pushed-id set round tripping with a cap, key strength following the documented thresholds |
 | `PromptTimeTest` | 8 | `formatMoment` byte-identical to the old `SimpleDateFormat` output, following the requested timezone, respecting daylight-saving transitions, zero padding, `formatElapsed` coarseness and boundaries, **the message stamp sharing its source with `formatMoment`**, the stamp stable for the same instant (so the cached prefix survives) |
+| `SettingsPersistenceTest` | 3 | Saving settings updating the engine's in-memory state even over a store that emits only once (the iOS `NSUserDefaults` shape), partial saves composing instead of clobbering earlier fields, one save writing the whole snapshot in a single put |
 | `SettingsRepositoryTest` | 8 | An empty store yielding the built-in defaults, a missing providerId inferred from the Base URL, an unknown Base URL falling back to `custom`, config round trip, persona round trip, an unrecognised enum name falling back instead of throwing, location turning off and staying off, settings written under the canonical key names |
 | `MemoryJsonTest` | 7 | Plain JSON, fenced JSON and Chinese category labels accepted; parse failure returning null (so old memory survives); unknown category falling back rather than dropping the fact; the memory file shape as the cross-platform contract; encode/parse round trip; a corrupt file returning null; `pinned` written only when true |
 | `MultimodalPayloadTest` | 7 | Plain text keeping a string content with no `stream`, images becoming `image_url` content parts, image-only writing no empty text part, streaming only adding `stream`, sent params still following the capability table, numeric precision keeping the old wire format (`0.8`, not `0.800000011920929`), an unset `max_tokens` never reaching the wire |
@@ -802,7 +806,7 @@ cd worker && node test/local-check.mjs   # 16 (sync server)
 | --- | --- | --- |
 | `ChatEngineIntegrationTest` (`jvmTest`) | 5 | Starts a **real** `HttpServer` and drives the whole path through the production OkHttp transport: real socket → SSE → persistence; a provider ignoring `stream` falling back to whole-body parsing; an HTTP error becoming a local error line; the request body following the wire contract (with timestamps on history); an attached image reaching the wire as an `image_url` data URL |
 | `ZipInteropTest` (`jvmTest`) | 5 | A DEFLATE archive written by `java.util.zip` is readable, an archive written here is readable by `java.util.zip`, a large highly compressible entry surviving DEFLATE, a comment on a DEFLATE archive tolerated, STORED and DEFLATE entries mixed |
-| `IosPlatformTest` (`iosTest`) | 10 | iOS paths creating the root directory with the canonical layout, settings round-tripping through NSUserDefaults, an untouched store yielding the built-in defaults, the image store writing a file and returning a data URL, empty bytes rejected, invalidating the cache forcing a re-read, sync credentials written synchronously and read back through the facade's store, clearing the key unbinding the cloud space but keeping the address, switching the key resetting the cloud-space state while a same-key write leaves it alone, reads seeing values written straight to NSUserDefaults |
+| `IosPlatformTest` (`iosTest`) | 11 | iOS paths creating the root directory with the canonical layout, settings round-tripping through NSUserDefaults, an untouched store yielding the built-in defaults, the image store writing a file and returning a data URL, empty bytes rejected, invalidating the cache forcing a re-read, sync credentials written synchronously and read back through the facade's store, clearing the key unbinding the cloud space but keeping the address, switching the key resetting the cloud-space state while a same-key write leaves it alone, reads seeing values written straight to NSUserDefaults, a write re-emitting the snapshot |
 | `UpdateModelsTest` (`:app`) | 9 | Release JSON parsing version and APK URL, preferring the version-named APK among several, no APK returning null, prerelease not treated as an update, non-JSON returning null, missing tag returning null, version comparison newer/equal/older, a prerelease on the same baseline being older, `v` prefix normalization |
 | `ImageViewerTest` (`:app`) | 3 | Pan ignored while not zoomed, pan clamped to the zoomed overflow, clamping growing with the zoom level |
 
@@ -842,7 +846,7 @@ logic such as `UpdateModels`.
   `api.github.com` and downloads the APK, reporting no local information.
 - **Error messages**: at most the first 200 characters of an error body are echoed, so a whole gateway HTML
   page does not end up in the UI.
-- **Context isolation**: `localError` messages and the greeting never enter a request, and `StoredMessage`
+- **Context isolation**: `localError` messages never enter a request, and `StoredMessage`
   metadata never enters the request body.
 
 ---
@@ -1029,7 +1033,7 @@ Defences:
 - `reloadFromDisk()` re-reads DataStore, the memory file, and the last `LOAD_LIMIT` messages, resets
   `nextSeq`, clears `contextPlan`, and calls `images.invalidateCache()` — archived images overwrite by name
   and the cache may still hold the old encoding;
-- An empty imported conversation gets a greeting, otherwise the screen would be blank.
+- An empty imported conversation shows the greeting in the UI (it is not a message).
 
 ### 19.5 UI (`SettingsScreen.BackupSection`)
 

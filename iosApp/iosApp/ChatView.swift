@@ -1,6 +1,7 @@
 import Combine
 import PhotosUI
 import SwiftUI
+import UIKit
 import Shared
 
 struct ChatView: View {
@@ -73,6 +74,12 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    // 开场白不是一条消息：只在一条记录都没有时渲染，不落盘、不上云，
+                    // 所以不会像以前那样每台新设备都在云端堆一条重复的问候。
+                    if messages.isEmpty {
+                        MessageBubble(text: greeting, isUser: false, isError: false)
+                            .id(Self.greetingId)
+                    }
                     ForEach(Array(messages.enumerated()), id: \.element.seq) { index, message in
                         MessageBubble(
                             message: message,
@@ -99,6 +106,9 @@ struct ChatView: View {
     }
 
     private var messages: [StoredMessage] { model.state?.messages ?? [] }
+
+    /// 空会话的开场白，取自 `:shared` 的 `CatPersona.welcome()`：改名字/猫味浓度后立刻跟着变。
+    private var greeting: String { model.state?.persona.welcome() ?? "" }
 
     /// 这一条要不要显示时间，以及显示成什么，都取自 `:shared`——
     /// 分组规则（首条 / 换说话人 / 间隔 ≥5 分钟）与格式化因此和 Android 完全一致。
@@ -219,6 +229,7 @@ struct ChatView: View {
     }
 
     private static let streamingId = Int64.min
+    private static let greetingId = Int64.min + 1
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.15)) {
@@ -279,6 +290,7 @@ private struct MessageBubble: View {
                 }
                 if !text.isEmpty {
                     Text(text)
+                        // 允许选中消息里的任意一段文字（系统自带的选择与「复制」）。
                         .textSelection(.enabled)
                         .foregroundStyle(textColor)
                         .padding(.horizontal, 14)
@@ -287,6 +299,14 @@ private struct MessageBubble: View {
                         // 猫猫气泡用极淡的投影分出边界，不做重描边和重投影：
                         // 层次感留给镀铬层的玻璃材质，避免两套深度语言打架。
                         .shadow(color: .black.opacity(isUser ? 0 : 0.04), radius: 2, y: 1)
+                        // 长按气泡整条复制，不用先选中再复制。
+                        .contextMenu {
+                            Button {
+                                UIPasteboard.general.string = text
+                            } label: {
+                                Label("复制", systemImage: "doc.on.doc")
+                            }
+                        }
                 }
             }
             if !isUser { Spacer(minLength: 40) }

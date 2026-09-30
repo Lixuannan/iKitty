@@ -77,6 +77,9 @@ class ChatEngine(
     private val _locationEnabled = MutableStateFlow(true)
     val locationEnabled: StateFlow<Boolean> = _locationEnabled.asStateFlow()
 
+    /** 首次加载是否完成；见公开的 [ready]。 */
+    private val _ready = MutableStateFlow(false)
+
     private var moodResetJob: Job? = null
     private var animationJob: Job? = null
     private var nextSeq = 1L
@@ -107,14 +110,38 @@ class ChatEngine(
             _persona.value = settings.persona.first()
             launch { settings.persona.collect { _persona.value = it } }
             loadHistory()
+            _ready.value = true
         }
     }
 
+    /**
+     * [start] 的首次加载（设置 + 历史）是否已经完成。
+     *
+     * 界面不需要等它：它只会让"默认名字/空气泡"多闪一下。它是给测试与"启动即可编程调用"的
+     * 调用方用的——在此之前发消息，可能与 [loadHistory] 的赋值交错。
+     */
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
+    /**
+     * 保存设置：**先更新内存，再异步落盘**。
+     *
+     * 内存状态必须在函数返回时就等于新值，不能等存储那条路回来再更新。理由有两条，
+     * 都曾经在 iOS 上造成"设置保存不进去"：
+     *
+     * 1. 界面的其他入口（以及紧接着的下一次 [saveSettings]）读的是 [config] / [persona] /
+     *    [locationEnabled]。如果内存要等存储重发才更新，那么"读-改-写"的调用方（设置页依次
+     *    保存配置、角色、定位）会拿着**旧快照**把前一次刚写的字段覆盖回去。
+     * 2. "存储写入后会重发"是**平台相关的**：Android 的 DataStore 会，iOS 的 `NSUserDefaults`
+     *    不会。把保存的正确性建立在这条差异上，等于让同一份逻辑在两个平台上行为不同。
+     *
+     * 落盘走 [SettingsRepository.save] 的单次原子写入，三块设置一起进存储。
+     */
     fun saveSettings(newConfig: ApiConfig, newPersona: CatPersona, locationEnabled: Boolean) {
+        _config.value = newConfig
+        _persona.value = newPersona
+        _locationEnabled.value = locationEnabled
         scope.launch {
-            settings.save(newConfig)
-            settings.save(newPersona)
-            settings.saveLocationEnabled(locationEnabled)
+            settings.save(newConfig, newPersona, locationEnabled)
             // 保存在协程里，通知也放进来：否则界面刚显示"已保存"、同步却还没看到新设置。
             notifyContentChanged()
         }
@@ -131,12 +158,13 @@ class ChatEngine(
     /**
      * 备份导入之后重新读盘。
      *
-     * 这里再抄一遍是为了让界面立刻反映备份里的内容。
+     * **不重读设置**：调用方（备份导入、设置保存）都已经通过 [saveSettings] 同步更新过内存状态，
+     * 而落盘是异步的。这里再读一次存储，很可能读到还没写完的旧值，把刚恢复的设置又冲回去——
+     * iOS 上尤其明显（`NSUserDefaults` 的写入不走同一条续体）。设置的部分由 [saveSettings] 负责。
+     *
+     * 这里只重读备份真正会整体替换的东西：记忆与聊天记录。
      */
     suspend fun reloadFromDisk() {
-        _config.value = settings.config.first()
-        _persona.value = settings.persona.first()
-        _locationEnabled.value = settings.locationEnabled.first()
         _memory.value = memoryStore.load()
         _memoryStatus.value = MemoryStatus()
         _contextPlan.value = null
@@ -146,8 +174,6 @@ class ChatEngine(
         val loaded = log.tail(LOAD_LIMIT)
         _messages.value = loaded
         nextSeq = (loaded.maxOfOrNull { it.seq } ?: 0L) + 1L
-        // 备份是空对话时补一句开场白，否则导入完会是一片空白。
-        if (loaded.isEmpty()) ensureWelcome()
     }
 
     /**
@@ -294,7 +320,6 @@ class ChatEngine(
                 memoryStore.save(next)
                 _memory.value = next
             }
-            ensureWelcome()
         }
     }
 
@@ -337,38 +362,22 @@ class ChatEngine(
         invalidateImageCache()
         _messages.value = log.tail(LOAD_LIMIT)
         nextSeq = (_messages.value.maxOfOrNull { it.seq } ?: 0L) + 1L
-        if (_messages.value.isEmpty()) ensureWelcome()
-    }
-
-    /** 同步应用了云端设置之后重读设置。
-     *
-     * 分开一个入口是因为同步只在**云端那份更新**时才需要走这一步；每次都重读设置会让
-     * 设置页里还没保存的草稿被覆盖。
-     */
-    suspend fun syncAppliedSettings() {
-        _config.value = settings.config.first()
-        _persona.value = settings.persona.first()
-        _locationEnabled.value = settings.locationEnabled.first()
     }
 
     private suspend fun loadHistory() {
         val loaded = log.tail(LOAD_LIMIT)
-        _messages.value = loaded
-        nextSeq = (loaded.maxOfOrNull { it.seq } ?: 0L) + 1L
-        if (loaded.isEmpty()) ensureWelcome()
-    }
-
-    /** 空会话补一条开场白；换名字之后要清空记录才会看到新的开场白。 */
-    private fun ensureWelcome() {
-        if (_messages.value.isNotEmpty()) return
-        append(
-            StoredMessage(
-                seq = nextSeq++,
-                role = StoredMessage.ROLE_ASSISTANT,
-                content = _persona.value.welcome(),
-                createdAt = log.timestamp()
-            )
-        )
+        // 启动是异步的：用户可能在历史读回来之前就抢先发了一条。直接赋值会把那条消息连同
+        // 它的回复一起抹掉，所以这里把"内存里已有的"并在盘上历史之后，按 msgId 去重。
+        val inMemory = _messages.value
+        val merged = if (inMemory.isEmpty()) {
+            loaded
+        } else {
+            (loaded + inMemory)
+                .distinctBy { it.msgId }
+                .sortedWith(compareBy({ it.seq }, { it.createdAt }))
+        }
+        _messages.value = merged
+        nextSeq = (merged.maxOfOrNull { it.seq } ?: 0L) + 1L
     }
 
     private fun append(message: StoredMessage) {

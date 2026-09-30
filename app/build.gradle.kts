@@ -12,8 +12,8 @@ android {
         applicationId = "com.codingcow.ikitty"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.1.1"
+        versionCode = 12
+        versionName = "1.1.3"
     }
 
     compileOptions {

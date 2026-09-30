@@ -92,6 +92,34 @@ interface SyncCredentialStore {
 
     suspend fun setCloudSettingsAt(at: Long)
 
+    /**
+     * 本机是否已经与**当前云空间**对过一次设置的账（推送或继承都算）。
+     *
+     * 用来区分"第一次连上这个云空间"与"早就配好了"。这个区别决定同步的顺序：
+     * 第一次必须先拉后推，否则一台全新设备会把本机的**默认设置**当成用户的选择推上去，
+     * 而它的墙钟比另一台设备上一次同步更晚，LWW 一定判它赢——云端真实设置被默认值覆盖，
+     * 另一台设备下一次同步就退回了默认值。用户看到的是"设置每换一台设备就没了"。
+     *
+     * 换账号或清空云端时必须跟着 [clearSyncState] 归零：那是另一个云空间了。
+     */
+    suspend fun settingsSynced(): Boolean
+
+    suspend fun setSettingsSynced(synced: Boolean)
+
+    /**
+     * 云端那份设置里**有没有带** API Key（本机上一次推或拉之后知道的）。
+     *
+     * 这是"打开同步 API Key 开关"能真正生效的依据：指纹刻意不含 Key，所以"只打开开关"
+     * 在指纹上看不出任何变化。有了这个标记，客户端就能判断"开关开着、但云端还没有 Key"，
+     * 于是主动推一次。
+     *
+     * 反过来，开关**关**着时不看它——用户明确选择不上传 Key，不该因为关闭开关就推一份
+     * 不带 Key 的内容把云端已有的 Key 抹掉。
+     */
+    suspend fun cloudSettingsHasApiKey(): Boolean
+
+    suspend fun setCloudSettingsHasApiKey(hasApiKey: Boolean)
+
     /** 是否把 API Key 一并同步到云端。默认关闭。 */
     suspend fun includeApiKey(): Boolean
 
@@ -172,6 +200,8 @@ object SyncKeys {
     const val DELETED_IDS = "sync_deleted_ids"
     const val SETTINGS_FINGERPRINT = "sync_settings_fingerprint"
     const val CLOUD_SETTINGS_AT = "sync_cloud_settings_at"
+    const val SETTINGS_SYNCED = "sync_settings_synced"
+    const val CLOUD_SETTINGS_HAS_API_KEY = "sync_cloud_settings_has_api_key"
 }
 
 /**
@@ -285,6 +315,33 @@ class KeyValueSyncCredentialStore(
         putString(SyncKeys.CLOUD_SETTINGS_AT, at.coerceAtLeast(0L).toString())
     }
 
+    /**
+     * **宽容**地读"设置已对账"标记，理由与 [includeApiKey] 相同：
+     * Android 的同步命名空间存的是字面量字符串，iOS 存的是真正的布尔。
+     */
+    override suspend fun settingsSynced(): Boolean =
+        when (val value = store.values.first()[SyncKeys.SETTINGS_SYNCED]) {
+            is SettingValue.Flag -> value.value
+            is SettingValue.Str -> value.value == "true"
+            else -> false
+        }
+
+    override suspend fun setSettingsSynced(synced: Boolean) {
+        putString(SyncKeys.SETTINGS_SYNCED, synced.toString())
+    }
+
+    /** 与 [settingsSynced] 同样的宽容读取：两种存储表示都要认。 */
+    override suspend fun cloudSettingsHasApiKey(): Boolean =
+        when (val value = store.values.first()[SyncKeys.CLOUD_SETTINGS_HAS_API_KEY]) {
+            is SettingValue.Flag -> value.value
+            is SettingValue.Str -> value.value == "true"
+            else -> false
+        }
+
+    override suspend fun setCloudSettingsHasApiKey(hasApiKey: Boolean) {
+        putString(SyncKeys.CLOUD_SETTINGS_HAS_API_KEY, hasApiKey.toString())
+    }
+
     override suspend fun clearSyncState() {
         store.put(
             mapOf(
@@ -292,6 +349,8 @@ class KeyValueSyncCredentialStore(
                 SyncKeys.SETTINGS_UPDATED_AT to SettingValue.Str("0"),
                 SyncKeys.CLOUD_SETTINGS_AT to SettingValue.Str("0"),
                 SyncKeys.SETTINGS_FINGERPRINT to SettingValue.Str(""),
+                SyncKeys.SETTINGS_SYNCED to SettingValue.Str("false"),
+                SyncKeys.CLOUD_SETTINGS_HAS_API_KEY to SettingValue.Str("false"),
                 SyncKeys.PUSHED_IDS to SettingValue.Str(""),
                 SyncKeys.DELETED_IDS to SettingValue.Str("")
             )

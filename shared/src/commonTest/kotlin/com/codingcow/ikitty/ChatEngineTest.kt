@@ -112,14 +112,29 @@ class ChatEngineTest {
     private fun sse(vararg pieces: String): List<String> =
         pieces.map { """data: {"choices":[{"delta":{"content":"$it"}}]}""" }
 
+    /** 直接写进日志的一条用户消息；记忆整理读的是日志，不是内存列表。 */
+    private fun userMessage(seq: Long, content: String) = StoredMessage(
+        seq = seq,
+        role = StoredMessage.ROLE_USER,
+        content = content,
+        createdAt = Fixture.NOW,
+        msgId = newMessageId(now = Fixture.NOW)
+    )
+
+    /**
+     * 空记录启动时**不再自动补一条开场白**。
+     *
+     * 开场白曾经是一条落盘的助手消息，于是每台新设备都会自己造一条再同步上云，
+     * 久而久之云端堆满重复的问候。现在它只是界面在"聊天为空"时渲染的一段文字，
+     * 由 `CatPersona.welcome()` 给出，不进 `messages`。
+     */
     @Test
-    fun `an empty log gets a welcome message on start`() = engineTest { engine, _ ->
+    fun `an empty log stays empty on start`() = engineTest { engine, fixture ->
         engine.start()
         advanceUntilIdle()
 
-        assertEquals(1, engine.messages.value.size)
-        assertEquals(StoredMessage.ROLE_ASSISTANT, engine.messages.value.single().role)
-        assertTrue(engine.messages.value.single().content.contains(CatPersona.DEFAULT_NAME))
+        assertTrue(engine.messages.value.isEmpty(), "开场白不再是消息，空记录就该是空的")
+        assertTrue(fixture.log.tail(10).isEmpty(), "开场白不落盘")
         assertTrue(!engine.busy.value)
     }
 
@@ -133,15 +148,15 @@ class ChatEngineTest {
         advanceUntilIdle()
 
         val messages = engine.messages.value
-        assertEquals(3, messages.size) // 开场白 + 用户 + 回复
-        assertEquals("你好", messages[1].content)
-        assertEquals(StoredMessage.ROLE_USER, messages[1].role)
-        assertEquals("喵～", messages[2].content)
-        assertEquals(StoredMessage.ROLE_ASSISTANT, messages[2].role)
+        assertEquals(2, messages.size) // 用户 + 回复
+        assertEquals("你好", messages[0].content)
+        assertEquals(StoredMessage.ROLE_USER, messages[0].role)
+        assertEquals("喵～", messages[1].content)
+        assertEquals(StoredMessage.ROLE_ASSISTANT, messages[1].role)
         assertTrue(!engine.busy.value)
         assertEquals(null, engine.streamingReply.value)
 
-        // 都要真的落盘，重启之后才看得到（第一条是开场白）。
+        // 都要真的落盘，重启之后才看得到。
         assertEquals(
             listOf("你好", "喵～"),
             fixture.log.tail(10).map { it.content }.takeLast(2)
@@ -188,21 +203,25 @@ class ChatEngineTest {
      * 提取游标也会把新消息当成"早就整理过"。
      */
     @Test
-    fun `clearing the log restarts the sequence and re-adds the welcome`() =
+    fun `clearing the log empties it and restarts the sequence`() =
         engineTest { engine, fixture ->
             fixture.transport.streamLines = sse("好")
             engine.start()
             advanceUntilIdle()
             engine.send("你好")
             advanceUntilIdle()
-            assertTrue(engine.messages.value.size >= 3)
+            assertEquals(2, engine.messages.value.size)
 
             engine.clearMessages()
             advanceUntilIdle()
 
-            assertEquals(1, engine.messages.value.size)
-            assertEquals(1L, engine.messages.value.single().seq)
-            assertTrue(engine.messages.value.single().content.contains(CatPersona.DEFAULT_NAME))
+            assertTrue(engine.messages.value.isEmpty(), "清空之后一条都不该剩，也不再补开场白")
+            assertTrue(fixture.log.tail(10).isEmpty())
+
+            // 下一条消息的序号必须从 1 重新开始。
+            engine.send("再来")
+            advanceUntilIdle()
+            assertEquals(1L, engine.messages.value.first().seq)
         }
 
     /** 输入框有内容就进入 LISTENING，清空则回到 IDLE。 */
@@ -222,6 +241,8 @@ class ChatEngineTest {
     fun `a failed memory extraction records the error without advancing the cursor`() =
         engineTest { engine, fixture ->
             fixture.transport.response = HttpResponse(200, "这不是 JSON")
+            // 整理读的是**日志**（不是内存里的消息列表），所以先真的写一条进去。
+            fixture.log.append(userMessage(seq = 1, content = "我叫小明"))
             engine.start()
             advanceUntilIdle()
 
@@ -267,6 +288,9 @@ class ChatEngineTest {
             )
             engine.start()
             advanceUntilIdle()
+
+            // 整理读的是**日志**（不是内存里的消息列表），所以先真的写一条进去。
+            fixture.log.append(userMessage(seq = 1, content = "我叫小明"))
 
             engine.extractMemoryNow()
             advanceUntilIdle()

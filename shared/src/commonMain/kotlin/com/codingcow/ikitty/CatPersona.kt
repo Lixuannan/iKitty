@@ -75,7 +75,12 @@ data class CatPersona(
     /** 名字留空时回退到默认名，界面上任何地方都用这个方法取名字。 */
     fun displayName(): String = name.trim().ifEmpty { DEFAULT_NAME }
 
-    /** 开场白随设定变化，换名字后新开对话就能看到。 */
+    /**
+     * 空会话的开场白，由界面在"一条消息都没有"时**直接渲染**。
+     *
+     * 它不是一条消息：不落盘、不上云、不进上下文。早先它会被补进聊天记录，结果是每台新设备
+     * 都自己造一条再同步上去，云端堆满重复的问候。随设定变化，改名字后立刻生效。
+     */
     fun welcome(): String {
         val greet = if (flavor == CatFlavor.HUMAN) "你好呀" else "喵～你好呀"
         return "$greet！我是你的${displayName()}。今天想和我聊点什么？"

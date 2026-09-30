@@ -1,13 +1,17 @@
 package com.codingcow.ikitty
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +41,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -66,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -230,6 +236,11 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // 开场白不是一条消息：它只在"一条记录都没有"时渲染，不落盘、不上云，
+            // 因此不会像以前那样每台新设备都在云端堆一条重复的问候。
+            if (messages.isEmpty()) {
+                item(key = "greeting") { CatTextBubble(text = persona.welcome()) }
+            }
             itemsIndexed(messages, key = { _, msg -> msg.seq }) { index, msg ->
                 MessageBubble(
                     msg = msg,
@@ -242,7 +253,7 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
                 item { ThinkingBubble() }
             }
             if (!streamingReply.isNullOrEmpty()) {
-                item { StreamingBubble(text = streamingReply.orEmpty()) }
+                item { CatTextBubble(text = streamingReply.orEmpty()) }
             }
         }
 
@@ -335,10 +346,23 @@ private fun Header(
 /** 气泡四边统一圆角；用户和猫猫只靠左右位置和配色区分，不再靠缺角。 */
 private val BubbleShape = RoundedCornerShape(20.dp)
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (String) -> Unit) {
     val isUser = msg.role == StoredMessage.ROLE_USER
+
+    // 长按气泡把整条消息复制走。文字本身用 [SelectionContainer] 包起来，
+    // 所以"选中一部分再复制"用的是系统自带的文本选择工具条，两者互不冲突：
+    // 长按文字是选择，长按气泡空白处是复制整条。
+    val context = LocalContext.current
+    val copyMessage = {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("iKitty", msg.content))
+        Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+        Unit
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
@@ -374,7 +398,22 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
                 color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
                 shadowElevation = if (isUser) 0.dp else 1.dp,
                 border = if (isUser) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.widthIn(max = 292.dp)
+                modifier = Modifier
+                    .widthIn(max = 292.dp)
+                    // 没有文字的消息（纯图片）没有可复制的内容，不给这个手势。
+                    .then(
+                        if (msg.content.isNotEmpty()) {
+                            Modifier.combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                // 不要涟漪：长按复制是隐藏手势，点一下不该有任何视觉反馈。
+                                indication = null,
+                                onClick = {},
+                                onLongClick = copyMessage
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -399,15 +438,18 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
                     }
                     // 图片消息允许不带文字，此时不渲染空气泡文本。
                     if (msg.content.isNotEmpty()) {
-                        Text(
-                            text = msg.content,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = when {
-                                isUser -> MaterialTheme.colorScheme.onPrimary
-                                msg.localError -> MaterialTheme.colorScheme.error
-                                else -> MaterialTheme.colorScheme.onSurface
-                            }
-                        )
+                        // 选中文字交给系统：长按文字是选择，工具条里的「复制」复制选中的那一段。
+                        SelectionContainer {
+                            Text(
+                                text = msg.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = when {
+                                    isUser -> MaterialTheme.colorScheme.onPrimary
+                                    msg.localError -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -415,9 +457,14 @@ private fun MessageBubble(msg: StoredMessage, showTime: Boolean, onImageClick: (
     }
 }
 
-/** 流式回复的临时气泡：内容随增量增长，结束后由真正的消息取代。 */
+/**
+ * 猫猫一侧的纯文本气泡。
+ *
+ * 两处共用：流式回复的临时气泡（内容随增量增长，结束后由真正的消息取代），以及空会话的
+ * 开场白（不落盘、不上云，只在这里显示）。
+ */
 @Composable
-private fun StreamingBubble(text: String) {
+private fun CatTextBubble(text: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom

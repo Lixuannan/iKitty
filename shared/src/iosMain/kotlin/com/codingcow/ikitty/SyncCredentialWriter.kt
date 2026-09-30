@@ -120,6 +120,9 @@ class SyncCredentialWriter(
                 SyncKeys.SETTINGS_UPDATED_AT to SettingValue.Str("0"),
                 SyncKeys.CLOUD_SETTINGS_AT to SettingValue.Str("0"),
                 SyncKeys.SETTINGS_FINGERPRINT to SettingValue.Str(""),
+                // 换云空间之后"已经对过设置账"不再成立，下一轮要重新先拉后推。
+                SyncKeys.SETTINGS_SYNCED to SettingValue.Str("false"),
+                SyncKeys.CLOUD_SETTINGS_HAS_API_KEY to SettingValue.Str("false"),
                 SyncKeys.PUSHED_IDS to SettingValue.Str(""),
                 SyncKeys.DELETED_IDS to SettingValue.Str("")
             )

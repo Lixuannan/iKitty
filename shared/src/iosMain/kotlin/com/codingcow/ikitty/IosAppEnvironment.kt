@@ -230,35 +230,60 @@ class IosAppEnvironment {
     fun imageFilePath(name: String): String = (paths.imagesDir / name).toString()
 
     /**
-     * 只改"是否允许用 IP 推测城市"。
+     * 设置页提交的一份完整草稿。
      *
-     * 定位默认是开的，所以必须有一个关掉它的入口：每刷新一次都会把用户的 IP
-     * 交给第三方，不给开关就是隐私问题。
+     * Swift 不方便构造带十几个参数的 Kotlin 函数调用，也不该把"哪些字段属于配置、哪些属于
+     * 角色"这个划分再抄一遍，所以整份草稿用一个类型带过来。
      */
-    fun updateLocationEnabled(enabled: Boolean) {
-        engine.saveSettings(engine.config.value, engine.persona.value, enabled)
-    }
+    class SettingsDraft(
+        val baseUrl: String,
+        val apiKey: String,
+        val model: String,
+        val temperature: Float,
+        val topP: Float,
+        val maxTokens: Int,
+        val thinking: ThinkingMode,
+        val reasoningEffort: ReasoningEffort,
+        val catName: String,
+        val catNotes: String,
+        val traits: List<CatTrait>,
+        val speechStyle: CatSpeechStyle,
+        val flavor: CatFlavor,
+        val locationEnabled: Boolean
+    )
 
-    /** 只改角色设定；其余设定沿用现有值。 */
-    fun updatePersona(
-        name: String,
-        notes: String,
-        traits: List<CatTrait>,
-        speechStyle: CatSpeechStyle,
-        flavor: CatFlavor
-    ) {
-        engine.saveSettings(
-            engine.config.value,
-            engine.persona.value.copy(
-                name = name.trim(),
-                notes = notes.trim(),
-                // 上限在共享代码里，界面不该自己再判一次。
-                traits = traits.take(CatPersona.MAX_TRAITS).toSet(),
-                speechStyle = speechStyle,
-                flavor = flavor
-            ),
-            engine.locationEnabled.value
+    /**
+     * 保存设置页的整份草稿。
+     *
+     * **一次调用写完全部设置**，而不是让 Swift 分三次改三个子集。分成三次时，每一次都要
+     * "读当前值、改一个字段、写回"，于是后一次会拿着**上一次写入之前**的快照，把前一次刚改的
+     * 字段覆盖回去——iOS 上表现就是"改了 API Key 和名字，一保存就变回旧值"。
+     * 引擎侧的 [ChatEngine.saveSettings] 已经保证了内存状态的同步更新，这里再把提交点收敛成
+     * 一个，读-改-写就只发生一次、拿到的一定是最新快照。
+     */
+    fun saveSettings(draft: SettingsDraft) {
+        val normalized = draft.baseUrl.trim().trimEnd('/')
+        val config = engine.config.value.copy(
+            baseUrl = normalized,
+            apiKey = draft.apiKey.trim(),
+            model = draft.model.trim(),
+            // 换了地址之后预设也要跟着换，否则参数能力表会和实际服务商对不上。
+            providerId = ModelCatalog.providerIdForBaseUrl(normalized) ?: CUSTOM_PROVIDER_ID,
+            temperature = draft.temperature,
+            topP = draft.topP,
+            maxTokens = draft.maxTokens,
+            thinking = draft.thinking,
+            reasoningEffort = draft.reasoningEffort
         )
+        val persona = engine.persona.value.copy(
+            name = draft.catName.trim(),
+            notes = draft.catNotes.trim(),
+            // 上限在共享代码里，界面不该自己再判一次。
+            traits = draft.traits.take(CatPersona.MAX_TRAITS).toSet(),
+            speechStyle = draft.speechStyle,
+            flavor = draft.flavor
+        )
+        engine.saveSettings(config, persona, draft.locationEnabled)
     }
 
     // ---- 设置界面需要的适配层 ----
@@ -400,41 +425,6 @@ class IosAppEnvironment {
             "${summary.factCount} 条记忆和设置。$warning"
     }
 
-
-    /**
-     * 保存模型服务的全部可调字段。
-     *
-     * Kotlin 的默认参数导出到 Swift 之后会变成必填，让 Swift 去构造一个带十几个参数的
-     * `ApiConfig` 既啰嗦又容易漏字段；这里把用户真正会动的字段收敛成参数。
-     */
-    fun updateConfig(
-        baseUrl: String,
-        apiKey: String,
-        model: String,
-        temperature: Float,
-        topP: Float,
-        maxTokens: Int,
-        thinking: ThinkingMode,
-        reasoningEffort: ReasoningEffort
-    ) {
-        val normalized = baseUrl.trim().trimEnd('/')
-        engine.saveSettings(
-            engine.config.value.copy(
-                baseUrl = normalized,
-                apiKey = apiKey.trim(),
-                model = model.trim(),
-                // 换了地址之后预设也要跟着换，否则参数能力表会和实际服务商对不上。
-                providerId = ModelCatalog.providerIdForBaseUrl(normalized) ?: CUSTOM_PROVIDER_ID,
-                temperature = temperature,
-                topP = topP,
-                maxTokens = maxTokens,
-                thinking = thinking,
-                reasoningEffort = reasoningEffort
-            ),
-            engine.persona.value,
-            engine.locationEnabled.value
-        )
-    }
 
     /** 应用退出时调用；之后这个环境不可再用。 */
     fun dispose() {

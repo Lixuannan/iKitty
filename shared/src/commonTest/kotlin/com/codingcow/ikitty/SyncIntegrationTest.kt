@@ -219,7 +219,7 @@ class SyncIntegrationTest {
             val deviceB = scope.buildDevice("device-b")
             deviceB.facade.enable()
             deviceB.facade.syncNow()
-            // 拉完再 start：空日志会在 start 时补一条开场白，那是本地行为、不该掺进断言。
+            // 拉完再 start：start 会读盘并把历史灌进引擎，这里要观察的正是同步写下的那份记录。
             deviceB.engine.start()
             advanceUntilIdle()
 
@@ -306,6 +306,109 @@ class SyncIntegrationTest {
             val payload = server.kv.getValue("settings").payload
             assertTrue(payload.contains("cat-2"), "非敏感字段要更新")
             assertFalse(SyncSettingsCodec.containsApiKey(payload), "关掉开关后不该再带 api_key")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * 新设备的第一轮同步必须**先拉设置、再决定推不推**，不能拿本机默认值去覆盖云端。
+     *
+     * 这条用例把"新设备"的真实时钟关系固定下来：一台刚装好的手机的墙钟**一定比另一台设备
+     * 上一次同步更新**。服务端的设置是 LWW（`updated_at >=` 才覆盖），于是只要新设备先把
+     * 自己的默认设置推上去，它就一定赢——另一台设备下一次同步再把设置拉回来，用户看到的
+     * 就是"改好的名字、API Key 每换一台设备就没了，每次都要重填"。
+     *
+     * 所以这里让 B 的墙钟比 A **晚**，而不是像 [settings and api key follow the switch] 那样
+     * 靠"B 的钟更早"来掩盖这个问题。
+     */
+    @Test
+    fun `a brand new device adopts cloud settings instead of overwriting them with defaults`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            // ---- 设备 A：把角色与 Key 改好并同步 ----
+            val deviceA = scope.buildDevice("device-a")
+            deviceA.engine.start()
+            advanceUntilIdle()
+            deviceA.facade.enable()
+            deviceA.facade.setIncludeApiKey(true)
+            deviceA.engine.saveSettings(
+                ApiConfig(baseUrl = "https://example.test/v1", apiKey = "sk-cloud", model = "cat-1"),
+                CatPersona(name = "团子", notes = "不要聊工作"),
+                true
+            )
+            advanceUntilIdle()
+            deviceA.facade.syncNow()
+            advanceUntilIdle()
+
+            val cloudBefore = server.kv.getValue("settings").payload
+            assertTrue(cloudBefore.contains("团子"), "前置条件：云端要已经有 A 的设置")
+
+            // ---- 设备 B：全新安装，从没改过设置，墙钟比 A 晚 ----
+            val deviceB = scope.buildDevice("device-b", clockStart = deviceA.clock + 600_000L)
+            deviceB.engine.start()
+            advanceUntilIdle()
+            deviceB.facade.enable()
+            deviceB.facade.syncNow()
+            advanceUntilIdle()
+
+            assertEquals("团子", deviceB.engine.persona.value.name, "新设备要继承云端的角色名字")
+            assertEquals("不要聊工作", deviceB.engine.persona.value.notes)
+            assertEquals("sk-cloud", deviceB.engine.config.value.apiKey, "新设备要继承云端的 API Key")
+            assertEquals("cat-1", deviceB.engine.config.value.model)
+
+            val cloudAfter = server.kv.getValue("settings").payload
+            assertTrue(
+                cloudAfter.contains("团子"),
+                "云端设置不能被新设备的默认值覆盖，否则每台设备都要重填一遍"
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * 只把「同步 API Key」的开关打开、别的设置一个都不改，也要把 Key 推上云。
+     *
+     * 设置的指纹刻意不含 API Key，所以"只打开开关"在指纹上看不出变化。如果只按指纹判断
+     * "要不要推"，那把一直没上过云的 Key 永远推不上去——用户打开开关、同步成功，云端却
+     * 还是没有 Key，换一台设备又得手填。这条用例盯的就是这一步。
+     */
+    @Test
+    fun `turning the api key sync on uploads a key the cloud did not have`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val device = scope.buildDevice("device-a")
+            device.engine.start()
+            advanceUntilIdle()
+            device.facade.enable()
+
+            // 先把设置（含 Key）存好，但开关还关着：这一轮同步不会带 Key。
+            device.engine.saveSettings(
+                ApiConfig(baseUrl = "https://example.test/v1", apiKey = "sk-later", model = "cat-1"),
+                CatPersona(name = "团子"),
+                true
+            )
+            advanceUntilIdle()
+            device.facade.syncNow()
+            advanceUntilIdle()
+            assertFalse(
+                SyncSettingsCodec.containsApiKey(server.kv.getValue("settings").payload),
+                "前置条件：开关关着时云端不该有 Key"
+            )
+
+            // 只打开开关，不改任何别的设置。
+            device.facade.setIncludeApiKey(true)
+            advanceUntilIdle()
+            device.facade.syncNow()
+            advanceUntilIdle()
+
+            val payload = server.kv.getValue("settings").payload
+            assertTrue(
+                SyncSettingsCodec.containsApiKey(payload),
+                "打开开关之后云端应当拿到 Key"
+            )
+            assertEquals("sk-later", SyncSettingsCodec.decode(payload, "")!!.config.apiKey)
         } finally {
             scope.cancel()
         }

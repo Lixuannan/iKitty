@@ -458,7 +458,7 @@ struct SettingsView: View {
             noticeIsError = true
             return
         }
-        model.saveConfig(
+        model.saveSettings(
             baseUrl: trimmed,
             apiKey: apiKey,
             model: modelName,
@@ -466,16 +466,14 @@ struct SettingsView: View {
             topP: Float(topP),
             maxTokens: Int32(maxTokens),
             thinking: thinking,
-            reasoningEffort: reasoningEffort
-        )
-        model.savePersona(
-            name: catName,
-            notes: catNotes,
+            reasoningEffort: reasoningEffort,
+            catName: catName,
+            catNotes: catNotes,
             traits: Array(traits),
             speechStyle: speechStyle,
-            flavor: flavor
+            flavor: flavor,
+            locationEnabled: locationEnabled
         )
-        model.setLocationEnabled(locationEnabled)
 
         // 同步凭据也必须在这里保存。
         //

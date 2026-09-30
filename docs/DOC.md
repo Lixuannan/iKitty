@@ -5,7 +5,7 @@
 本文是 iKitty 的架构地图与参考手册：模块契约、数据格式、关键算法、扩展点和测试策略。
 面向要修改或扩展代码的人。使用方式、配置步骤和隐私说明在 [README](../README.md) 中。
 
-- 版本：1.1.1 · 包名：`com.codingcow.ikitty`
+- 版本：1.1.3 · 包名：`com.codingcow.ikitty`
 - 源码：Android `app/src/main/java/com/codingcow/ikitty/` · 跨平台 `shared/src/commonMain/kotlin/com/codingcow/ikitty/` · iOS `iosApp/iosApp/`
 - 技术栈：Kotlin 2.4.20、Jetpack Compose（Material3）、Kotlin Multiplatform（`:shared`，含 iOS 目标）、OkHttp 4.12.0 / Ktor 3.6.0、okio 3.18.2、kotlinx-serialization 1.11.0
 - 构建：AGP 8.7.3、Gradle 9.7.0、Java 17 字节码目标、minSdk 26 / targetSdk 35、iOS 17+（Xcode 27.0）
@@ -143,7 +143,8 @@ Android 相关的适配层：`ChatLogStore`、`CatMemoryStore`（文件 + `Conte
 9. `maybeExtractMemory()`：若距提取游标已有 ≥6 条非错误消息，触发一次后台记忆整理。
 
 清空聊天记录会把 `nextSeq` 归 1、清空 `contextPlan`，并把记忆的 `lastExtractedSeq` 一并归零，
-否则新 `seq` 会被旧游标当成「早就整理过」。空会话会补一条开场白。
+否则新 `seq` 会被旧游标当成「早就整理过」。空会话不再补任何消息：开场白由界面在聊天为空时
+直接渲染，见 12.2。
 
 ---
 
@@ -209,8 +210,9 @@ ViewModel 在动作时长 + 200ms 缓冲后把 `animation` 清回 `NONE`，使�
 「偶尔猫叫」与「猫味浓」则明确建议在回复里描述猫的动作。
 JSON 契约里 `emotion` 与 `animation` 的取值就是 `CatReply` 解析表的输入。
 
-`welcome()` 随猫味变化：`HUMAN` 开场白不带「喵」，其余带。`displayName()` 在名字留空时回退到默认名，
-所有界面位置都用它取名字。
+`welcome()` 随猫味变化：`HUMAN` 开场白不带「喵」，其余带。它是**给界面看的文本**，不落盘、
+不上云、不进上下文——早先它是一条助手消息，导致每台新设备都在云端堆一条重复问候。
+`displayName()` 在名字留空时回退到默认名，所有界面位置都用它取名字。
 
 持久化编码：性格用「枚举名逗号分隔、按声明顺序」写成字符串（`encodeTraits`）。
 `parseTraits` 区分两种情况——`null` 表示从未存过、回退默认值；空字符串表示「一个都没选」；
@@ -375,7 +377,7 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
 5. 从**最后一轮**开始向前装：最后一轮无条件保留（宁可让服务端报上下文超长，也不发只有 system 的请求），
    然后 `while (used + costs[index] + ambientTokens <= budget - systemTokens)` 继续向前。
    背景块的 token 也计入预算，因为它真的会发出去。
-6. `dropWhile { role != user }` 丢掉领先的 assistant（例如开场白），保证请求不以 assistant 开头。
+6. `dropWhile { role != user }` 丢掉领先的 assistant（历史里若出现），保证请求不以 assistant 开头。
 7. 输出 `[system] + kept + [「此刻」system?]`：
    - kept 里每条经 `toWire(timeZone, imageUrl)` 转换——正文变成
      `[yyyy-MM-dd HH:mm EEEE] 原文`（见 10.1），图片名解析成数据 URL，解析不到的图片跳过，
@@ -387,7 +389,7 @@ budget    = max(contextWindow - reserve - SAFETY_TOKENS=512, MIN_INPUT_BUDGET=10
 同一条历史每轮请求都是同样的字节，服务商的提示词缓存前缀照样命中；「现在」「距今多久」每轮都变，
 写进历史会让整个前缀作废，所以只出现在尾随的 system 消息里。
 
-`droppedMessages` 是「可发送消息数 − 实际发送数」，开场白被丢弃也会计入。
+`droppedMessages` 是「可发送消息数 − 实际发送数」，被丢掉的领先 assistant 也会计入。
 
 ---
 
@@ -570,7 +572,16 @@ DataStore Preferences，文件名 `cat_settings`。键：
 | `cat_name` / `cat_traits` / `cat_speech_style` / `cat_flavor` / `cat_notes` | String | `CatPersona` 默认值 |
 | `location_enabled` | Boolean | `true` |
 
-保存时统一 `trim`，Base URL 去尾部斜杠。读取用 `Flow`，ViewModel 在 `init` 里 collect 到各自 StateFlow。
+保存时统一 `trim`，Base URL 去尾部斜杠。整份设置**一次 `put`**写完（三块分开写会让存储里
+短暂出现半份快照，正在跑的同步可能读到它）。
+
+读取用 `Flow`，`ChatEngine` 在 `start()` 里 collect 到各自的 StateFlow。但**保存的正确性不
+建立在这条流上**：`ChatEngine.saveSettings` 在函数返回时就把内存状态更新成新值，再异步落盘。
+原因是"存储写入后会不会重发"是平台相关的——Android 的 DataStore 会重发，iOS 的
+`NSUserDefaults` 包装曾经只发射一次；如果内存状态要等它重发，设置页"改一块、保存一块"的
+连续调用就会拿着旧快照互相覆盖，表现为"改了 API Key 和名字，一保存就变回旧值"。
+iOS 的 `UserDefaultsKeyValueStore` 现在也按契约在 `put` 之后重新发射，但那是第二层保障，不是
+第一层。见 [SYNC_DESIGN.md §7](SYNC_DESIGN.md) 与 `SettingsPersistenceTest`。
 
 ---
 
@@ -599,7 +610,11 @@ DataStore Preferences，文件名 `cat_settings`。键：
   用户气泡靠右用主色，猫猫靠左带小猫头像；`localError` 用错误色。
   带图片的消息在气泡内用 `FlowRow` 每行两张显示缩略图，纯图片消息不渲染空文本；
   点缩略图打开全屏大图（`ImagePreviewDialog`，见 [20. 大图查看](#20-大图查看imageviewerkt)）。
-- 等待回复时追加一个三点跳动的 `ThinkingBubble`；开始流式输出后由 `StreamingBubble` 取代，
+- **空会话**：一条记录都没有时渲染一个 `CatTextBubble(persona.welcome())`。开场白不是消息，
+  不落盘、不上云，改名字后立刻跟着变。以前它是一条助手消息，于是每台新设备都在云端堆一条重复问候。
+- **复制**：消息文字包在 `SelectionContainer` 里（长按选中任意一段，用系统工具条复制）；
+  长按气泡空白处则整条复制并弹一个「已复制」提示。两者互不冲突：长按文字是选择，长按气泡是复制。
+- 等待回复时追加一个三点跳动的 `ThinkingBubble`；开始流式输出后由 `CatTextBubble` 取代，
   内容是 `streamingReply` 的当前值。
 - 输入栏：左侧「+」弹出「从相册选择 / 拍照」，中间多行输入框（≤5 行，IME 动作是发送）。
   已选图片显示为可横向滚动的缩略图条，每张右上角可单独删除。
@@ -697,7 +712,7 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | `:app:testDebugUnitTest` | 12 | `ImageViewerTest` 3 + `UpdateModelsTest` 9 |
 | `worker/test/local-check.mjs` | 16 | 同步服务端：跑在 `node:sqlite` 上的真实 SQL |
 
-### 14.1 `commonTest`（228）
+### 14.1 `commonTest`（236）
 
 | 测试文件 | 用例 | 覆盖的契约 |
 | --- | --- | --- |
@@ -712,12 +727,14 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | `LruCacheTest` | 9 | 存取往返、缺键返回 null、上限生效、`getAndTouch` 保持存活、普通 `get` 不改淘汰顺序、覆写不增长、清空、非正上限被拒、未达上限不淘汰 |
 | `CatPersonaTest` | 8 | 默认 prompt 含名字/性格/JSON 契约、性格渲染顺序与可空、补充设定、`HUMAN` 无「喵」、只有非「像朋友」的猫味建议带猫的动作、空名回退、性格存储往返、枚举反查 |
 | `CatMemoryRulesTest` | 8 | 合并只增不减、同 key 覆盖、未变化的条目保留旧时间戳（淘汰才公平）、`forget` 不动固定项、超上限淘汰最久未更新的非固定项、重命名 key 不留旧条目、超长值裁剪而不是拒绝、渲染按分类分组且空记忆渲染为空 |
-| `ChatEngineTest` | 8 | 空记录启动补开场白、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零并重补开场白、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
+| `ChatEngineTest` | 8 | 空记录启动**不再**补开场白（开场白是界面状态，不是消息）、发送追加用户消息与流式回复、流失败保留半截回复并补错误行、空发送被忽略、清空后序号归零、输入变化驱动 `LISTENING`、记忆整理失败记录错误且游标不前进、整理成功合并事实并前进游标 |
 | `SyncEngineTest` | 21 | 首次同步上传本地消息并由服务端分配序号、第二次不再重传服务端已有的、拉取带回另一台设备写的、**本地待推消息在拉取后不丢**、被服务端删掉的不被下一次同步复活、图片按需下载一次、设置只在变化时上传、云端设置更新时应用到本地、云端缺 apiKey 时保留本地的、API Key 只在开关打开时上云、关掉开关不会抹掉云端已有的 Key、本地错误行不上传、被拒记录逐条回报但整批不失败、413 拆批重试、只剩一条仍被拒时明确报错而不是静默丢弃、传输失败会重试、401 清掉账号密钥并要求重新配对、没有账号密钥时不发请求、`deleteAll` 清空云端但保留本地、老记录缺 `msgId` 时先固化身份再上传、切换账号时清掉游标 |
-| `SyncIntegrationTest` | 3 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关、只改同步开关不自己发起同步 |
+| `SyncIntegrationTest` | 5 | 两台真实 `ChatEngine` 经同一个假服务端收敛到同一份记录、设置与 API Key 跟随开关、只改同步开关不自己发起同步、**新设备墙钟更晚时也继承云端设置而不是用默认值覆盖**、**只打开 API Key 开关也会把云端没有的 Key 补上去** |
+| `SyncSettingsCodecTest` | 3 | 云端设置载荷里含角色的名字/性格/说话风格/猫味浓度/补充设定且往返一致、载荷覆盖 `SettingsKeys` 的每一项（新增设置项漏进 codec 就红）、关掉开关时 `api_key` 字段整个不出现 |
 | `SyncFlagTest` | 2 | 同步开关的两种存储表示都要读得出来（iOS 存布尔、Android 存字面量字符串） |
 | `SyncCredentialsTest` | 9 | 设备 id 生成一次后稳定、存下的密钥被裁剪且可读、清掉密钥但保留游标、换密钥时忘掉与旧云端空间绑定的一切、已推 id 集合往返且有上限、密钥强度按文档阈值判定 |
 | `PromptTimeTest` | 8 | `formatMoment` 与旧 `SimpleDateFormat` 逐字节一致、跟随指定时区、尊重夏令时切换、数字补零、`formatElapsed` 粗粒度与边界、**时间前缀与 `formatMoment` 同源**、前缀对同一时刻稳定（缓存前缀不被破坏） |
+| `SettingsPersistenceTest` | 3 | 保存设置在只发射一次的存储上也能更新引擎内存状态（iOS `NSUserDefaults` 的行为）、分步保存不会互相覆盖、一次保存只写一次 put |
 | `SettingsRepositoryTest` | 8 | 空存储给出默认值、缺 providerId 时按 Base URL 反查、认不出的 Base URL 落到 `custom`、配置往返、角色设定往返、未知枚举名回退不抛异常、定位开关能关且保持关闭、键名是约定的那些 |
 | `MemoryJsonTest` | 7 | 接受裸 JSON / 围栏 JSON / 中文分类标签、解析失败返回 null（旧记忆因此不会被清空）、未知分类回退而不是丢条目、记忆文件形状是跨端契约、编解码往返、损坏文件返回 null、`pinned` 只在为真时写出 |
 | `MultimodalPayloadTest` | 7 | 纯文本保持字符串 content 且无 `stream`、图片转成 `image_url` content 数组、纯图片不写空 text 段、流式只加 `stream` 不改 content、发送参数仍受能力表约束、数值精度沿用旧格式（`0.8` 而不是 `0.800000011920929`）、未设 `max_tokens` 绝不进请求体 |
@@ -735,7 +752,7 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 | --- | --- | --- |
 | `ChatEngineIntegrationTest`（jvmTest） | 5 | 起一个**真实** `HttpServer`，用生产用的 OkHttp 传输跑完整链路：真实 socket → SSE → 落盘；服务商忽略 `stream` 时退化整体解析；HTTP 错误转成本地错误行；请求体符合线上契约（且历史消息带时间戳）；带图片消息以 `image_url` 数据 URL 到达 wire |
 | `ZipInteropTest`（jvmTest） | 5 | 用 `java.util.zip` 写出的 DEFLATE 归档可读、这里写出的归档 `java.util.zip` 可读、大且高压缩比条目在 DEFLATE 下完好、DEFLATE 归档的注释被容忍、STORED 与 DEFLATE 可以混用 |
-| `IosPlatformTest`（iosTest） | 10 | iOS 路径创建根目录并使用约定布局、设置经 NSUserDefaults 往返、未写入时给出默认值、图片存储写文件并返回数据 URL、拒绝空字节、失效缓存后强制重读、同步凭据同步写入并经门面的存储读回、清除密钥解除绑定但保留地址、换密钥作废云空间状态而同键写入不动它、读到直接写进 NSUserDefaults 的值 |
+| `IosPlatformTest`（iosTest） | 11 | iOS 路径创建根目录并使用约定布局、设置经 NSUserDefaults 往返、未写入时给出默认值、图片存储写文件并返回数据 URL、拒绝空字节、失效缓存后强制重读、同步凭据同步写入并经门面的存储读回、清除密钥解除绑定但保留地址、换密钥作废云空间状态而同键写入不动它、读到直接写进 NSUserDefaults 的值、`put` 之后 `values` 会重新发射 |
 | `UpdateModelsTest`（`:app`） | 9 | release JSON 解析版本与 APK 地址、多个 APK 时优先同名、无 APK 返回 null、预发布不作为更新、非 JSON 返回 null、缺 tag 返回 null、版本比较新旧与相等、同基线预发布更旧、`v` 前缀归一化 |
 | `ImageViewerTest`（`:app`） | 3 | 未放大时不接受拖动、放大后拖动被钳制在溢出范围内、钳制范围随倍数增长 |
 
@@ -765,7 +782,8 @@ cd worker && node test/local-check.mjs   # 16（同步服务端）
 - **数据外发**：聊天内容只发往用户配置的 Base URL；开启定位时出口 IP 会发给第三方定位服务；
   检查更新时只向 `api.github.com` 读取 release 元数据并下载 APK，不上报任何本机信息。
 - **错误信息**：接口错误体最多截取前 200 字符回显，避免把整页网关 HTML 塞进界面。
-- **上下文隔离**：`localError` 消息与开场白不会进入请求，`StoredMessage` 的元数据不会进请求体。
+- **上下文隔离**：`localError` 消息不会进入请求，`StoredMessage` 的元数据不会进请求体；
+  开场白已经不是消息，自然也不在其中。
 
 ---
 
@@ -924,7 +942,7 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
 - `reloadFromDisk()` 重读 DataStore、记忆文件与聊天记录末尾 `LOAD_LIMIT` 条，
   重置 `nextSeq`、清掉 `contextPlan`，并调用 `images.invalidateCache()`——
   归档里的图片按原名覆盖，缓存里可能还留着旧编码；
-- 导入的记录为空时补一条开场白，否则导入完会是一片空白。
+- 导入的记录为空时界面直接显示开场白（它不是消息，见 12.2）。
 
 ### 19.5 界面（`SettingsScreen.BackupSection`）
 
@@ -980,7 +998,7 @@ JPEG 存，不必 base64（base64 会平白多出三分之一体积，还要全�
 | `HttpTransport` / `JsonHttpTransport` | 窄契约（JSON）与完整契约（+ 原始字节）。同步复用平台层建好的同一个实例 | 不懂协议，不做重试 |
 | `SyncApi` | 拼请求、把响应翻译成 `SyncException` 或数据模型 | 不决定"什么时候同步、失败怎么办" |
 | `SyncEngine` | 推本地的新消息与设置、拉增量、按云端快照重建本地日志、补齐缺图 | 不碰界面状态，不自己重试之外的退避策略 |
-| `SyncCoordinator`（`SyncFacade`） | 触发策略、把异常翻译成 `SyncStatus`、同步后让 `ChatEngine` 重读 | 不直接读写日志；三个 setter 只落盘，不自己发起同步 |
+| `SyncCoordinator`（`SyncFacade`） | 触发策略、把异常翻译成 `SyncStatus`、同步后让 `ChatEngine` 重读日志 | 不直接读写日志；三个 setter 只落盘，不自己发起同步 |
 | `SyncCredentials` / `StoredKeyRegistry` | 用 `KeyValueStore` 存 `account_key` / `install_id` / `since_rev` / 开关；键名清单只有一份 | 不解释设置项含义 |
 | `ChatLogStore` | 追加写（本地路径）与 `replaceAll`（拉取路径，临时文件 + 原子重命名） | 不排序、不去重 |
 | `ChatEngine` | 消息与设置落盘后经 `onContentChanged` 通知同步；`syncCompleted()` 重读日志 | 不认识"同步"这个概念 |
@@ -1005,7 +1023,7 @@ setter 都只写本地存储、不发起请求；一次同步由调用方在凭�
 2. **本地先落盘**：消息先写盘再谈上传；`onContentChanged` 在 `log.append` 之后触发。
 3. **同一时刻只有一次同步**：`SyncEngine` 内部用 `Mutex` 串行化，两次替换互相覆盖是静默的数据丢失。
 
-### 21.4 三个容易踩的点
+### 21.4 四个容易踩的点
 
 - **消息身份**：`StoredMessage.msgId` 与 `seq` 必须分开。`seq` 在同步后会被服务端重新分配，
   拿它当身份会让同一条消息在同步前后变成两条。老记录（缺 `id`）必须在**第一次同步之前**
@@ -1015,6 +1033,13 @@ setter 都只写本地存储、不发起请求；一次同步由调用方在凭�
   `tombstonesOnly: true` 要一次全量墓碑（墓碑的 `rev` 早已落在游标后面，增量拉不到它）。
 - **设置的 LWW 判据是"严格更早才拒绝"**：用"不更新就拒绝"的话，两台设备的 `updatedAt`
   完全相等时旧内容永远改不掉；客户端那边则保证自己的时间戳严格单调。
+- **首次连上云空间要先拉设置再推**：一台新设备的墙钟一定比另一台设备上一次同步更晚，
+  而设置是 `updated_at` 的 LWW。先推的话，新设备的**默认设置**会覆盖云端真实设置，
+  另一台设备下一次同步再把默认值拉回来——用户看到"名字、API Key 每换一台设备就没了"。
+  所以第一轮只推消息（要拿服务端分配的 `seq`），设置等 pull 回来再决定：云端有就继承
+  （推的一侧靠指纹判定"没变化"，连请求都不发），云端没有才推本机这份。
+  "已经对过设置账"由 `SyncKeys.SETTINGS_SYNCED` 记录，换账号时归零。见
+  [SYNC_DESIGN.md §6.1](SYNC_DESIGN.md)。
 
 ### 21.5 图片
 

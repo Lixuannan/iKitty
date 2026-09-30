@@ -122,9 +122,11 @@ class ChatEngineIntegrationTest {
     /** 发出一次真实请求，等到对话进入稳定状态（不再忙、且已有回复）。 */
     private fun sendAndWait(engine: ChatEngine): List<StoredMessage> = runBlocking {
         engine.start()
-        waitFor("开场白") { engine.messages.value.isNotEmpty() }
+        // 开场白已经不再是消息，"加载完成"就改为显式等待：`ready` 表示首次加载（含历史）
+        // 已经结束，baseUrl 则保证设置流也收集到了（初始值是默认地址，光判非空会立刻返回）。
+        waitFor("首次加载") { engine.ready.value && engine.config.value.baseUrl == baseUrl() }
         engine.send("你好")
-        waitFor("回复") { !engine.busy.value && engine.messages.value.size >= 3 }
+        waitFor("回复") { !engine.busy.value && engine.messages.value.size >= 2 }
         engine.messages.value
     }
 
@@ -152,8 +154,8 @@ class ChatEngineIntegrationTest {
         assertTrue(messages.none { it.localError })
         // 落盘之后重启还看得到。
         assertEquals(listOf("你好", "喵～在呢"), persistedLog().takeLast(2).map { it.content })
-        // 装配结果是 system + 本轮 user + 尾随的「此刻」system：开场白是 assistant，
-        // 不能作为首条发出；时间要落在最后，紧贴生成点。
+        // 装配结果是 system + 本轮 user + 尾随的「此刻」system：
+        // 开场白已经不落盘、不进历史，所以首条就是 system 提示词；时间要落在最后，紧贴生成点。
         val planned = engine.contextPlan.value?.messages ?: error("没有装配结果")
         assertEquals(3, planned.size)
         assertEquals("system", planned.first().role)
@@ -233,9 +235,9 @@ class ChatEngineIntegrationTest {
         val engine = engine()
         runBlocking {
             engine.start()
-            waitFor("开场白") { engine.messages.value.isNotEmpty() }
+            waitFor("首次加载") { engine.ready.value && engine.config.value.baseUrl == baseUrl() }
             engine.send("看图", listOf("img_test.jpg"))
-            waitFor("回复") { !engine.busy.value && engine.messages.value.size >= 3 }
+            waitFor("回复") { !engine.busy.value && engine.messages.value.size >= 2 }
         }
 
         val body = lastRequestBody ?: error("服务端没有收到请求")

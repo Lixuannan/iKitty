@@ -1,7 +1,10 @@
 package com.codingcow.ikitty
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSUserDefaults
 import kotlin.test.AfterTest
@@ -20,6 +23,7 @@ import kotlin.test.assertTrue
  * 覆盖的是那些"JVM 上测不到、只有跑起来才知道"的部分：目录真的建出来了吗、
  * 键值真的写进 NSUserDefaults 了吗、图片真的落盘并编成数据 URL 了吗。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class IosPlatformTest {
 
     private val fileSystem = iosFileSystem()
@@ -37,7 +41,8 @@ class IosPlatformTest {
     private val syncKeys = listOf(
         SyncKeys.ACCOUNT_KEY, SyncKeys.SERVICE_URL, SyncKeys.DEVICE_ID, SyncKeys.SINCE_REV,
         SyncKeys.SETTINGS_UPDATED_AT, SyncKeys.INCLUDE_API_KEY, SyncKeys.PUSHED_IDS,
-        SyncKeys.DELETED_IDS, SyncKeys.SETTINGS_FINGERPRINT, SyncKeys.CLOUD_SETTINGS_AT
+        SyncKeys.DELETED_IDS, SyncKeys.SETTINGS_FINGERPRINT, SyncKeys.CLOUD_SETTINGS_AT,
+        SyncKeys.SETTINGS_SYNCED, SyncKeys.CLOUD_SETTINGS_HAS_API_KEY
     )
 
     @AfterTest
@@ -177,6 +182,37 @@ class IosPlatformTest {
             "out-of-band",
             (store.values.first()[SyncKeys.SERVICE_URL] as? SettingValue.Str)?.value,
             "重读必须看到直接写进 NSUserDefaults 的值"
+        )
+    }
+
+    /**
+     * 写入必须让 [KeyValueStore.values] **重新发射一次**。
+     *
+     * 这是契约（"当前快照，并在变化时重新发射"），也是 Android 的 DataStore 一直以来的行为。
+     * iOS 这份曾经是个只发射一次的冷流，于是依赖"写入后重发"的收集者（[ChatEngine.start]
+     * 里订阅设置的那些协程）在 iOS 上永远停在第一份快照上——设置改了，引擎的内存状态却没改，
+     * 下一次"读-改-写"就会把刚存的字段冲回去。
+     */
+    @Test
+    fun `a write re-emits the snapshot so collectors stay current`() = runTest {
+        val store = UserDefaultsKeyValueStore(NSUserDefaults.standardUserDefaults)
+        val seen = mutableListOf<Map<String, SettingValue>>()
+        val job = launch { store.values.collect { seen += it } }
+        advanceUntilIdle()
+        val emissionsBefore = seen.size
+
+        store.put(mapOf(SettingsKeys.BASE_URL to SettingValue.Str("https://example.test/v1")))
+        advanceUntilIdle()
+        job.cancel()
+
+        assertTrue(
+            seen.size > emissionsBefore,
+            "写入之后 values 要重新发射一次（已有 $emissionsBefore 次，没有增加）"
+        )
+        assertEquals(
+            "https://example.test/v1",
+            (seen.last()[SettingsKeys.BASE_URL] as? SettingValue.Str)?.value,
+            "重发的那一份要包含刚写入的值"
         )
     }
 

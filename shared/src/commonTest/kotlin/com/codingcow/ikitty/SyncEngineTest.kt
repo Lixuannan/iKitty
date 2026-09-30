@@ -387,9 +387,13 @@ class SyncEngineTest {
         val report = newEngine().sync()
 
         assertEquals(1, report.messagesPushed)
-        // 第一次请求被 5xx 拒绝，重试的那次成功，然后还有一次拉取：共 2 次
-        // （被拒绝的那次没有进入服务端的请求记录，因为它连 JSON 都没被解析）。
-        assertEquals(2, server.requests.size, "重试成功后还要拉取一次")
+        // 这一轮是与空云空间的首次同步，请求序列是：
+        // 1) 推消息——被 5xx 拒了两次，第三次成功（被拒绝的那次没有进入服务端的请求记录，
+        //    因为它连 JSON 都没被解析）；
+        // 2) 拉一次；
+        // 3) 首轮收尾再推一次：云端没有设置可继承，于是把本机这份设置推上去。
+        //    云端已经有设置时这一推什么都不带（指纹已对齐），根本不会发请求。
+        assertEquals(3, server.requests.size, "重试成功后要拉取一次，首次同步还要补推一次设置")
     }
 
     @Test

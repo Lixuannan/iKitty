@@ -78,27 +78,13 @@ final class AppModel: ObservableObject {
         environment.engine.clearMemory()
     }
 
-    func setLocationEnabled(_ enabled: Bool) {
-        environment.updateLocationEnabled(enabled: enabled)
-    }
-
-    func savePersona(
-        name: String,
-        notes: String,
-        traits: [CatTrait],
-        speechStyle: CatSpeechStyle,
-        flavor: CatFlavor
-    ) {
-        environment.updatePersona(
-            name: name,
-            notes: notes,
-            traits: traits,
-            speechStyle: speechStyle,
-            flavor: flavor
-        )
-    }
-
-    func saveConfig(
+    /// 保存设置页的整份草稿。
+    ///
+    /// 一次提交全部设置，而不是分成"配置 / 角色 / 定位"三次写入：三次写入的每一次都是
+    /// "读当前值、改一个字段、写回"，后一次会拿旧快照把前一次刚改的字段冲掉
+    /// （表现为"改了 API Key 和名字，一保存就变回去"）。落盘由共享层的
+    /// `ChatEngine.saveSettings` 同步更新内存后异步完成，这里不需要 `await`。
+    func saveSettings(
         baseUrl: String,
         apiKey: String,
         model: String,
@@ -106,17 +92,31 @@ final class AppModel: ObservableObject {
         topP: Float,
         maxTokens: Int32,
         thinking: ThinkingMode,
-        reasoningEffort: ReasoningEffort
+        reasoningEffort: ReasoningEffort,
+        catName: String,
+        catNotes: String,
+        traits: [CatTrait],
+        speechStyle: CatSpeechStyle,
+        flavor: CatFlavor,
+        locationEnabled: Bool
     ) {
-        environment.updateConfig(
-            baseUrl: baseUrl,
-            apiKey: apiKey,
-            model: model,
-            temperature: temperature,
-            topP: topP,
-            maxTokens: maxTokens,
-            thinking: thinking,
-            reasoningEffort: reasoningEffort
+        environment.saveSettings(
+            draft: IosAppEnvironment.SettingsDraft(
+                baseUrl: baseUrl,
+                apiKey: apiKey,
+                model: model,
+                temperature: temperature,
+                topP: topP,
+                maxTokens: maxTokens,
+                thinking: thinking,
+                reasoningEffort: reasoningEffort,
+                catName: catName,
+                catNotes: catNotes,
+                traits: traits,
+                speechStyle: speechStyle,
+                flavor: flavor,
+                locationEnabled: locationEnabled
+            )
         )
     }
 

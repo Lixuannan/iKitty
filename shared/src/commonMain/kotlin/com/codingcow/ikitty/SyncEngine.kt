@@ -70,9 +70,17 @@ class SyncEngine(
     /**
      * 跑一次完整同步。
      *
-     * 顺序是 push → pull，而不是反过来：先把自己的新消息交上去，紧接着的 pull 就顺带
-     * 拿到权威序号，一次往返就能让本地进入一致状态。反过来的话刚发的消息要等下一轮
-     * 才会被服务端看到。
+     * 消息的顺序始终是 push → pull：先把自己的新消息交上去，紧接着的 pull 就顺带拿到权威
+     * 序号，一次往返就能让本地进入一致状态。反过来的话刚发的消息要等下一轮才会被服务端看到。
+     *
+     * **设置的顺序在第一次与某个云空间同步时是反的：先拉后推。** 一台全新设备带着一套默认
+     * 设置，如果先推，它就用自己的墙钟时间戳把云端那份真实设置覆盖掉（服务端是 `updated_at`
+     * 的 LWW，而新设备的"现在"一定比另一台设备上一次同步更晚）。另一台设备下一次同步再把
+     * 默认值拉回来——用户看到的就是"名字、API Key 每换一台设备就没了，每次都要重填"。
+     *
+     * 所以首次同步的这一轮，消息照常先推，但**设置先不推**；等 pull 回来：
+     * 云端有设置就继承（推的一侧靠指纹判定"没有变化"），云端没有才把本机这份推上去。
+     * 这个顺序只在每个云空间的第一轮发生一次（[SyncCredentialStore.settingsSynced]）。
      */
     suspend fun sync(): SyncReport {
         syncLock.withLock {
@@ -96,8 +104,11 @@ class SyncEngine(
                 // 老图片名换成内容哈希：云端是按哈希去重的，用随机名上传会让同一张图存很多份。
                 migrateImages().forEach(onWarning)
 
+                // 与这个云空间的第一轮：消息照推，设置留到 pull 之后再决定。
+                val firstContact = !credentials.settingsSynced()
                 val before = credentials.sinceRev()
-                val pushed = push(accountKey, includeApiKey)
+                val pushed = push(accountKey, includeApiKey, includeSettings = !firstContact)
+
                 // 没有东西要推时，顺带要一次全量墓碑。
                 //
                 // 增量拉取看不到"很久以前被别的设备删掉的那条"（它的 rev 早已落在游标后面），
@@ -108,11 +119,22 @@ class SyncEngine(
                     includeApiKey = includeApiKey,
                     tombstonesOnly = pushed.messagesPushed == 0 && before > 0
                 )
+
+                // 首轮收尾：拉完之后推一次。云端有设置时这一推什么都不带（指纹已经对齐），
+                // 连网络请求都不会发；云端没有设置时它把本机这份推上去。
+                val settled = if (firstContact) {
+                    // 标记必须在 pull 成功之后才置上：拉失败了这一轮什么都没对齐，下次还得先拉。
+                    credentials.setSettingsSynced(true)
+                    push(accountKey, includeApiKey, includeSettings = true)
+                } else {
+                    null
+                }
+
                 SyncReport(
-                    messagesPushed = pushed.messagesPushed,
-                    kvPushed = pushed.kvPushed,
+                    messagesPushed = pushed.messagesPushed + (settled?.messagesPushed ?: 0),
+                    kvPushed = pushed.kvPushed + (settled?.kvPushed ?: 0),
                     pulled = pulled.pulledMessages,
-                    rejected = pushed.rejected,
+                    rejected = pushed.rejected + (settled?.rejected ?: emptyList()),
                     settingsApplied = pulled.settingsApplied,
                     imagesDownloaded = pulled.imagesDownloaded
                 )
@@ -161,7 +183,18 @@ class SyncEngine(
         val rejected: List<String>
     )
 
-    private suspend fun push(accountKey: String, includeApiKey: Boolean): PushOutcome {
+    /**
+     * 推本地待推的消息与设置。
+     *
+     * [includeSettings] 为 false 时**只推消息**：用于与某个云空间的第一轮同步，那一轮要等
+     * pull 回来才知道该不该用本机设置覆盖云端（见 [sync]）。指纹不在这里更新——没推的东西
+     * 不能算"已经推过"，否则下一轮就再也不会推设置了。
+     */
+    private suspend fun push(
+        accountKey: String,
+        includeApiKey: Boolean,
+        includeSettings: Boolean = true
+    ): PushOutcome {
         val deviceId = credentials.deviceId()
         val local = log.all()
 
@@ -181,9 +214,14 @@ class SyncEngine(
 
         // 设置只有在真的变了的时候才推：否则每轮同步都写一次 D1，
         // 还会把 cloudSettingsAt 抬高，让另一台设备的更新更难落地。
+        //
+        // 指纹刻意不含 API Key，所以"只把同步 Key 的开关打开"在指纹上看不出来。那一种情况
+        // 由"云端那份还没有 Key"单独判断：开关开着、云端却没有，就补推一次。反过来，开关
+        // **关**着时不看它——关闭开关不该触发一次抹掉云端已有 Key 的推送。
         val encoded = encodeSettings(includeApiKey, deviceId)
         val settingsChanged = encoded.fingerprint != credentials.settingsFingerprint()
-        val kv = if (settingsChanged) {
+        val uploadsApiKey = includeApiKey && !credentials.cloudSettingsHasApiKey()
+        val kv = if ((settingsChanged || uploadsApiKey) && includeSettings) {
             listOf(
                 SyncKvItem(
                     key = SyncSettingsCodec.KV_KEY,
@@ -225,6 +263,8 @@ class SyncEngine(
         if (kv.isNotEmpty()) {
             credentials.setSettingsFingerprint(encoded.fingerprint)
             credentials.setSettingsUpdatedAt(kv.first().updatedAt)
+            // 推上去的 payload 是整份替换：带没带 Key，云端现在就等于这一份。
+            credentials.setCloudSettingsHasApiKey(includeApiKey)
         }
         return PushOutcome(accepted.size, kv.size, response.rejected)
     }
@@ -315,6 +355,15 @@ class SyncEngine(
      */
     private suspend fun applyPulledSettings(kv: List<SyncKvItem>, includeApiKey: Boolean): Boolean {
         val item = kv.firstOrNull { it.key == SyncSettingsCodec.KV_KEY } ?: return false
+
+        // "云端那份里有没有 Key"是一个**事实**，与"这一份要不要应用到本机"是两件事：
+        // 即便它不比已知版本更新，也要记下来。开关开着、而云端确实没有 Key 时，下一次 push
+        // 据此把 Key 补上去（指纹不含 Key，这一层判断是"只打开开关"能生效的唯一依据）。
+        val cloudHasApiKey = SyncSettingsCodec.containsApiKey(item.payload)
+        credentials.setCloudSettingsHasApiKey(cloudHasApiKey)
+
+        // 只接受比"云端的已知版本"更新的那一份，并且不重复应用自己刚推上去的：
+        // 判据是 `updatedAt > cloudSettingsAt`，而自己推的那一份在 push 阶段已经记过时间戳。
         if (item.updatedAt <= credentials.cloudSettingsAt()) return false
 
         // 解码需要"本机已有的 Key"来兜住"云端那份没带 api_key"的情况。
@@ -325,7 +374,7 @@ class SyncEngine(
             return false
         }
 
-        applySettings(settings, SyncSettingsCodec.containsApiKey(item.payload))
+        applySettings(settings, cloudHasApiKey)
         credentials.setCloudSettingsAt(item.updatedAt)
         // 应用之后本机设置已经变了，指纹也要跟着更新，否则下一轮会把自己刚应用的那份又推回去。
         credentials.setSettingsFingerprint(encodeSettings(includeApiKey, credentials.deviceId()).fingerprint)

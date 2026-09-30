@@ -84,7 +84,12 @@ internal object StoredKeyRegistry {
 
     val ints: List<String> = listOf(SettingsKeys.MAX_TOKENS)
 
-    val flags: List<String> = listOf(SettingsKeys.LOCATION_ENABLED, SyncKeys.INCLUDE_API_KEY)
+    val flags: List<String> = listOf(
+        SettingsKeys.LOCATION_ENABLED,
+        SyncKeys.INCLUDE_API_KEY,
+        SyncKeys.SETTINGS_SYNCED,
+        SyncKeys.CLOUD_SETTINGS_HAS_API_KEY
+    )
 }
 
 /**
@@ -117,37 +122,56 @@ class SettingsRepository(private val store: KeyValueStore) {
     val locationEnabled: Flow<Boolean> =
         store.values.map { it.boolean(SettingsKeys.LOCATION_ENABLED, true) }
 
-    suspend fun save(config: ApiConfig) {
+    /**
+     * 一次写入全部设置。
+     *
+     * 这是保存设置的**唯一完整入口**，也是唯一在正常路径上被调用的入口：
+     * 三块设置（模型服务、角色、定位）必须落进**同一次 `put`**。分开写会让存储里短暂存在
+     * 一个"改了一半"的快照，而同一时刻正在跑的同步随时可能读到它——推上云的就是半份设置。
+     *
+     * 单块入口（[save] / [saveLocationEnabled]）保留给测试与迁移使用；修改设置的运行时路径
+     * 一律走这里。
+     */
+    suspend fun save(config: ApiConfig, persona: CatPersona, locationEnabled: Boolean) {
         store.put(
-            mapOf(
-                SettingsKeys.BASE_URL to SettingValue.Str(config.normalizedBaseUrl()),
-                SettingsKeys.API_KEY to SettingValue.Str(config.apiKey.trim()),
-                SettingsKeys.MODEL to SettingValue.Str(config.model.trim()),
-                SettingsKeys.TEMPERATURE to SettingValue.Num(config.temperature),
-                SettingsKeys.TOP_P to SettingValue.Num(config.topP),
-                SettingsKeys.MAX_TOKENS to SettingValue.IntValue(config.maxTokens),
-                SettingsKeys.THINKING to SettingValue.Str(config.thinking.name),
-                SettingsKeys.REASONING_EFFORT to SettingValue.Str(config.reasoningEffort.name),
-                SettingsKeys.PROVIDER_ID to SettingValue.Str(config.providerId)
-            )
+            configEntries(config) + personaEntries(persona) + locationEntries(locationEnabled)
         )
+    }
+
+    suspend fun save(config: ApiConfig) {
+        store.put(configEntries(config))
     }
 
     suspend fun save(persona: CatPersona) {
-        store.put(
-            mapOf(
-                SettingsKeys.CAT_NAME to SettingValue.Str(persona.name.trim()),
-                SettingsKeys.CAT_TRAITS to SettingValue.Str(persona.traits.encodeTraits()),
-                SettingsKeys.CAT_SPEECH_STYLE to SettingValue.Str(persona.speechStyle.name),
-                SettingsKeys.CAT_FLAVOR to SettingValue.Str(persona.flavor.name),
-                SettingsKeys.CAT_NOTES to SettingValue.Str(persona.notes.trim())
-            )
-        )
+        store.put(personaEntries(persona))
     }
 
     suspend fun saveLocationEnabled(enabled: Boolean) {
-        store.put(mapOf(SettingsKeys.LOCATION_ENABLED to SettingValue.Flag(enabled)))
+        store.put(locationEntries(enabled))
     }
+
+    private fun configEntries(config: ApiConfig): Map<String, SettingValue> = mapOf(
+        SettingsKeys.BASE_URL to SettingValue.Str(config.normalizedBaseUrl()),
+        SettingsKeys.API_KEY to SettingValue.Str(config.apiKey.trim()),
+        SettingsKeys.MODEL to SettingValue.Str(config.model.trim()),
+        SettingsKeys.TEMPERATURE to SettingValue.Num(config.temperature),
+        SettingsKeys.TOP_P to SettingValue.Num(config.topP),
+        SettingsKeys.MAX_TOKENS to SettingValue.IntValue(config.maxTokens),
+        SettingsKeys.THINKING to SettingValue.Str(config.thinking.name),
+        SettingsKeys.REASONING_EFFORT to SettingValue.Str(config.reasoningEffort.name),
+        SettingsKeys.PROVIDER_ID to SettingValue.Str(config.providerId)
+    )
+
+    private fun personaEntries(persona: CatPersona): Map<String, SettingValue> = mapOf(
+        SettingsKeys.CAT_NAME to SettingValue.Str(persona.name.trim()),
+        SettingsKeys.CAT_TRAITS to SettingValue.Str(persona.traits.encodeTraits()),
+        SettingsKeys.CAT_SPEECH_STYLE to SettingValue.Str(persona.speechStyle.name),
+        SettingsKeys.CAT_FLAVOR to SettingValue.Str(persona.flavor.name),
+        SettingsKeys.CAT_NOTES to SettingValue.Str(persona.notes.trim())
+    )
+
+    private fun locationEntries(enabled: Boolean): Map<String, SettingValue> =
+        mapOf(SettingsKeys.LOCATION_ENABLED to SettingValue.Flag(enabled))
 }
 
 private fun Map<String, SettingValue>.string(key: String): String? =
