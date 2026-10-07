@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct iOSApp: App {
     @StateObject private var model = AppModel()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -14,11 +13,6 @@ struct iOSApp: App {
                 .preferredColorScheme(.light)
                 .onAppear { model.start() }
         }
-        // 回到前台就同步一次：另一台设备刚写的消息在这一刻才可能出现。
-        // 不做后台调度（BGTaskScheduler 要额外的 Info.plist 配置与系统授权），
-        // 前台化已经覆盖了主要场景。
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.onForeground() }
-        }
+        // 云同步没有自动触发：回到前台不做任何网络请求，要传要拉都由用户在设置页点。
     }
 }

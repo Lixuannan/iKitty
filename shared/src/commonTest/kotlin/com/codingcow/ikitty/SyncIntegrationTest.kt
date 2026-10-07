@@ -21,8 +21,8 @@ import kotlin.test.assertTrue
  * 验收标准 1 与 2 的直接证据：**真实的 [ChatEngine] + [createSyncFacade]** 贯穿两个"设备"。
  *
  * [SyncEngineTest] 测的是同步内部（推、拉、重写、墓碑）；这里测的是接线：
- * - `ChatEngine` 的消息落盘之后真的会触发同步（`onContentChanged`）；
- * - 同步真的会重写本地日志并让界面看到（`syncCompleted`）；
+ * - 手动触发的上传与下载各自把结果写进状态，并且真的读写同一份文件；
+ * - 下载会重写本地日志并让界面看到（`syncCompleted`）；
  * - 两台设备各自一个 `ChatEngine`，经由同一个 [FakeSyncServer] 收敛到同一份记录。
  *
  * 两台设备的差异都做成了参数：文件系统、设置存储、图片存储、设备 id。这正是平台层
@@ -79,8 +79,8 @@ class SyncIntegrationTest {
     /**
      * 组装一台设备。
      *
-     * 门面在引擎之后创建，但引擎的回调要在门面就绪后才可能被调用 —— 与 Android / iOS
-     * 用可空引用解决的是同一个先后顺序问题，这里用 `lateinit`。
+     * 门面在引擎之后创建。手动模式下引擎不再回调同步，所以不需要可空引用，也不需要
+     * 防抖参数——上传与下载只能由测试显式调用。
      */
     private fun CoroutineScope.buildDevice(id: String, clockStart: Long = NOW): Device {
         val device = Device(id)
@@ -98,9 +98,7 @@ class SyncIntegrationTest {
             imageDataUrls = { emptyMap() },
             locationSource = null,
             invalidateImageCache = {},
-            scope = this,
-            // 与平台层一样：本地内容落盘后通知同步。
-            onContentChanged = { device.facade.notifyContentChanged() }
+            scope = this
         )
         device.facade = createSyncFacade(
             engine = device.engine,
@@ -116,14 +114,22 @@ class SyncIntegrationTest {
                 }
             },
             ioDispatcher = Dispatchers.Unconfined,
-            scope = this,
             // 每台设备一个**独立的、显式推进的**墙钟：同毫秒的两份设置谁赢是服务端的
             // 覆盖顺序，不是这条测试要验的东西。见 [Device.clock]。
-            now = { device.clock },
-            // 真实实现要 5 秒防抖；测试里立刻同步，避免用例依赖虚拟时间推进。
-            debounceMillis = 0L
+            now = { device.clock }
         )
         return device
+    }
+
+    /**
+     * 用户的两次点击：先「上传到云端」，再「从云端下载」。
+     *
+     * 生产代码里它们是两个独立动作，这里连起来是因为下面这些用例验证的是"两台设备收敛到
+     * 同一份记录"这个结果——分两段写会把每条断言都拆开，而它们关心的正是合起来的状态。
+     */
+    private suspend fun SyncFacade.syncBoth() {
+        push()
+        pull()
     }
 
     /** 把某台设备的墙钟往前拨，让它下一次推上去的设置**严格更新**。 */
@@ -134,9 +140,9 @@ class SyncIntegrationTest {
     /**
      * 只改"是否把 API Key 一并同步"不该触发同步。
      *
-     * 门面里那个 setter 原来会顺手调一次 [SyncFacade.syncNow]。后果是每一条"写凭据"的路径
-     * 都会发两轮请求（第一轮用的还是旧密钥），而 iOS 的设置页会把这个网络操作等在主线程上——
-     * 也就是那个"点保存就卡住"的来源。同步现在只能由调用方在**凭据全部落盘之后**显式发起。
+     * 门面里那个 setter 曾经会顺手推一次。后果是每一条"写凭据"的路径都会发出网络请求，
+     * 而 iOS 的设置页会把这个操作等在主线程上——也就是那个"点保存就卡住"的来源。
+     * 手动模式下上传只能由调用方在**凭据全部落盘之后**显式发起。
      */
     @Test
     fun `toggling the api key switch does not start a sync`() = runTest {
@@ -144,8 +150,7 @@ class SyncIntegrationTest {
         try {
             val marker = "只改开关不该被推上去的消息"
             val device = scope.buildDevice("device-a")
-            // 直接写日志，不走 send 那条路径：这条用例要观测的是"改开关有没有发起同步"，
-            // 而内容落盘后本来就会触发一次防抖同步，会把观测搅浑。
+            // 直接写日志，不走 send 那条路径：这条用例要观测的只是"改开关有没有发起同步"。
             device.log.append(
                 StoredMessage(
                     seq = 1,
@@ -167,10 +172,10 @@ class SyncIntegrationTest {
                 "只改开关不该发起同步：消息被推上去就说明同步跑了"
             )
 
-            // 显式同步一次之后它才该上去——证明网络通路本身是好的，上一条断言不是因为别的原因通过。
-            device.facade.syncNow()
+            // 显式上传一次之后它才该上去——证明网络通路本身是好的，上一条断言不是因为别的原因通过。
+            device.facade.push()
             advanceUntilIdle()
-            assertTrue(server.messages.any { it.content == marker }, "显式调用 syncNow 之后消息要上云")
+            assertTrue(server.messages.any { it.content == marker }, "显式点上传之后消息要上云")
         } finally {
             scope.cancel()
         }
@@ -182,7 +187,7 @@ class SyncIntegrationTest {
     }
 
     /**
-     * 没配服务地址时 [SyncFacade.syncNowAndAwait] 必须**立刻**返回 `Disabled`。
+     * 没配服务地址时 [SyncFacade.push] 必须**立刻**返回 `Disabled`。
      *
      * 这是"填完 API Key 点保存就卡死"的根因回归。旧实现等的是"状态与触发前不同"，而触发
      * 前后都是同一个 `Disabled`——`data object` 相等、StateFlow 不会重新发射，于是永远等不到，
@@ -194,7 +199,7 @@ class SyncIntegrationTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         try {
             val device = scope.buildDevice("device-a")
-            val status = withTimeoutOrNull(1_000L) { device.facade.syncNowAndAwait() }
+            val status = withTimeoutOrNull(1_000L) { device.facade.push() }
             assertEquals(
                 SyncStatus.Disabled,
                 status,
@@ -213,7 +218,7 @@ class SyncIntegrationTest {
         try {
             val device = scope.buildDevice("device-a")
             device.facade.setServiceUrl("https://sync.test")
-            val status = withTimeoutOrNull(1_000L) { device.facade.syncNowAndAwait() }
+            val status = withTimeoutOrNull(1_000L) { device.facade.push() }
             assertTrue(status is SyncStatus.NeedsAccountKey, "要立刻返回 NeedsAccountKey，实际是 $status")
         } finally {
             scope.cancel()
@@ -223,7 +228,7 @@ class SyncIntegrationTest {
     /**
      * 配好凭据时返回值就是这一轮的终态，且与写进 [SyncFacade.status] 的那份一致。
      *
-     * 先写一条本地消息再同步：这样这一轮确实推了东西，终态是 `Done` 而不是"没什么可说的"
+     * 先写一条本地消息再上传：这样这一轮确实推了东西，终态是 `Done` 而不是"没什么可说的"
      * `Idle`——两种都是终态，但只有 `Done` 能证明返回值来自**这一轮**的结果。
      */
     @Test
@@ -242,7 +247,7 @@ class SyncIntegrationTest {
                 )
             )
             device.facade.enable()
-            val status = withTimeoutOrNull(5_000L) { device.facade.syncNowAndAwait() }
+            val status = withTimeoutOrNull(5_000L) { device.facade.push() }
             assertTrue(status is SyncStatus.Done, "推了一条消息，终态应当是 Done，实际是 $status")
             assertEquals(status, device.facade.status.value, "返回值与状态行不能各说各话")
             // 断言的是外部状态（云端真的收到了），不是组件自己的汇报。
@@ -252,7 +257,7 @@ class SyncIntegrationTest {
         }
     }
 
-    /** 本机产生一条用户消息：写成引擎会写的那种记录，再走引擎的"内容变了"通知。 */
+    /** 本机产生一条用户消息：写成引擎会写的那种记录，等测试自己显式上传。 */
     private suspend fun Device.say(content: String, seq: Long) {
         log.append(
             StoredMessage(
@@ -263,8 +268,6 @@ class SyncIntegrationTest {
                 msgId = newMessageId(now = NOW + seq)
             )
         )
-        // 这一步是"落盘后通知同步"的等价物；真实路径由 ChatEngine.append 触发同一个回调。
-        engine.notifyContentChanged()
     }
 
     @Test
@@ -278,7 +281,7 @@ class SyncIntegrationTest {
             deviceA.say("第二句", 2)
             advanceUntilIdle()
             // 防抖为 0 时上面的通知已经同步过；再显式跑一次让断言不依赖时序。
-            deviceA.facade.syncNow()
+            deviceA.facade.syncBoth()
 
             assertEquals(
                 listOf("第一句", "第二句"),
@@ -290,7 +293,7 @@ class SyncIntegrationTest {
             // ---- 设备 B：首次同步把云端记录拉下来 ----
             val deviceB = scope.buildDevice("device-b")
             deviceB.facade.enable()
-            deviceB.facade.syncNow()
+            deviceB.facade.syncBoth()
             // 拉完再 start：start 会读盘并把历史灌进引擎，这里要观察的正是同步写下的那份记录。
             deviceB.engine.start()
             advanceUntilIdle()
@@ -324,7 +327,7 @@ class SyncIntegrationTest {
             // A 先同步一次：模拟"这台设备早就配好了"。它会在云端写下当前的默认设置，
             // 之后墙钟继续往前走——用户改设置总是发生在别的设备上一次同步之后，
             // 而不是同一毫秒里。
-            deviceA.facade.syncNow()
+            deviceA.facade.syncBoth()
             deviceA.advanceClock(60_000L)
 
             // 顺序要紧：先打开开关，再改设置。
@@ -339,16 +342,14 @@ class SyncIntegrationTest {
                 true
             )
             advanceUntilIdle()
-            deviceA.facade.syncNow()
+            deviceA.facade.syncBoth()
 
             assertTrue(
                 server.kv.getValue("settings").payload.contains("sk-secret"),
                 "打开开关后 API Key 要进云端"
             )
 
-            // 设备 B：新设备。它的墙钟落在 A"上一次同步"与"A 改设置"之间，于是：
-            // - B 这一轮推上去的是本机默认设置（本地设置从没被用户改过）；
-            // - 但 A 那份**更新**，按 LWW 该由 A 赢，所以 B 拉下来之后本机该变成 A 的设置。
+            // 设备 B：新设备。它会把 A 那份设置拉下来——A 那份更新，按 LWW 该由 A 赢。
             //
             // 两边的墙钟刻意错开：时间戳相等时服务端按到达顺序覆盖，那时测出来的是覆盖顺序
             // 而不是 LWW。这条用例盯的是"更新的那份能落到本机"。
@@ -356,7 +357,7 @@ class SyncIntegrationTest {
             deviceB.engine.start()
             advanceUntilIdle()
             deviceB.facade.enable()
-            deviceB.facade.syncNow()
+            deviceB.facade.syncBoth()
             advanceUntilIdle()
 
             assertEquals("cat-1", deviceB.engine.config.value.model, "云端设置要落到设备 B")
@@ -373,7 +374,7 @@ class SyncIntegrationTest {
                 true
             )
             advanceUntilIdle()
-            deviceB.facade.syncNow()
+            deviceB.facade.syncBoth()
 
             val payload = server.kv.getValue("settings").payload
             assertTrue(payload.contains("cat-2"), "非敏感字段要更新")
@@ -384,15 +385,15 @@ class SyncIntegrationTest {
     }
 
     /**
-     * 新设备的第一轮同步必须**先拉设置、再决定推不推**，不能拿本机默认值去覆盖云端。
+     * 新设备点「上传到云端」不能拿本机默认值覆盖云端设置。
      *
-     * 这条用例把"新设备"的真实时钟关系固定下来：一台刚装好的手机的墙钟**一定比另一台设备
-     * 上一次同步更新**。服务端的设置是 LWW（`updated_at >=` 才覆盖），于是只要新设备先把
-     * 自己的默认设置推上去，它就一定赢——另一台设备下一次同步再把设置拉回来，用户看到的
+     * 这台设备的墙钟**一定比另一台设备上一次同步更新**。服务端的设置是 LWW，于是只要新设备
+     * 把自己的默认设置推上去，它就一定赢——另一台设备下一次下载再把设置拉回来，用户看到的
      * 就是"改好的名字、API Key 每换一台设备就没了，每次都要重填"。
      *
-     * 所以这里让 B 的墙钟比 A **晚**，而不是像 [settings and api key follow the switch] 那样
-     * 靠"B 的钟更早"来掩盖这个问题。
+     * 手动模式下的规则是：还没和这个云空间对过设置的账时，上传**先问一次云端有没有设置**，
+     * 有就一个字段都不推。所以 B 即使先点上传、再点下载，云端那份也原样保留，而 B 在下载之后
+     * 继承到 A 的设置。
      */
     @Test
     fun `a brand new device adopts cloud settings instead of overwriting them with defaults`() = runTest {
@@ -410,30 +411,35 @@ class SyncIntegrationTest {
                 true
             )
             advanceUntilIdle()
-            deviceA.facade.syncNow()
+            deviceA.facade.syncBoth()
             advanceUntilIdle()
 
             val cloudBefore = server.kv.getValue("settings").payload
             assertTrue(cloudBefore.contains("团子"), "前置条件：云端要已经有 A 的设置")
 
             // ---- 设备 B：全新安装，从没改过设置，墙钟比 A 晚 ----
+            // 先上传（B 本地还没有任何消息，这一步实际只做设置对账），再下载继承。
             val deviceB = scope.buildDevice("device-b", clockStart = deviceA.clock + 600_000L)
             deviceB.engine.start()
             advanceUntilIdle()
             deviceB.facade.enable()
-            deviceB.facade.syncNow()
+            deviceB.facade.push()
+            advanceUntilIdle()
+
+            val cloudAfterPush = server.kv.getValue("settings").payload
+            assertEquals(
+                "团子",
+                SyncSettingsCodec.decode(cloudAfterPush, "")!!.persona.name,
+                "新设备的上传不能覆盖云端设置，否则每台设备都要重填一遍"
+            )
+
+            deviceB.facade.pull()
             advanceUntilIdle()
 
             assertEquals("团子", deviceB.engine.persona.value.name, "新设备要继承云端的角色名字")
             assertEquals("不要聊工作", deviceB.engine.persona.value.notes)
             assertEquals("sk-cloud", deviceB.engine.config.value.apiKey, "新设备要继承云端的 API Key")
             assertEquals("cat-1", deviceB.engine.config.value.model)
-
-            val cloudAfter = server.kv.getValue("settings").payload
-            assertTrue(
-                cloudAfter.contains("团子"),
-                "云端设置不能被新设备的默认值覆盖，否则每台设备都要重填一遍"
-            )
         } finally {
             scope.cancel()
         }
@@ -455,14 +461,14 @@ class SyncIntegrationTest {
             advanceUntilIdle()
             device.facade.enable()
 
-            // 先把设置（含 Key）存好，但开关还关着：这一轮同步不会带 Key。
+            // 先把设置（含 Key）存好，但开关还关着：这一轮上传不会带 Key。
             device.engine.saveSettings(
                 ApiConfig(baseUrl = "https://example.test/v1", apiKey = "sk-later", model = "cat-1"),
                 CatPersona(name = "团子"),
                 true
             )
             advanceUntilIdle()
-            device.facade.syncNow()
+            device.facade.push()
             advanceUntilIdle()
             assertFalse(
                 SyncSettingsCodec.containsApiKey(server.kv.getValue("settings").payload),
@@ -472,7 +478,7 @@ class SyncIntegrationTest {
             // 只打开开关，不改任何别的设置。
             device.facade.setIncludeApiKey(true)
             advanceUntilIdle()
-            device.facade.syncNow()
+            device.facade.push()
             advanceUntilIdle()
 
             val payload = server.kv.getValue("settings").payload
@@ -481,6 +487,48 @@ class SyncIntegrationTest {
                 "打开开关之后云端应当拿到 Key"
             )
             assertEquals("sk-later", SyncSettingsCodec.decode(payload, "")!!.config.apiKey)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * 每次动作前重新落盘一遍凭据，不能把云空间状态清掉。
+     *
+     * 设置页的两个按钮都是"先写三个草稿、再跑这一轮"，而写入是无条件发生的。如果写入等于
+     * 换云空间，`SETTINGS_SYNCED` 与游标会在每一轮开始前被抹掉：本地改过的设置会被当成
+     * "云端已有一份"而永远推不上去，用户看到的是"改了名字和 Key，点上传却说我得先下载"。
+     */
+    @Test
+    fun `re-saving credentials before every upload does not block later settings uploads`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val device = scope.buildDevice("device-a")
+            device.engine.start()
+            advanceUntilIdle()
+
+            // 与设置页一致：写地址、写开关、写密钥，然后才发起这一轮。
+            device.facade.enable()
+            device.facade.setIncludeApiKey(true)
+            device.facade.push()
+            advanceUntilIdle()
+            device.advanceClock(60_000L)
+
+            // 改完设置再走同一条路径：重新落盘凭据 → 上传。
+            device.engine.saveSettings(
+                ApiConfig(baseUrl = "https://example.test/v1", apiKey = "sk-1", model = "cat-2"),
+                CatPersona(name = "团子"),
+                true
+            )
+            advanceUntilIdle()
+            device.facade.enable()
+            device.facade.setIncludeApiKey(true)
+            device.facade.push()
+            advanceUntilIdle()
+
+            val payload = SyncSettingsCodec.decode(server.kv.getValue("settings").payload, "")!!
+            assertEquals("cat-2", payload.config.model, "重写凭据之后设置仍要能上传")
+            assertEquals("团子", payload.persona.name)
         } finally {
             scope.cancel()
         }

@@ -167,7 +167,7 @@ class IosPlatformTest {
      *
      * 这就是"保存了但读回来还是旧的"那条回归：凭据的同步写入（`SyncCredentialWriter`）
      * 直接写 `NSUserDefaults`，而 store 曾经在构造时缓存一份快照——于是设置页回显旧地址、
-     * `syncNow()` 拿旧密钥、换了账号游标却还停在旧云空间的值上。现在 `values` 每次都重读。
+     * 「上传到云端」拿旧密钥、换了账号游标却还停在旧云空间的值上。现在 `values` 每次都重读。
      */
     @Test
     fun `reads see values written straight to user defaults`() = runTest {

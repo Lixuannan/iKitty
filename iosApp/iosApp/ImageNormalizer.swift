@@ -16,7 +16,21 @@ import Shared
 /// `scale = 1` 是为了让输出像素尺寸就等于目标尺寸，而不是再乘一遍屏幕倍率。
 enum ImageNormalizer {
 
-    static func normalizedJpegData(from image: UIImage) -> Data? {
+    /// 重绘与 JPEG 编码的专属队列。
+    ///
+    /// 归一化不是廉价操作：一张 1200 万像素的照片要走一次解码、一次缩放到 1280 的重绘和一次
+    /// JPEG 编码，实测在百毫秒量级；选中九张就是肉眼可见的卡顿，所以它绝不能跑在主线程上
+    /// （Android 那边对应 `ImageStore.importAll` 的 `withContext(Dispatchers.IO)`）。
+    /// 串行队列即可：图片之间没有依赖，但串行能避免九张大图同时解码把内存顶到峰值。
+    private static let queue = DispatchQueue(label: "com.codingcow.ikitty.image-normalize", qos: .userInitiated)
+
+    static func normalizedJpegData(from image: UIImage) async -> Data? {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: normalize(image)) }
+        }
+    }
+
+    private static func normalize(_ image: UIImage) -> Data? {
         let maxDimension = CGFloat(ImageSupportKt.IMAGE_MAX_DIMENSION)
 
         let pixelWidth = image.size.width * image.scale

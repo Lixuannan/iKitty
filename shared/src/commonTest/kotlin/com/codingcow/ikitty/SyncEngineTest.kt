@@ -86,6 +86,25 @@ class SyncEngineTest {
             ioDispatcher = Dispatchers.Unconfined
         )
 
+    /**
+     * 跑一轮"先传后拉"，等价于手动模式下用户先后点两次按钮。
+     *
+     * 生产代码里这两个动作是分开的（上传不碰本地日志、下载不碰云端），这里把它们连起来，
+     * 是因为下面这些用例验证的是"整条链路的结果"——分开写会把每一条断言都拆成两段，
+     * 而它们关心的往往正是两次操作合起来之后的收敛状态。
+     */
+    private suspend fun SyncEngine.fullSync(): SyncReport = push() + pull()
+
+    /** 把两轮的报告合成一份，供断言直接读。 */
+    private operator fun SyncReport.plus(other: SyncReport): SyncReport = SyncReport(
+        messagesPushed = messagesPushed + other.messagesPushed,
+        kvPushed = kvPushed + other.kvPushed,
+        pulled = pulled + other.pulled,
+        rejected = rejected + other.rejected,
+        settingsApplied = settingsApplied || other.settingsApplied,
+        imagesDownloaded = imagesDownloaded + other.imagesDownloaded
+    )
+
     private var currentConfig = ApiConfig(apiKey = "sk-local", model = "m1")
     private var currentPersona = CatPersona()
 
@@ -136,7 +155,7 @@ class SyncEngineTest {
         log.append(message("m1", "你好", 1))
         log.append(message("m2", "在吗", 2))
 
-        val report = newEngine().sync()
+        val report = newEngine().fullSync()
 
         assertEquals(2, report.messagesPushed)
         assertEquals(1L, server.serverSeqOf("m1"))
@@ -152,10 +171,10 @@ class SyncEngineTest {
     fun `second sync does not re-upload what the server already has`() = runTest {
         log.append(message("m1", "你好", 1))
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         server.requests.clear()
 
-        val report = engine.sync()
+        val report = engine.fullSync()
 
         assertEquals(0, report.messagesPushed, "已经推过的消息不该再出现在请求里")
         assertTrue(server.requests.all { it.messages.isEmpty() })
@@ -172,7 +191,7 @@ class SyncEngineTest {
         )
 
         val engine = newEngine()
-        val report = engine.sync()
+        val report = engine.fullSync()
 
         assertEquals(0, report.messagesPushed, "本地没有待推的消息")
         assertEquals(listOf("other-1", "other-2"), log.all().map { it.msgId })
@@ -189,11 +208,38 @@ class SyncEngineTest {
         server.seedMessages(listOf(SyncMessage("other-1", 0, StoredMessage.ROLE_USER, "云端已有", 100)))
 
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
 
         val ids = log.all().map { it.msgId }
         // 云端的那条排前面，本地待推的排后面；两者都不丢。
         assertEquals(listOf("other-1", "local-1"), ids)
+    }
+
+    /**
+     * 一次拉取没有覆盖到刚推上去的消息时，本机那条**保留自己的草稿 seq**，于是同一份日志里
+     * 会出现两个相同的 seq。这不是数据丢失，但界面绝不能拿 seq 当列表 key：Compose 的 key
+     * 重复会直接抛 `IllegalArgumentException: Key ... was already used` 崩掉进程（也就是
+     * "开启云同步后频繁闪退"）。列表身份只能是 [StoredMessage.msgId]——这里盯住"身份唯一"。
+     */
+    @Test
+    fun `merge keeps a unique identity even when a local draft seq collides with a cloud seq`() = runTest {
+        // 云端已经有满满一页：本机刚推的那条落在这一页之外，只能以草稿 seq 留在本地。
+        server.seedMessages(
+            (1..SYNC_PULL_LIMIT).map { index ->
+                SyncMessage("cloud-$index", 0, StoredMessage.ROLE_USER, "云端 $index", index * 1000L)
+            }
+        )
+        log.append(message("local-1", "本机草稿", 1))
+
+        newEngine().fullSync()
+
+        val stored = log.all()
+        assertEquals(SYNC_PULL_LIMIT + 1, stored.size, "云端一页与本机草稿都要在")
+        assertEquals(stored.size, stored.map { it.msgId }.toSet().size, "msgId 必须是唯一身份")
+        assertTrue(
+            stored.groupingBy { it.seq }.eachCount().any { it.value > 1 },
+            "本机草稿的 seq 会与云端某条撞车，所以界面不能拿 seq 当列表 key"
+        )
     }
 
     @Test
@@ -201,13 +247,13 @@ class SyncEngineTest {
         log.append(message("m1", "会被删掉", 1))
         log.append(message("m2", "留着", 2))
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         assertEquals(listOf("m1", "m2"), log.all().map { it.msgId })
 
         // 另一台设备把 m1 删掉了。
         server.seedDeletion("m1")
 
-        val report = engine.sync()
+        val report = engine.fullSync()
 
         assertEquals(listOf("m2"), log.all().map { it.msgId }, "本地的 m1 要跟着云端一起消失")
         assertTrue(
@@ -226,12 +272,12 @@ class SyncEngineTest {
         }
 
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         val firstId = log.all().single().msgId
         assertTrue(firstId.isNotBlank())
 
         // 再同步一次不该产生第二条消息：识别身份必须已经固化到磁盘上。
-        engine.sync()
+        engine.fullSync()
         assertEquals(1, server.messages.size, "同一条老记录不能被推两次")
         assertEquals(firstId, server.messages.single().msgId)
     }
@@ -258,14 +304,14 @@ class SyncEngineTest {
         )
 
         val engine = newEngine()
-        val report = engine.sync()
+        val report = engine.fullSync()
 
         assertEquals(1, report.imagesDownloaded)
         assertTrue(images.exists(id), "图片要落到本地")
         assertTrue(report.summary()!!.contains("图片 1 张"))
 
         // 再同步一次不该重新下载。
-        val second = engine.sync()
+        val second = engine.fullSync()
         assertEquals(0, second.imagesDownloaded)
     }
 
@@ -274,12 +320,12 @@ class SyncEngineTest {
     @Test
     fun `settings are uploaded once and then only when they change`() = runTest {
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         assertEquals(1, server.kv.size, "第一次同步要带上设置")
         assertEquals("m1", SyncSettingsCodec.decode(server.kv.getValue("settings").payload, "")!!.config.model)
 
         server.requests.clear()
-        engine.sync()
+        engine.fullSync()
         assertTrue(
             server.requests.all { it.kv.isEmpty() },
             "设置没变就不该反复上传"
@@ -287,7 +333,7 @@ class SyncEngineTest {
 
         // 改一个会被同步的字段。
         currentConfig = currentConfig.copy(model = "m2")
-        engine.sync()
+        engine.fullSync()
         assertTrue(server.requests.any { it.kv.isNotEmpty() }, "设置变了要重推")
         assertEquals("m2", SyncSettingsCodec.decode(server.kv.getValue("settings").payload, "")!!.config.model)
     }
@@ -296,7 +342,7 @@ class SyncEngineTest {
     fun `api key goes to the cloud only when the switch is on`() = runTest {
         credentials.setIncludeApiKey(false)
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
 
         val withoutKey = server.kv.getValue("settings").payload
         assertFalse(SyncSettingsCodec.containsApiKey(withoutKey), "开关关着时不该上传 Key")
@@ -305,7 +351,7 @@ class SyncEngineTest {
         // 打开开关并改一次设置，Key 才上去。
         credentials.setIncludeApiKey(true)
         currentConfig = currentConfig.copy(model = "m2")
-        engine.sync()
+        engine.fullSync()
         val withKey = server.kv.getValue("settings").payload
         assertTrue(SyncSettingsCodec.containsApiKey(withKey))
         assertTrue(withKey.contains("sk-local"))
@@ -315,13 +361,13 @@ class SyncEngineTest {
     fun `turning the switch off does not wipe the key already in the cloud`() = runTest {
         credentials.setIncludeApiKey(true)
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         assertTrue(server.kv.getValue("settings").payload.contains("sk-local"))
 
         // 关掉开关再改一次设置：只覆盖非敏感字段。
         credentials.setIncludeApiKey(false)
         currentConfig = currentConfig.copy(model = "m2")
-        engine.sync()
+        engine.fullSync()
         val payload = server.kv.getValue("settings").payload
         assertTrue(payload.contains("m2"), "非敏感字段要更新")
         assertFalse(SyncSettingsCodec.containsApiKey(payload), "但不该再带 api_key 字段")
@@ -339,7 +385,7 @@ class SyncEngineTest {
         server.seedKv(SyncKvItem("settings", payload, updatedAt = 9_999_999L))
 
         val engine = newEngine()
-        val report = engine.sync()
+        val report = engine.fullSync()
 
         assertTrue(report.settingsApplied)
         assertNotNull(appliedSettings)
@@ -357,7 +403,7 @@ class SyncEngineTest {
         )
         server.seedKv(SyncKvItem("settings", payload, updatedAt = 9_999_999L))
 
-        newEngine().sync()
+        newEngine().fullSync()
 
         assertNotNull(appliedSettings)
         assertEquals("cloud-model", appliedSettings!!.config.model)
@@ -372,7 +418,7 @@ class SyncEngineTest {
         server.authorized = false
         val engine = newEngine()
 
-        val error = runCatching { engine.sync() }.exceptionOrNull()
+        val error = runCatching { engine.fullSync() }.exceptionOrNull()
 
         assertTrue(error is SyncException)
         assertTrue((error as SyncException).reauthorize)
@@ -384,16 +430,16 @@ class SyncEngineTest {
         log.append(message("m1", "重试一下", 1))
         server.failuresBeforeSuccess = 2
 
-        val report = newEngine().sync()
+        val report = newEngine().fullSync()
 
         assertEquals(1, report.messagesPushed)
-        // 这一轮是与空云空间的首次同步，请求序列是：
-        // 1) 推消息——被 5xx 拒了两次，第三次成功（被拒绝的那次没有进入服务端的请求记录，
+        // 这一轮是与空云空间的首次对账，请求序列是：
+        // 1) 上传消息——被 5xx 拒了两次，第三次成功（被拒绝的那次没有进入服务端的请求记录，
         //    因为它连 JSON 都没被解析）；
-        // 2) 拉一次；
-        // 3) 首轮收尾再推一次：云端没有设置可继承，于是把本机这份设置推上去。
-        //    云端已经有设置时这一推什么都不带（指纹已对齐），根本不会发请求。
-        assertEquals(3, server.requests.size, "重试成功后要拉取一次，首次同步还要补推一次设置")
+        // 2) 问一次云端有没有设置（首次对账的探问，见 `SyncEngine.push`）；
+        // 3) 云端那份是空的，于是把本机设置推上去；
+        // 4) 下载一次。
+        assertEquals(4, server.requests.size, "重试成功、首次对账探问并补推设置、再下载一次")
     }
 
     @Test
@@ -403,7 +449,7 @@ class SyncEngineTest {
         // 判定 role 是否合法是服务端的事，客户端只负责把拒绝原因如实回报给用户。
         log.append(message("bad", "内容本身没问题", 2).copy(role = "tool"))
 
-        val report = newEngine().sync()
+        val report = newEngine().fullSync()
 
         // 两条都送出去了（`messagesPushed` 数的是"发了多少"），其中一条被服务端拒绝。
         assertEquals(2, report.messagesPushed)
@@ -423,7 +469,7 @@ class SyncEngineTest {
         }
         server.maxBatchMessages = 2
 
-        val report = newEngine().sync()
+        val report = newEngine().fullSync()
 
         // 第一次是整批（4 条）被 413 拒掉（那一批没有进入服务端的请求记录），
         // 砍半之后两次各 2 条通过；末尾还有一次拉取（它是没有消息的那种请求）。
@@ -439,7 +485,7 @@ class SyncEngineTest {
         // 连一条都放不下：服务端对所有批都回 413。
         server.maxBatchMessages = 0
 
-        val error = runCatching { newEngine().sync() }.exceptionOrNull()
+        val error = runCatching { newEngine().fullSync() }.exceptionOrNull()
 
         assertTrue(error is SyncException)
         assertTrue(error.message!!.contains("太大"), "要说清是这条消息的问题，而不是笼统的同步失败")
@@ -462,7 +508,7 @@ class SyncEngineTest {
             )
         )
 
-        newEngine().sync()
+        newEngine().fullSync()
 
         assertTrue(server.messages.isEmpty(), "错误提示不该出现在云端")
     }
@@ -471,7 +517,7 @@ class SyncEngineTest {
     fun `clearSyncState forgets the cursor when switching accounts`() = runTest {
         log.append(message("m1", "你好", 1))
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
         assertTrue(credentials.sinceRev() > 0)
 
         engine.setAccountKey("another-key")
@@ -480,11 +526,45 @@ class SyncEngineTest {
         assertTrue(credentials.pushedMessageIds().isEmpty())
     }
 
+    /**
+     * 同一份凭据重写一遍不能把云空间状态清掉。
+     *
+     * 设置页每点一次「上传到云端」/「从云端下载」都会先把输入框里的地址与密钥重新落盘，
+     * 而写入本身是无条件发生的。如果"写入"等于"换云空间"，游标与 `SETTINGS_SYNCED` 会在
+     * 每一轮开始前被抹掉——表现是每轮都从头拉，而且因为"云端已有设置"永远不推本机设置。
+     */
+    @Test
+    fun `rewriting the same credentials keeps the cloud state`() = runTest {
+        val engine = newEngine()
+        engine.fullSync()
+        val rev = credentials.sinceRev()
+        assertTrue(rev > 0)
+
+        engine.setServiceUrl(credentials.serviceUrl())
+        engine.setAccountKey(credentials.accountKey())
+
+        assertEquals(rev, credentials.sinceRev(), "同一份凭据重写不该清掉游标")
+        assertTrue(credentials.settingsSynced(), "也不该抹掉'设置已对账'")
+    }
+
+    @Test
+    fun `switching to another service url forgets the cloud state`() = runTest {
+        val engine = newEngine()
+        engine.fullSync()
+        assertTrue(credentials.sinceRev() > 0)
+
+        engine.setServiceUrl("https://another.test")
+
+        assertEquals(0L, credentials.sinceRev(), "换地址等于换云空间，必须从头拉")
+        assertTrue(credentials.pushedMessageIds().isEmpty())
+        assertFalse(credentials.settingsSynced())
+    }
+
     @Test
     fun `deleteAll clears the cloud but keeps local data`() = runTest {
         log.append(message("m1", "你好", 1))
         val engine = newEngine()
-        engine.sync()
+        engine.fullSync()
 
         engine.deleteAll()
 
@@ -499,7 +579,7 @@ class SyncEngineTest {
         val engine = newEngine()
         credentials.clearAccountKey()
 
-        val error = runCatching { engine.sync() }.exceptionOrNull()
+        val error = runCatching { engine.fullSync() }.exceptionOrNull()
 
         assertTrue(error is SyncException)
         assertNull(server.requests.firstOrNull(), "没有密钥时一个请求都不该发出去")

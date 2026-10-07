@@ -19,8 +19,12 @@ import kotlin.coroutines.coroutineContext
  * 而是"云端快照 + 尚未推送的本地消息"。所以这里没有任何合并算法——拉取就是整体替换，
  * 替换内容是"云端返回的消息 + 本地还没推上去的那些"。
  *
- * 与 [ChatEngine] 的分工：本类不碰界面状态、不决定"什么时候同步"。它只有两个入口
- * （[sync] 与 [deleteAll]），失败一律抛 [SyncException]；退避与提示由调用方处理。
+ * 与 [ChatEngine] 的分工：本类不碰界面状态、不决定"什么时候同步"。它只有三个入口
+ * （[push]、[pull] 与 [deleteAll]），失败一律抛 [SyncException]；退避与提示由调用方处理。
+ *
+ * 上传与下载是**两个独立入口**，没有把它们合成一次往返的 `sync()`：手动模式下"把本机这份
+ * 传上去"和"把云端那份拿下来"是两个不同的意图，各自等一次、各自报一次结果。拉取会整体替换
+ * 本地日志，把它藏在"上传"里会让一次本该只写云端的操作顺带改写本机。
  *
  * 三条不变量：
  * 1. 任何失败都**不删除**本地数据——只有一次完整的、成功的拉取才会替换日志；
@@ -68,21 +72,18 @@ class SyncEngine(
     suspend fun isConfigured(): Boolean = credentials.accountKey().isNotBlank()
 
     /**
-     * 跑一次完整同步。
+     * 只上传：把本机还没推上去的消息（以及设置）交给服务端，**不拉取**。
      *
-     * 消息的顺序始终是 push → pull：先把自己的新消息交上去，紧接着的 pull 就顺带拿到权威
-     * 序号，一次往返就能让本地进入一致状态。反过来的话刚发的消息要等下一轮才会被服务端看到。
+     * 设置的首次对账（见 `docs/SYNC_DESIGN.md` 6.1）在手动模式下收敛成一条规则：
+     * 与一个云空间还没对过账时**先问一次云端有没有设置**（[fetchCloudSettings]），
+     * 只有确认云端那份是空的，才把本机设置推上去。
      *
-     * **设置的顺序在第一次与某个云空间同步时是反的：先拉后推。** 一台全新设备带着一套默认
-     * 设置，如果先推，它就用自己的墙钟时间戳把云端那份真实设置覆盖掉（服务端是 `updated_at`
-     * 的 LWW，而新设备的"现在"一定比另一台设备上一次同步更晚）。另一台设备下一次同步再把
-     * 默认值拉回来——用户看到的就是"名字、API Key 每换一台设备就没了，每次都要重填"。
-     *
-     * 所以首次同步的这一轮，消息照常先推，但**设置先不推**；等 pull 回来：
-     * 云端有设置就继承（推的一侧靠指纹判定"没有变化"），云端没有才把本机这份推上去。
-     * 这个顺序只在每个云空间的第一轮发生一次（[SyncCredentialStore.settingsSynced]）。
+     * 这一问不能省成"顺手看一眼上传请求的响应"：没有待推消息时那一趟根本不发请求，
+     * 于是"云端有设置"与"什么都没问"会得到同一个 null。而一台全新设备的墙钟一定比另一台
+     * 设备上一次同步更晚，一旦用默认值推上去，按 `updated_at` 的 LWW 必然覆盖云端那份真实
+     * 设置——用户看到的就是"名字、API Key 每换一台设备就没了"。
      */
-    suspend fun sync(): SyncReport {
+    suspend fun push(): SyncReport {
         syncLock.withLock {
             val accountKey = credentials.accountKey()
             if (accountKey.isBlank()) throw SyncException("还没有配置账号密钥")
@@ -90,56 +91,92 @@ class SyncEngine(
             return inIo {
                 // "这份数据要不要带 API Key"必须在**每一次同步开始时取一次**，然后整轮沿用。
                 //
-                // 让 `push` 自己分两次去读会话凭据（一次决定"要不要推"、一次决定"推什么"）
-                // 会造成这样的空档：用户打开开关的那一刻，指纹是按"带 Key"算出来的，
+                // 让 `pushMutations` 自己分两次去读会话凭据（一次决定"要不要推"、一次决定
+                // "推什么"）会造成这样的空档：用户打开开关的那一刻，指纹是按"带 Key"算出来的，
                 // 而真正编码时开关还是旧值——于是这一轮什么都没推，指纹却已经更新，
                 // **Key 再也不会被上传**。
                 val includeApiKey = credentials.includeApiKey()
+                prepareLocalIndexes()
 
-                // 老记录缺消息身份时必须先固化，否则同一条记录每读一次就换一个 id，
-                // 会被反复当成新消息推上去。
-                if (log.migrateMissingIds()) {
-                    onWarning("已为老记录补上消息身份，下次同步会上传它们")
-                }
-                // 老图片名换成内容哈希：云端是按哈希去重的，用随机名上传会让同一张图存很多份。
-                migrateImages().forEach(onWarning)
+                val settingsSettled = credentials.settingsSynced()
+                var pushed = pushMutations(accountKey, includeApiKey, includeSettings = settingsSettled)
 
-                // 与这个云空间的第一轮：消息照推，设置留到 pull 之后再决定。
-                val firstContact = !credentials.settingsSynced()
-                val before = credentials.sinceRev()
-                val pushed = push(accountKey, includeApiKey, includeSettings = !firstContact)
-
-                // 没有东西要推时，顺带要一次全量墓碑。
-                //
-                // 增量拉取看不到"很久以前被别的设备删掉的那条"（它的 rev 早已落在游标后面），
-                // 所以只有在"这一轮没有消息要推"时才补这一次额外的询问——那是同步的主路径
-                // （前台化、定时触发），而当用户刚发了消息时，多一次往返没必要。
-                val pulled = pull(
-                    accountKey = accountKey,
-                    includeApiKey = includeApiKey,
-                    tombstonesOnly = pushed.messagesPushed == 0 && before > 0
-                )
-
-                // 首轮收尾：拉完之后推一次。云端有设置时这一推什么都不带（指纹已经对齐），
-                // 连网络请求都不会发；云端没有设置时它把本机这份推上去。
-                val settled = if (firstContact) {
-                    // 标记必须在 pull 成功之后才置上：拉失败了这一轮什么都没对齐，下次还得先拉。
-                    credentials.setSettingsSynced(true)
-                    push(accountKey, includeApiKey, includeSettings = true)
-                } else {
-                    null
+                if (!settingsSettled) {
+                    val cloudSettings = fetchCloudSettings(accountKey)
+                    if (cloudSettings == null) {
+                        // 空云空间：本机这份就是唯一一份，可以安全上传。
+                        pushed += pushMutations(accountKey, includeApiKey, includeSettings = true)
+                        credentials.setSettingsSynced(true)
+                    } else {
+                        // 云端那份说了算：本机这份要上云，得先「下载」继承它再改。
+                        credentials.setCloudSettingsHasApiKey(
+                            SyncSettingsCodec.containsApiKey(cloudSettings.payload)
+                        )
+                        onWarning("云端已有一份设置，本次没有上传本机设置；先「从云端下载」再上传")
+                    }
                 }
 
                 SyncReport(
-                    messagesPushed = pushed.messagesPushed + (settled?.messagesPushed ?: 0),
-                    kvPushed = pushed.kvPushed + (settled?.kvPushed ?: 0),
-                    pulled = pulled.pulledMessages,
-                    rejected = pushed.rejected + (settled?.rejected ?: emptyList()),
-                    settingsApplied = pulled.settingsApplied,
-                    imagesDownloaded = pulled.imagesDownloaded
+                    messagesPushed = pushed.messagesPushed,
+                    kvPushed = pushed.kvPushed,
+                    pulled = 0,
+                    rejected = pushed.rejected,
+                    settingsApplied = false,
+                    imagesDownloaded = 0
                 )
             }
         }
+    }
+
+    /**
+     * 只下载：拉云端快照、整体替换本地日志、继承云端设置、补齐缺的图片，**不上传**。
+     *
+     * 拉两趟是刻意的：一趟增量（推进游标，拿到新消息与设置），一趟全量墓碑（不推进游标）。
+     * 增量拉取看不到"很久以前被别的设备删掉的那条"——它的 rev 早已落在游标后面——而墓碑
+     * 全量请求又不推进游标，所以两件事各要一次往返，缺了哪一趟都会留下对不上的本地历史。
+     */
+    suspend fun pull(): SyncReport {
+        syncLock.withLock {
+            val accountKey = credentials.accountKey()
+            if (accountKey.isBlank()) throw SyncException("还没有配置账号密钥")
+
+            return inIo {
+                val includeApiKey = credentials.includeApiKey()
+                prepareLocalIndexes()
+
+                val sinceRev = credentials.sinceRev()
+                val page = pullRemote(accountKey, includeApiKey, tombstonesOnly = false)
+                val tombstones = if (sinceRev > 0L) {
+                    pullRemote(accountKey, includeApiKey, tombstonesOnly = true)
+                } else {
+                    null
+                }
+                // 标记必须在拉取成功之后才置上：拉失败了这一轮什么都没对齐。
+                credentials.setSettingsSynced(true)
+
+                SyncReport(
+                    messagesPushed = 0,
+                    kvPushed = 0,
+                    pulled = page.pulledMessages,
+                    rejected = emptyList(),
+                    settingsApplied = page.settingsApplied || (tombstones?.settingsApplied ?: false),
+                    imagesDownloaded = page.imagesDownloaded + (tombstones?.imagesDownloaded ?: 0)
+                )
+            }
+        }
+    }
+
+    /**
+     * 老记录补消息身份、老图片名改内容哈希。
+     *
+     * 两个入口都要做：补身份是为了让去重有稳定依据（推送与合并都按它），
+     * 改图片名是为了让"本地已有"的判定按内容哈希成立，不会把同一张图重复拉一份。
+     */
+    private suspend fun prepareLocalIndexes() {
+        if (log.migrateMissingIds()) {
+            onWarning("已为老记录补上消息身份，下次同步会上传它们")
+        }
+        migrateImages().forEach(onWarning)
     }
 
     /** 清空云端。调用方必须先取得用户确认：没有账号找回，也没有回收站。 */
@@ -156,10 +193,28 @@ class SyncEngine(
         }
     }
 
+    /**
+     * 换账号密钥。**只有值真的变了才作废云空间状态**。
+     *
+     * 这个判断不是优化而是正确性的一部分：设置页每次点「上传到云端」/「从云端下载」都会把
+     * 输入框里的地址与密钥重新落盘一遍，无条件作废的话，游标与"设置已对账"这两个记忆会在
+     * 每一轮开始前被抹掉——于是每一轮都从头拉、并且因为"云端已有设置"而永远不推本机设置。
+     *
+     * 换 key 确实等于换云空间：游标与"推过什么""删过什么"的记忆必须作废，否则会拿旧游标和
+     * 新账号的删除记忆去处理一个完全不同的云空间。
+     */
     suspend fun setAccountKey(key: String) {
-        credentials.setAccountKey(key)
-        // 换 key 等于换云空间：游标与"推过什么""删过什么"的记忆必须作废，
-        // 否则会拿旧游标和新账号的删除记忆去处理一个完全不同的云空间。
+        val normalized = key.trim()
+        if (normalized == credentials.accountKey()) return
+        credentials.setAccountKey(normalized)
+        credentials.clearSyncState()
+    }
+
+    /** 换同步服务地址。判据与理由同 [setAccountKey]：地址也是"连到哪个云空间"的一部分。 */
+    suspend fun setServiceUrl(url: String) {
+        val normalized = url.trim().trimEnd('/')
+        if (normalized == credentials.serviceUrl()) return
+        credentials.setServiceUrl(normalized)
         credentials.clearSyncState()
     }
 
@@ -181,16 +236,44 @@ class SyncEngine(
         val messagesPushed: Int,
         val kvPushed: Int,
         val rejected: List<String>
-    )
+    ) {
+        operator fun plus(other: PushOutcome): PushOutcome = PushOutcome(
+            messagesPushed = messagesPushed + other.messagesPushed,
+            kvPushed = kvPushed + other.kvPushed,
+            rejected = rejected + other.rejected
+        )
+    }
+
+    /**
+     * 问一次云端"有没有设置"，**不推进任何本地游标、不改本地任何状态**。
+     *
+     * `sinceRev` 固定传 0：问题不是"有没有比我这份更新的设置"，而是"云端到底有没有设置"。
+     * 用本机游标去问会在游标已经越过设置那一行时得到"没有"这个错误答案，进而让默认设置
+     * 覆盖云端那份真实设置（见 [push]）。settings 只有一行，代价与一次拉取相同。
+     */
+    private suspend fun fetchCloudSettings(accountKey: String): SyncKvItem? {
+        val api = apiProvider()
+        val response = sendWithRetry(accountKey, emptyList()) { _ ->
+            api.sync(
+                accountKey,
+                SyncRequest(
+                    deviceId = credentials.deviceId(),
+                    sinceRev = 0,
+                    pullLimit = SYNC_PULL_LIMIT
+                )
+            )
+        }.response
+        return response.pull.kv.firstOrNull { it.key == SyncSettingsCodec.KV_KEY }
+    }
 
     /**
      * 推本地待推的消息与设置。
      *
-     * [includeSettings] 为 false 时**只推消息**：用于与某个云空间的第一轮同步，那一轮要等
-     * pull 回来才知道该不该用本机设置覆盖云端（见 [sync]）。指纹不在这里更新——没推的东西
-     * 不能算"已经推过"，否则下一轮就再也不会推设置了。
+     * [includeSettings] 为 false 时**只推消息**：用于与某个云空间还没对过设置账的时候，
+     * 那一轮先只把消息交上去，设置等 [fetchCloudSettings] 问清楚再说（见 [push]）。
+     * 指纹不在这里更新——没推的东西不能算"已经推过"，否则下一轮就再也不会推设置了。
      */
-    private suspend fun push(
+    private suspend fun pushMutations(
         accountKey: String,
         includeApiKey: Boolean,
         includeSettings: Boolean = true
@@ -233,8 +316,8 @@ class SyncEngine(
             emptyList()
         }
 
-        // 每轮最多推一个批次；没推完的留给下一次触发（前台化、下一条消息、手动点）。
-        // 不在这里循环推完：那会让一次同步的耗时不可预测，也让"取消"变得难以响应。
+        // 每轮最多推一个批次；没推完的留给下一次「上传」。不在这里循环推完：那会让一次
+        // 同步的耗时不可预测，也让"取消"变得难以响应。
         // 可变列表：服务端回 413 时 [sendWithRetry] 会把它对半砍到能过为止，
         // 所以推完之后这里看到的是**实际发出去**的那一批。
         val batch = pending.take(SYNC_MAX_BATCH)
@@ -266,7 +349,11 @@ class SyncEngine(
             // 推上去的 payload 是整份替换：带没带 Key，云端现在就等于这一份。
             credentials.setCloudSettingsHasApiKey(includeApiKey)
         }
-        return PushOutcome(accepted.size, kv.size, response.rejected)
+        return PushOutcome(
+            messagesPushed = accepted.size,
+            kvPushed = kv.size,
+            rejected = response.rejected
+        )
     }
 
     /**
@@ -289,7 +376,7 @@ class SyncEngine(
         val imagesDownloaded: Int
     )
 
-    private suspend fun pull(
+    private suspend fun pullRemote(
         accountKey: String,
         includeApiKey: Boolean,
         tombstonesOnly: Boolean

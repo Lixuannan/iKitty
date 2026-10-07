@@ -7,7 +7,8 @@ import Shared
 struct ChatView: View {
     @ObservedObject var model: AppModel
     @FocusState private var isInputFocused: Bool
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var isShowingPhotoPicker = false
     @State private var isShowingCamera = false
     @State private var isShowingMemory = false
     @State private var isShowingBackup = false
@@ -57,14 +58,29 @@ struct ChatView: View {
                 }
                 .ignoresSafeArea()
             }
-            .onChange(of: photoItem) { _, item in
-                guard let item else { return }
+            // 照片选择器挂在导航栈上、由 `isShowingPhotoPicker` 驱动，不能作为
+            // `PhotosPicker` 控件直接放进下面那个 `Menu`：菜单项渲染在系统自己的弹层里，
+            // 从那里发起的 `PHPickerViewController` 不会出现——表现就是点「从相册选择」没反应。
+            .photosPicker(
+                isPresented: $isShowingPhotoPicker,
+                selection: $photoItems,
+                maxSelectionCount: AppModel.maxAttachments,
+                matching: .images
+            )
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        await model.attach(image: image)
+                    // 先把选中项读成 `UIImage`（这一步失败就跳过，与单张时代的行为一致），
+                    // 归一化、上限与失败提示都收在 `AppModel.attach` 里。
+                    var images: [UIImage] = []
+                    for item in items {
+                        if let data = try? await item.loadTransferable(type: Data.self),
+                           let image = UIImage(data: data) {
+                            images.append(image)
+                        }
                     }
-                    photoItem = nil
+                    await model.attach(images: images)
+                    photoItems = []
                 }
             }
         }
@@ -80,13 +96,18 @@ struct ChatView: View {
                         MessageBubble(text: greeting, isUser: false, isError: false)
                             .id(Self.greetingId)
                     }
-                    ForEach(Array(messages.enumerated()), id: \.element.seq) { index, message in
+                    // 身份必须是 `msgId`，不能用 `seq`，理由与 Android 的列表 key 完全相同：
+                    // 一次同步之后，同一份列表里既有服务端分配的 `seq`，也有本机还没推上去的草稿
+                    // `seq`，两套取值范围会重叠，同一个 `seq` 出现两次。Android 的 Compose 会因此
+                    // 直接抛 `Key ... was already used` 崩掉进程；SwiftUI 不崩，但重复的 id 会让
+                    // 滚动定位与动画认错条目。`msgId` 在同步前就固化，合并时也按它去重。
+                    ForEach(Array(messages.enumerated()), id: \.element.msgId) { index, message in
                         MessageBubble(
                             message: message,
                             timeLabel: timeLabel(at: index),
                             imageFor: { name in model.image(for: name) }
                         )
-                        .id(message.seq)
+                        .id(message.msgId)
                     }
                     if let streaming = model.state?.streamingReply, !streaming.isEmpty {
                         // 流式回复单独显示，等结束后才落成一条真正的消息；它还没有落盘时间，不给标签。
@@ -182,7 +203,9 @@ struct ChatView: View {
         HStack(alignment: .bottom, spacing: 8) {
             HStack(alignment: .bottom, spacing: 4) {
                 Menu {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    Button {
+                        isShowingPhotoPicker = true
+                    } label: {
                         Label("从相册选择", systemImage: "photo")
                     }
                     if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -233,15 +256,18 @@ struct ChatView: View {
         return !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private static let streamingId = Int64.min
-    private static let greetingId = Int64.min + 1
+    // 与消息的 `msgId`（String）同类型：同一个 ScrollViewReader 里 id 类型一致，
+    // 不会出现"Int64 哨兵恰好等于某条消息的身份"这种撞车。
+    private static let streamingId = "__streaming__"
+    private static let greetingId = "__greeting__"
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.15)) {
             if let streaming = model.state?.streamingReply, !streaming.isEmpty {
                 proxy.scrollTo(Self.streamingId, anchor: .bottom)
             } else if let last = model.state?.messages.last {
-                proxy.scrollTo(last.seq, anchor: .bottom)
+                // 与消息视图的 `.id` 保持一致：按身份定位，而不是按会重复的 `seq`。
+                proxy.scrollTo(last.msgId, anchor: .bottom)
             }
         }
     }

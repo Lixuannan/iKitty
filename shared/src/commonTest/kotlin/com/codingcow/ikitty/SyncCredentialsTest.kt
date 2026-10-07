@@ -82,7 +82,7 @@ class SyncCredentialsTest {
 
     @Test
     fun `a saved service url is readable back without a sync`() = runTest {
-        // 这条盯的是 iOS 上那个真实缺陷：凭据只在「立即同步」里被写，点「保存」不写，
+        // 这条盯的是 iOS 上那个真实缺陷：凭据曾经只在同步那一个入口里被写，点「保存」不写，
         // 于是关掉设置页之后地址与密钥全丢。写入必须能脱离"同步"单独发生。
         val credentials = store()
         credentials.setServiceUrl("  https://sync.example.workers.dev/  ")

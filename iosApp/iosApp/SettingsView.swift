@@ -42,6 +42,7 @@ struct SettingsView: View {
 
     // 异步反馈
     @State private var isBusy = false
+    @State private var busyLabel = "正在同步…"
     @State private var notice: String?
     @State private var noticeIsError = false
     @State private var fetchedModels: [String] = []
@@ -89,6 +90,27 @@ struct SettingsView: View {
             .disabled(isBusy)
             .onAppear(perform: loadCurrentValues)
             .onChange(of: model.state != nil) { _, _ in loadCurrentValues() }
+        }
+        .overlay { if isBusy { syncBlockingOverlay } }
+    }
+
+    /// 同步期间盖住整页的阻塞动画。
+    ///
+    /// 有意的阻塞：上传/下载是一轮网络往返，期间改地址、改密钥、再点一次都只会让结果说不清。
+    /// 遮罩吃掉所有点击（`.disabled(isBusy)` 再挡住导航栏上那两个按钮），用户除了等没有别的
+    /// 动作可做；同步一结束 `isBusy` 落下，它自己消失。
+    private var syncBlockingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                Text(busyLabel)
+                    .font(.callout)
+                    .foregroundStyle(AppTheme.onSurface)
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+            .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 20))
         }
     }
 
@@ -269,26 +291,20 @@ struct SettingsView: View {
 
             Toggle("把 API Key 一并同步到云端", isOn: $syncIncludeApiKey)
 
-            // 正在等同步时要说清楚在等什么：这时按钮是禁用的，没有这行字用户只会觉得点不动。
             // 有反馈文案时优先显示它——失败原因比"正在同步"更需要被看到。
-            if isBusy && notice == nil {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("正在保存并同步…").foregroundStyle(AppTheme.onSurfaceVariant)
-                }
-            } else if let status = model.state?.sync, !status.message.isEmpty {
+            if !isBusy, let status = model.state?.sync, !status.message.isEmpty {
                 Text(status.message)
                     .font(.footnote)
                     .foregroundStyle(status.isFailed ? AppTheme.error : AppTheme.onSurfaceVariant)
             }
 
-            // 点这里会**等**一次同步跑完再收工：用户点完就知道成功还是失败，不需要事后猜。
-            // 等待期间上面的忙碌提示会顶住，超时有兜底，不会永远转下去。
-            Button("保存并同步") {
-                saveSyncCredentials()
-            }
-            // `state.sync` 本身不是可选的（只有 `state` 是），所以不能再套一层 `?.`。
-            .disabled(isBusy || model.state?.sync.isWorking == true)
+            // 两个动作都会**等**自己那一轮跑完再收工：用户点完就知道成功还是失败，
+            // 期间整页被上面的遮罩盖住（`syncBlockingOverlay`），不会出现"以为没点上"。
+            Button("上传到云端") { pushToCloud() }
+                .disabled(isBusy || syncServiceUrl.isEmpty || syncAccountKey.isEmpty)
+
+            Button("从云端下载") { pullFromCloud() }
+                .disabled(isBusy || syncServiceUrl.isEmpty || syncAccountKey.isEmpty)
 
             Button("清空云端数据", role: .destructive) { confirmingCloudDelete = true }
                 .disabled(isBusy || (syncAccountKey.isEmpty && syncServiceUrl.isEmpty))
@@ -296,10 +312,10 @@ struct SettingsView: View {
             Text("云端同步")
         } footer: {
             Text("填写你自建的 Cloudflare Worker 地址与账号密钥即可在多台设备间同步聊天记录。"
-                + "地址与密钥随「保存」一起写入本机并顺带同步一次，下次打开会回填；"
-                + "「保存并同步」会等这一次同步结束再收工，结果就在这一行显示。"
+                + "「上传到云端」把本机的新消息与设置传上去；「从云端下载」把云端那一份整体拉下来"
+                + "并覆盖本机聊天记录（本机还没上传的消息会保留）。"
+                + "两个动作都会等这一轮结束，结果就在上面这一行显示。"
                 + "同步失败不会影响本机数据。"
-                + "云端以最后写入为准，本机记录不会被同步删除。"
                 + "打开上面的开关后，API Key 会以明文存放在你的 D1 数据库里。")
         }
         .confirmationDialog(
@@ -328,19 +344,34 @@ struct SettingsView: View {
         }
     }
 
-    /// 保存同步凭据，等一次同步跑完，然后把结果写进 `notice`。
+    /// 上传到云端：先落盘凭据，再等这一轮跑完，然后把结果写进 `notice`。
     ///
     /// 失败（例如密钥太短）也要显示出来：写入校验不过时本地什么都没改，用户看到的仍是
     /// 上一次的配置，这一点必须让人知道，而不是静默关掉页面。
-    private func saveSyncCredentials() {
+    private func pushToCloud() {
+        runSync(label: "正在上传…") { await model.pushToCloud(
+            serviceUrl: syncServiceUrl,
+            accountKey: syncAccountKey,
+            includeApiKey: syncIncludeApiKey
+        ) }
+    }
+
+    /// 从云端下载：先落盘凭据，再等这一轮跑完。
+    private func pullFromCloud() {
+        runSync(label: "正在从云端下载…") { await model.pullFromCloud(
+            serviceUrl: syncServiceUrl,
+            accountKey: syncAccountKey,
+            includeApiKey: syncIncludeApiKey
+        ) }
+    }
+
+    /// 跑一轮同步：期间全屏遮罩顶住界面，结束之后把结果写进 `notice`。
+    private func runSync(label: String, _ work: @escaping () async -> String?) {
+        busyLabel = label
         isBusy = true
         notice = nil
         Task {
-            let failure = await model.syncCredentialsAndSync(
-                serviceUrl: syncServiceUrl,
-                accountKey: syncAccountKey,
-                includeApiKey: syncIncludeApiKey
-            )
+            let failure = await work()
             isBusy = false
             if let failure {
                 notice = failure
@@ -477,14 +508,14 @@ struct SettingsView: View {
 
         // 同步凭据也必须在这里保存。
         //
-        // 这是"URL 和密钥存不进去"的第二个根因：同步区原来只有一个写入点（「立即同步」），
+        // 这是"URL 和密钥存不进去"的第二个根因：同步区原来只有一个写入点，
         // 点「保存」只是关闭了页面，@State 里的地址与密钥随视图一起丢掉，
         // 下次打开 `loadCurrentValues` 读到空、再把空值赋回输入框。
         //
-        // 但「保存」**不等**同步：凭据落盘是同步的（函数返回即生效），上传由后台作用域去做，
-        // 结果更新到同步状态行。要"点完就知道同步成功还是失败"走下面那个「保存并同步」按钮。
-        // 把整轮网络往返等在这里，就是"填完 API Key 点保存就卡住"的那条路径。
-        if let failure = model.saveSyncCredentialsAndSyncInBackground(
+        // 但「保存」**只落盘、不发起同步**：凭据落盘是同步的（函数返回即生效），
+        // 上传与下载由同步区那两个按钮显式发起。把整轮网络往返等在这里，
+        // 就是"填完 API Key 点保存就卡住"的那条路径。
+        if let failure = model.saveSyncCredentials(
             serviceUrl: syncServiceUrl,
             accountKey: syncAccountKey,
             includeApiKey: syncIncludeApiKey

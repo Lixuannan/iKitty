@@ -1,14 +1,9 @@
 package com.codingcow.ikitty
 
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * 同步对界面暴露的状态。
@@ -31,16 +26,15 @@ sealed interface SyncStatus {
  * 同步的门面：界面只跟它打交道，不直接碰 [SyncEngine] 或本地日志。
  *
  * 职责有三块，都是"界面做不了"或"不该在两处各写一遍"的：
- * 1. **触发策略**：前台化、消息落盘后防抖、用户手动点，全部汇到 [syncNow]；
+ * 1. **触发**：只有用户显式点「上传」或「下载」两个入口，没有前台化、没有落盘防抖；
  * 2. **把异常翻译成状态**：[SyncException] → [SyncStatus]，文案只在这里写一次；
  * 3. **同步之后的收尾**：设置要重新读进 [ChatEngine]，否则界面还在用旧配置。
  *
- * [syncNow] 是 **suspend** 的：调用方自己决定在哪个作用域、哪个调度器上跑它。
- * 落盘（写地址与密钥）与上传是两件事，**不要在同一个入口里串起来**——那会让
- * "保存设置"变成一个可能耗时几十秒的网络操作，界面只能干等。
+ * [push] 与 [pull] 都是 **suspend** 的，并且会**一直等到这一轮结束**才返回：调用方在这段时间
+ * 里显示一块阻塞的进度动画，用户点完就知道成没成。它们把终态同时写进 [status] 与返回值。
  *
- * 不做系统级后台调度（那需要各平台的原生 API：WorkManager / BGTaskScheduler）；
- * 触发点仍限定在应用还活着的时候：前台化、消息落盘后防抖、用户手动点。
+ * 上传与下载是两个独立动作：拉取会整体替换本地日志，把它藏在"上传"里，会让一次本该只写
+ * 云端的操作顺带改写本机。
  */
 interface SyncFacade {
     val status: StateFlow<SyncStatus>
@@ -59,20 +53,19 @@ interface SyncFacade {
      */
     suspend fun setServiceUrl(url: String)
 
-    suspend fun syncNow()
+    /**
+     * 把本机的新消息与设置传到云端，**等它结束**，返回这一轮的终态。
+     *
+     * 不拉取：本地日志不会被这次调用改写。凭据没配好时不做任何网络请求，直接返回对应的终态。
+     */
+    suspend fun push(): SyncStatus
 
     /**
-     * 跑一轮同步，并**把这一轮的终态直接返回**。
+     * 把云端快照下载到本机（整体替换本地日志、继承设置、补齐图片），**等它结束**。
      *
-     * 与 [syncNow] 的区别只在"结果怎么给"：[syncNow] 把终态写进 [status]，调用方要靠
-     * "状态变了"去推断结束。当这一轮的前后状态**相等**（例如本来就没配服务地址，
-     * 触发前后都是 [SyncStatus.Disabled]）时状态流不会重新发射，那个推断就永远不会发生——
-     * 调用方只能一直等到超时。这个方法由发起者自己拿到返回值，不依赖任何状态发射。
-     *
-     * 已经有一轮在跑时等它那一轮的终态，不另起一轮：两轮替换会互相覆盖日志，而调用方要的
-     * 只是"这次同步到底成没成"。凭据没配好时不做任何网络请求，直接返回对应的终态。
+     * 不上传：本机还没推上去的消息会留在本地，等待下一次 [push]。
      */
-    suspend fun syncNowAndAwait(): SyncStatus
+    suspend fun pull(): SyncStatus
 
     suspend fun setAccountKey(key: String)
 
@@ -85,8 +78,7 @@ interface SyncFacade {
      * 是否把 API Key 同步到云端。
      *
      * 只改开关，**不触发同步**：把"写一个布尔值"和"发一轮网络请求"压在同一个调用里，
-     * 调用方就没法把落盘与上传分开——iOS 的设置页因此卡在主线程上等整轮同步跑完。
-     * 需要把新开关立刻反映到云端时，由调用方在写完凭据之后显式调用一次 [syncNow]。
+     * 调用方就没法把落盘与上传分开，用户也就没法在写完之后自己决定什么时候上传。
      */
     suspend fun setIncludeApiKey(include: Boolean)
 
@@ -94,11 +86,6 @@ interface SyncFacade {
 
     /** 清空云端（不可撤销）。本地数据不受影响。 */
     suspend fun deleteCloudData()
-
-    /** 应用前台化、聊天有新内容时调用；内部按需防抖。 */
-    fun notifyContentChanged()
-
-    fun dispose()
 }
 
 /**
@@ -123,12 +110,9 @@ fun createSyncFacade(
     credentialsStore: KeyValueStore,
     images: SyncImageOps,
     ioDispatcher: CoroutineDispatcher,
-    scope: CoroutineScope,
     now: () -> Long = { 0L },
     /** 首次同步前把老图片名换成内容哈希；由平台层提供（需要图片目录与文件系统）。 */
-    migrateImages: suspend () -> List<String> = { emptyList() },
-    /** 防抖时长；测试里可以调小。 */
-    debounceMillis: Long = SYNC_DEBOUNCE_MILLIS
+    migrateImages: suspend () -> List<String> = { emptyList() }
 ): SyncFacade = DefaultSyncFacade(
     engine = engine,
     transport = transport,
@@ -136,14 +120,9 @@ fun createSyncFacade(
     credentialsStore = credentialsStore,
     images = images,
     ioDispatcher = ioDispatcher,
-    scope = scope,
     now = now,
-    migrateImages = migrateImages,
-    debounceMillis = debounceMillis
+    migrateImages = migrateImages
 )
-
-/** 助手回复落盘后等这么久再同步：一轮对话里通常只有一次上行的必要。 */
-const val SYNC_DEBOUNCE_MILLIS = 5_000L
 
 private class DefaultSyncFacade(
     private val engine: ChatEngine,
@@ -152,10 +131,8 @@ private class DefaultSyncFacade(
     credentialsStore: KeyValueStore,
     images: SyncImageOps,
     private val ioDispatcher: CoroutineDispatcher,
-    private val scope: CoroutineScope,
     now: () -> Long,
-    migrateImages: suspend () -> List<String>,
-    private val debounceMillis: Long
+    migrateImages: suspend () -> List<String>
 ) : SyncFacade {
 
     private val credentials = KeyValueSyncCredentialStore(credentialsStore)
@@ -230,8 +207,6 @@ private class DefaultSyncFacade(
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Disabled)
     override val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
-    private var debounceJob: Job? = null
-
     /**
      * 把服务地址读进内存。
      *
@@ -250,37 +225,36 @@ private class DefaultSyncFacade(
     }
 
     override suspend fun setServiceUrl(url: String) {
-        credentials.setServiceUrl(url)
+        // 走引擎而不是直接写凭据：换地址 = 换云空间，游标与"设置已对账"的记忆必须一起作废，
+        // 而"换了才作废"的判断收在引擎里，免得每个调用方各写一遍。见 [SyncEngine.setServiceUrl]。
+        syncEngine.setServiceUrl(url)
         refreshServiceUrl()
         _status.value = if (serviceUrl.isBlank()) SyncStatus.Disabled else SyncStatus.Idle
     }
 
-    override suspend fun syncNow() {
-        if (!prepare()) return
-        // 已经在跑就不再起第二个：两次替换会互相覆盖日志。这也是 SyncEngine 内部加锁的原因，
-        // 但界面层提前挡掉可以避免状态来回跳。
-        //
-        // 这也让 [syncNow] 成为一个**不阻塞调用方**的入口：本类被界面放在后台作用域上跑，
-        // 而"已经在跑"时它什么都不做就返回，重复触发不会排队堆积。
-        if (_status.value is SyncStatus.Working) return
-        runSync()
+    override suspend fun push(): SyncStatus {
+        if (!prepare()) return _status.value
+        return runSync(
+            working = "正在上传…",
+            emptyText = "没有需要上传的内容",
+            refreshEngine = false
+        ) { syncEngine.push() }
     }
 
-    override suspend fun syncNowAndAwait(): SyncStatus {
+    override suspend fun pull(): SyncStatus {
         if (!prepare()) return _status.value
-        // 恰巧有一轮在跑（防抖触发的、或上一次保存触发的）就等它：两个调用方等的是同一轮，
-        // 结果对用户是同一件事，也不该为此再发一轮请求。
-        if (_status.value is SyncStatus.Working) {
-            return _status.first { it !is SyncStatus.Working }
-        }
-        return runSync()
+        return runSync(
+            working = "正在从云端下载…",
+            emptyText = "云端没有新内容",
+            // 拉取整体替换了本地日志：界面与 nextSeq 必须跟着重读，否则顺序停在旧快照。
+            refreshEngine = true
+        ) { syncEngine.pull() }
     }
 
     /**
      * 凭据检查：能同步返回 true；否则把状态置成对应的终态并返回 false。
      *
-     * 抽出来是因为 [syncNow] 与 [syncNowAndAwait] 必须用同一套判断，否则"能不能同步"
-     * 会在两条路径上漂移——iOS 侧那条等待路径就曾因为漏掉这个分支而卡到超时。
+     * [push] 与 [pull] 必须用同一套判断，否则"能不能同步"会在两条路径上漂移。
      */
     private suspend fun prepare(): Boolean {
         if (!refreshServiceUrl()) {
@@ -295,22 +269,28 @@ private class DefaultSyncFacade(
     }
 
     /**
-     * 真正跑一轮同步并把终态同时写进 [status] 与返回值。
+     * 跑一轮上传或下载，把终态同时写进 [status] 与返回值。
      *
      * 调用方必须先经过 [prepare]；这里只负责"跑 + 翻译异常"，不再判断能不能跑。
+     * [emptyText] 是"这一轮没发生任何变化"时给用户的一句交代——不能什么都不显示，
+     * 那样点了按钮之后界面毫无反应，看起来像没生效。
      */
-    private suspend fun runSync(): SyncStatus {
-        _status.value = SyncStatus.Working("正在同步…")
+    private suspend fun runSync(
+        working: String,
+        emptyText: String,
+        refreshEngine: Boolean,
+        block: suspend () -> SyncReport
+    ): SyncStatus {
+        _status.value = SyncStatus.Working(working)
         val result = try {
-            val report = syncEngine.sync()
-            // 同步已经把日志重写过，界面要跟上；否则顺序与序号都停在旧快照。
-            engine.syncCompleted()
+            val report = block()
+            if (refreshEngine) engine.syncCompleted()
             val warning = drainWarnings()
             val summary = report.summary()
             when {
                 warning != null -> SyncStatus.Done(warning)
-                summary != null -> SyncStatus.Done("同步完成：$summary")
-                else -> SyncStatus.Idle
+                summary != null -> SyncStatus.Done(summary)
+                else -> SyncStatus.Done(emptyText)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -372,21 +352,6 @@ private class DefaultSyncFacade(
         } catch (e: SyncException) {
             _status.value = SyncStatus.Failed(e.message ?: "清空失败")
         }
-    }
-
-    override fun notifyContentChanged() {
-        debounceJob?.cancel()
-        // 防抖在 scope 上跑（Android 是 viewModelScope，iOS 是应用作用域），
-        // 应用退出时会被一起取消，不会留下悬挂的定时任务。
-        debounceJob = scope.launch {
-            delay(debounceMillis)
-            syncNow()
-        }
-    }
-
-    override fun dispose() {
-        debounceJob?.cancel()
-        debounceJob = null
     }
 
     private fun drainWarnings(): String? {

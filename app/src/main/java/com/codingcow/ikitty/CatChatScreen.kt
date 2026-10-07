@@ -155,6 +155,12 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             onSaveSyncCredentials = { url, key, includeApiKey ->
                 vm.saveSyncCredentials(url, key, includeApiKey)
             },
+            onPushToCloud = { url, key, includeApiKey ->
+                vm.pushToCloud(url, key, includeApiKey)
+            },
+            onPullFromCloud = { url, key, includeApiKey ->
+                vm.pullFromCloud(url, key, includeApiKey)
+            },
             onSetSyncIncludeApiKey = { vm.setSyncIncludeApiKey(it) },
             onDeleteCloudData = { vm.deleteCloudData() },
             onSave = { newConfig, newPersona, enableLocation ->
@@ -241,7 +247,12 @@ fun CatChatScreen(vm: CatChatViewModel = viewModel()) {
             if (messages.isEmpty()) {
                 item(key = "greeting") { CatTextBubble(text = persona.welcome()) }
             }
-            itemsIndexed(messages, key = { _, msg -> msg.seq }) { index, msg ->
+            // key 必须是**稳定身份**（[StoredMessage.msgId]），不能用 [StoredMessage.seq]：
+            // 同步把云端那一份（服务端分配的 seq）与本机还没推上去的草稿（本机 seq）合并在一份
+            // 列表里，两套 seq 的取值范围会重叠，同一个 seq 出现两次。Compose 的 key 一旦重复
+            // 就抛 IllegalArgumentException 直接崩掉进程（滚动或自动滚动到末尾时触发）——这正是
+            // "开启云同步后频繁闪退"的原因。msgId 在同步前就已固化，且合并时按它去重。
+            itemsIndexed(messages, key = { _, msg -> msg.msgId }) { index, msg ->
                 MessageBubble(
                     msg = msg,
                     // 分组规则由 :shared 给，Android 与 iOS 因此显示得一样。

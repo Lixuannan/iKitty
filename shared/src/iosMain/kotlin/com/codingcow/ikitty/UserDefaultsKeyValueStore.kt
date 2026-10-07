@@ -15,7 +15,7 @@ import platform.Foundation.NSUserDefaults
  *    写入绕过了 [put]（iOS 的 `SyncCredentialWriter` 就是——它必须同步落盘，不能挂起），
  *    缓存里那份就成了旧值，而且**没有任何东西会通知它失效**：
  *    - 设置页回显上一次保存的地址与密钥；
- *    - `syncNow()` 拿旧地址、旧密钥去发请求；
+ *    - 点「上传到云端」时拿旧地址、旧密钥去发请求；
  *    - 换了密钥、游标也归零了，`sinceRev()` 却还停在旧云空间的值上。
  *    `NSUserDefaults` 自己的读取是在内存里完成的，重读的代价可以忽略。
  * 2. **写入之后要重新发射一次**。这是 [KeyValueStore.values] 的契约（"当前快照，并在变化时

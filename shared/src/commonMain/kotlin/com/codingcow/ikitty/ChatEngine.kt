@@ -32,15 +32,7 @@ class ChatEngine(
     private val imageDataUrls: suspend (Collection<String>) -> Map<String, String>,
     private val locationSource: LocationSource?,
     private val invalidateImageCache: () -> Unit,
-    private val scope: CoroutineScope,
-    /**
-     * 本地内容发生了变化（消息落盘、设置保存）时回调。
-     *
-     * 由同步用它触发一次防抖同步。做成**回调而不是让 ChatEngine 认识同步**：
-     * 聊天不需要知道"有没有云端"，而同步的实现细节（Worker 地址、账号密钥）更不该
-     * 渗进聊天逻辑。默认空实现，所以测试与不用同步的调用方不必关心它。
-     */
-    private val onContentChanged: () -> Unit = {}
+    private val scope: CoroutineScope
 ) {
     private val _messages = MutableStateFlow<List<StoredMessage>>(emptyList())
     val messages: StateFlow<List<StoredMessage>> = _messages.asStateFlow()
@@ -142,8 +134,6 @@ class ChatEngine(
         _locationEnabled.value = locationEnabled
         scope.launch {
             settings.save(newConfig, newPersona, locationEnabled)
-            // 保存在协程里，通知也放进来：否则界面刚显示"已保存"、同步却还没看到新设置。
-            notifyContentChanged()
         }
     }
 
@@ -384,19 +374,7 @@ class ChatEngine(
         _messages.value = _messages.value + message
         scope.launch {
             log.append(message)
-            // 落盘之后才通知同步：发送方看到"已同步"时，消息一定已经在磁盘上了。
-            notifyContentChanged()
         }
-    }
-
-    /**
-     * 告知"本地内容变了"。
-     *
-     * 收在引擎里而不是让调用方各自去碰回调：这样"什么时候算内容变了"只有一个地方定义，
-     * 平台层与测试都不需要知道回调挂在哪个字段上。
-     */
-    internal fun notifyContentChanged() {
-        onContentChanged()
     }
 
     /** 攒够一批新消息就后台整理一次记忆；整理失败不影响聊天。 */

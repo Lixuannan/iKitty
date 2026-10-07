@@ -77,10 +77,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         imageDataUrls = { names -> images.dataUrls(names) },
         locationSource = locationSource,
         invalidateImageCache = { images.invalidateCache() },
-        scope = viewModelScope,
-        // 消息落盘与设置保存都会走到这里；同步本身可能在门面建好之前就被通知，
-        // 所以用可空引用而不是直接捕获。
-        onContentChanged = { sync?.notifyContentChanged() }
+        scope = viewModelScope
     )
 
     /**
@@ -90,8 +87,6 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
      * 每个人的 Worker 地址都不同。凭据存在**独立的** DataStore 文件里，
      * 与用户设置分开——换账号时整块作废，不该混进 `SettingsKeys`。
      */
-    private var sync: SyncFacade? = null
-
     private val syncFacade: SyncFacade = createSyncFacade(
         engine = engine,
         transport = transport,
@@ -99,7 +94,6 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
         credentialsStore = DataStoreKeyValueStore(app, SYNC_DATASTORE_NAME),
         images = AndroidSyncImages(images),
         ioDispatcher = Dispatchers.IO,
-        scope = viewModelScope,
         now = System::currentTimeMillis,
         migrateImages = {
             migrateLegacyImageNames(
@@ -111,7 +105,7 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (result.renamedFiles > 0) listOf("已把 ${result.renamedFiles} 张旧图片改名为内容哈希") else emptyList()
             }
         }
-    ).also { sync = it }
+    )
 
     /** 当前安装包的版本名，用来和 release 的 tag 比较。 */
     val appVersion: String = runCatching {
@@ -172,23 +166,14 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         engine.start()
-        // 这里**不**同步：首次同步由 [onAppForeground] 承担，而进程启动必然走到那一次
-        // （见 `MainActivity` 对 `ProcessLifecycleOwner` 的观察）。两处都触发的话，
-        // 冷启动会并排跑两轮同步，其中一轮纯属多余。
+        // 这里**不**同步：手动模式下没有任何自动触发，用户点了「上传」或「下载」才会动。
     }
 
     fun saveSettings(newConfig: ApiConfig, newPersona: CatPersona, locationEnabled: Boolean) {
         engine.saveSettings(newConfig, newPersona, locationEnabled)
-        // 设置也是同步内容的一部分：改完就排队推一次，不必等用户下次发消息。
-        sync?.notifyContentChanged()
     }
 
     // ---- 云端同步 ----
-
-    /** 用户在设置页点「立即同步」。 */
-    fun syncNow() {
-        viewModelScope.launch { syncFacade.syncNow() }
-    }
 
     suspend fun syncIsConfigured(): Boolean = syncFacade.isConfigured()
 
@@ -199,14 +184,35 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun syncIncludeApiKey(): Boolean = syncFacade.includeApiKey()
 
     /**
-     * 写同步凭据；有密钥就顺带同步一次。
+     * 用户点「上传到云端」：先把设置页里那三个草稿落盘，再上传并**等它结束**。
      *
-     * 三个写入在**同一个协程里按顺序 await**，最后显式同步一次。门面里的三个 setter
-     * 都是**纯写入**（不再各自触发同步），否则这里会发出两轮请求，而第一轮用的还是旧密钥。
+     * 落盘与上传是两个动作，但必须是**同一条路径**：分成"保存"和"上传"两个按钮之后，
+     * 用户完全可能改完地址直接点上传——那时拿到的还是上一次保存的旧地址与旧密钥，
+     * 请求会发到别的云空间去。所以这里先 await 三个写入，再发起这一轮。
      *
-     * 把"写凭据"与"跑同步"合成一个入口，是因为**两个入口迟早会漂移**：iOS 那边曾经
-     * 只有「立即同步」会写凭据，点「保存」就只是关页面，于是用户填的地址与密钥直接丢掉了。
-     * 现在两端都只有这一条路径：保存即写入，有密钥才同步。
+     * 同步跑在 `viewModelScope` 而不是界面的 `rememberCoroutineScope`：旋转屏幕会取消
+     * composition 的作用域，那样一轮正跑到一半的上传会被中断。界面靠 `syncStatus` 显示
+     * 阻塞动画，转屏后动画接着显示。
+     */
+    fun pushToCloud(url: String, accountKey: String, includeApiKey: Boolean) {
+        viewModelScope.launch {
+            writeSyncCredentials(url, accountKey, includeApiKey)
+            syncFacade.push()
+        }
+    }
+
+    /** 用户点「从云端下载」：先落盘凭据，再下载并等它结束。 */
+    fun pullFromCloud(url: String, accountKey: String, includeApiKey: Boolean) {
+        viewModelScope.launch {
+            writeSyncCredentials(url, accountKey, includeApiKey)
+            syncFacade.pull()
+        }
+    }
+
+    /**
+     * 只写同步凭据，**不发起任何网络请求**。
+     *
+     * 底部「保存」与顶部「返回」都走这条：关页面这个动作不该挂在一次网络往返上。
      */
     fun saveSyncCredentials(url: String, accountKey: String, includeApiKey: Boolean) {
         viewModelScope.launch { writeSyncCredentials(url, accountKey, includeApiKey) }
@@ -217,47 +223,24 @@ class CatChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 只改"是否把 API Key 一并同步"。
-     *
-     * 打开开关要立刻推一次，把"云端还没有 Key"这个窗口尽量缩短；但**还没配密钥时不要推**，
-     * 否则 `syncNow` 会把状态设成「还没有填写账号密钥」，在用户正填一半的时候报一个错。
+     * 只改"是否把 API Key 一并同步"。**不触发同步**：要不要上传、什么时候上传由用户
+     * 在「上传到云端」里决定，这里顺手推一次只会让一次写布尔值的操作发出网络请求。
      */
     fun setSyncIncludeApiKey(include: Boolean) {
-        viewModelScope.launch {
-            syncFacade.setIncludeApiKey(include)
-            if (include && syncFacade.isConfigured()) syncFacade.syncNow()
-        }
+        viewModelScope.launch { syncFacade.setIncludeApiKey(include) }
     }
 
-    /** 三个 setter 都只落盘；同步由调用方在写完之后显式发起一次。 */
+    /** 三个 setter 都只落盘；上传或下载由调用方在写完之后显式发起一次。 */
     private suspend fun writeSyncCredentials(url: String, accountKey: String, includeApiKey: Boolean) {
         syncFacade.setServiceUrl(url)
         syncFacade.setIncludeApiKey(includeApiKey)
         // 密钥最后写：换密钥会把云空间状态整体作废，写完之后再同步才是拿新密钥对新账号。
         syncFacade.setAccountKey(accountKey)
-        if (accountKey.isNotBlank()) syncFacade.syncNow()
     }
 
     /** 清空云端。不可撤销，调用方必须先让用户确认。 */
     fun deleteCloudData() {
         viewModelScope.launch { syncFacade.deleteCloudData() }
-    }
-
-    /**
-     * 应用（重新）回到前台：同步一次。
-     *
-     * 调用方是 `MainActivity` 里对 `ProcessLifecycleOwner` 的观察，覆盖两件事：
-     * **冷启动**与**从后台切回来**——另一台设备刚写的消息在这两个时刻才可能出现。
-     * 刻意不挂在 Activity 的生命周期上：旋转屏幕也会走一次 Activity 的 `ON_START`，
-     * 那种"前台"并没有真的离开过应用。
-     */
-    fun onAppForeground() {
-        viewModelScope.launch { syncFacade.syncNow() }
-    }
-
-    override fun onCleared() {
-        syncFacade.dispose()
-        super.onCleared()
     }
 
     /** 测试连接，返回本次请求的完整结果或错误信息。 */

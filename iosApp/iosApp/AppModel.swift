@@ -122,14 +122,6 @@ final class AppModel: ObservableObject {
 
     // MARK: - 同步
 
-    /// 应用回到前台时同步一次。
-    ///
-    /// 没有系统级后台调度（那需要 `BGTaskScheduler` 与 Info.plist 配置），
-    /// 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
-    func onForeground() {
-        environment.onForeground()
-    }
-
     /// 当前同步凭据（地址、密钥、开关）。
     ///
     /// **不 await**：凭据的读取走 `NSUserDefaults` 的直接路径，不再经过 Kotlin 的 suspend 桥。
@@ -137,23 +129,18 @@ final class AppModel: ObservableObject {
         environment.currentSyncCredentials()
     }
 
-    /// 保存同步凭据，然后**等一次同步跑完**。
+    /// 上传到云端：先把设置页的凭据写进本机，再跑一轮上传并**等它结束**。
     ///
     /// 返回要给用户看的一句话（nil 表示没什么可说的；失败时就是那条失败原因）。
     ///
-    /// 为什么是两步、又为什么要等：落盘是同步的（`NSUserDefaults` 的写入，返回即生效），
-    /// 而同步是一轮真实网络往返。等它的收益是"保存"这个动作有确定的结果——点完就能看到
-    /// 同步成功还是失败，而不是事后去猜。代价是这段时间界面不响应，所以调用方必须先把
-    /// 忙碌状态显示出来（设置页会显示"正在同步…"并禁用按钮）。
+    /// 落盘在前、上传在后，而且必须是**同一条路径**：分成两个按钮之后，用户完全可能改完地址
+    /// 直接点上传——那时拿到的还是上一次保存的旧地址与旧密钥，请求会发到别的云空间去。
     ///
     /// 上一版的问题不在"等"，而在**等的路径**：Swift 要 `await` 三个 Kotlin suspend 写入，
     /// 中间还夹着一次由门面自己发起的同步，任何一段接不上就挂在主 actor 上。现在只有一次
-    /// `await`，等的是同步自己的终态，而且带超时兜底（见 `IosAppEnvironment.syncNowAndWait`）。
-    func syncCredentialsAndSync(
-        serviceUrl url: String,
-        accountKey: String,
-        includeApiKey: Bool
-    ) async -> String? {
+    /// `await`，等的是这一轮 upload 自己的终态，而且带超时兜底（见
+    /// `IosAppEnvironment.awaitSync`）。
+    func pushToCloud(serviceUrl url: String, accountKey: String, includeApiKey: Bool) async -> String? {
         if let failure = environment.applySyncCredentials(
             serviceUrl: url,
             accountKey: accountKey,
@@ -161,47 +148,44 @@ final class AppModel: ObservableObject {
         ) {
             return failure
         }
-        // Kotlin 的 suspend 导出到 Swift 是 `async throws`：`syncNowAndWait` 自己不会抛
+        // Kotlin 的 suspend 导出到 Swift 是 `async throws`：`pushAndWait` 自己不会抛
         // （失败已经折成返回文案），但签名要求这里兜住，否则编译不过。真抛了就等于
         // "没等到结果"，按超时那一类处理。
         do {
-            return try await environment.syncNowAndWait()
+            return try await environment.pushAndWait()
         } catch {
-            return "同步没有完成：\(error.localizedDescription)。设置已保存，稍后会自动重试"
+            return "同步没有完成：\(error.localizedDescription)"
+        }
+    }
+
+    /// 从云端下载：先落盘凭据，再拉一整份云端快照回本机并等它结束。
+    ///
+    /// 拉取会**整体替换**本地聊天记录（云端权威），本机还没上传的消息会保留在本地。
+    func pullFromCloud(serviceUrl url: String, accountKey: String, includeApiKey: Bool) async -> String? {
+        if let failure = environment.applySyncCredentials(
+            serviceUrl: url,
+            accountKey: accountKey,
+            includeApiKey: includeApiKey
+        ) {
+            return failure
+        }
+        do {
+            return try await environment.pullAndWait()
+        } catch {
+            return "同步没有完成：\(error.localizedDescription)"
         }
     }
 
     /// 只把同步凭据写进本机，**不**发起同步。返回错误文案（nil 表示写入成功）。
     ///
-    /// 用在不该顺带上传的地方，例如「清空云端数据」：那边删完再同步会把刚清掉的数据传回去。
+    /// 用在「保存」与「清空云端数据」：那边删完再上传会把刚清掉的数据传回去，
+    /// 而「保存」也不该把关闭设置页这个动作挂在一次网络往返上。
     func saveSyncCredentials(serviceUrl url: String, accountKey: String, includeApiKey: Bool) -> String? {
         environment.applySyncCredentials(
             serviceUrl: url,
             accountKey: accountKey,
             includeApiKey: includeApiKey
         )
-    }
-
-    /// 保存同步凭据，然后把一次同步丢给后台作用域，**立刻返回**。
-    ///
-    /// 工具栏的「保存」走这条：凭据落盘是同步的（返回即生效），上传只是顺带，不该让
-    /// 关闭设置页这个动作挂在一次网络往返上——那正是"点保存就卡死"的来源。
-    /// 同步结果照旧更新到 `state.sync`，下次打开设置页能在同步状态行看到。
-    ///
-    /// 返回校验失败的原因（nil 表示已落盘并已排上一次同步）。
-    func saveSyncCredentialsAndSyncInBackground(
-        serviceUrl url: String,
-        accountKey: String,
-        includeApiKey: Bool
-    ) -> String? {
-        let failure = environment.applySyncCredentials(
-            serviceUrl: url,
-            accountKey: accountKey,
-            includeApiKey: includeApiKey
-        )
-        // 校验没过时本地什么都没写，不该顺手发起一轮用旧凭据的同步。
-        if failure == nil { environment.syncInBackground() }
-        return failure
     }
 
     func clearSyncAccountKey() {
@@ -215,23 +199,64 @@ final class AppModel: ObservableObject {
 
     // MARK: - 图片
 
-    /// 归一化并保存一张刚选中的图片。
+    /// 一条消息最多附带几张图片。
+    ///
+    /// 与 Android `CatChatScreen.MAX_ATTACHMENTS` 以及 README「单次最多 9 张」保持一致。
+    /// 对话页用它限制相册的单次选择张数，`attach(images:)` 再用它截断——上限放在写入待发列表
+    /// 的那一处兜底，相册之外的相机入口才不会漏掉。
+    static let maxAttachments = 9
+
+    /// 归一化并保存一张图片（相机入口）。
     func attach(image: UIImage) async {
-        guard let data = ImageNormalizer.normalizedJpegData(from: image) else {
-            imageError = "这张图片没法处理，换一张试试。"
-            return
-        }
-        do {
-            guard let name = try await environment.saveImage(data: data) else {
-                imageError = "图片没能存下来，可能是存储空间不足。"
-                return
+        await attach(images: [image])
+    }
+
+    /// 归一化并保存一批刚选中的图片，按顺序追加到待发送列表。
+    ///
+    /// 逐张兜底：一张失败（iCloud 上还没下载完、格式不认识、空间不足）只跳过它，
+    /// 同批的其它图片照常加入，最后把失败和超限的张数一次性告诉用户——静默丢图比多一句提示更糟。
+    /// 超过上限的张数按 Android 的 `.take(MAX_ATTACHMENTS)` 同样截断，但这里会明说。
+    func attach(images: [UIImage]) async {
+        var failed = 0
+        var dropped = 0
+        var lastError: String?
+        for image in images {
+            guard pendingImages.count < Self.maxAttachments else {
+                dropped += 1
+                continue
             }
-            imageError = nil
-            pendingImages.append(name)
-        } catch {
-            // Kotlin 的 suspend 函数在 Swift 里是 async throws；写文件失败会走这里。
-            imageError = "图片没能存下来：\(error.localizedDescription)"
+            guard let data = await ImageNormalizer.normalizedJpegData(from: image) else {
+                failed += 1
+                continue
+            }
+            do {
+                if let name = try await environment.saveImage(data: data) {
+                    pendingImages.append(name)
+                } else {
+                    failed += 1
+                }
+            } catch {
+                // Kotlin 的 suspend 函数在 Swift 里是 async throws；写文件失败会走这里。
+                failed += 1
+                lastError = error.localizedDescription
+            }
         }
+        imageError = Self.attachMessage(failed: failed, dropped: dropped, reason: lastError)
+    }
+
+    private static func attachMessage(failed: Int, dropped: Int, reason: String?) -> String? {
+        var parts: [String] = []
+        if failed == 1, let reason {
+            // 只有一张失败时带上底层原因：那条信息通常正好是可用的（例如磁盘写不进去）。
+            parts.append("有 1 张图片没能加入：\(reason)")
+        } else if failed > 0 {
+            // 多张失败时原因可能各不相同，只报张数，避免挑出其中一条以偏概全。
+            parts.append("有 \(failed) 张图片没能加入，可能是格式不支持或存储空间不足")
+        }
+        if dropped > 0 {
+            parts.append("有 \(dropped) 张因为超过 \(maxAttachments) 张上限没有加入")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "；") + "。"
     }
 
     func removePendingImage(_ name: String) {

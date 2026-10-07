@@ -3,8 +3,10 @@ package com.codingcow.ikitty
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,12 +54,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -83,7 +88,12 @@ fun SettingsScreen(
     onExportBackup: (Uri) -> Unit,
     onImportBackup: (Uri) -> Unit,
     loadSyncSettings: suspend () -> SyncSettingsSnapshot,
+    /** 只写地址、密钥与开关，不发起网络请求。 */
     onSaveSyncCredentials: (String, String, Boolean) -> Unit,
+    /** 写凭据后上传并等它结束；界面靠 [syncStatus] 显示阻塞动画。 */
+    onPushToCloud: (String, String, Boolean) -> Unit,
+    /** 写凭据后下载并等它结束。 */
+    onPullFromCloud: (String, String, Boolean) -> Unit,
     onSetSyncIncludeApiKey: (Boolean) -> Unit,
     onDeleteCloudData: () -> Unit,
     onBack: () -> Unit
@@ -575,8 +585,8 @@ fun SettingsScreen(
         Button(
             onClick = {
                 onSave(current(), currentPersona(), locationEnabled)
-                // 同步凭据也必须在这里写下去。它原来只有「立即同步」一个写入点，
-                // 点「保存」只是关页面，用户填的地址与密钥随 composition 一起丢掉。
+                // 同步凭据也必须在这里写下去：它曾经只有一个写入点，点「保存」只是关页面，
+                // 用户填的地址与密钥随 composition 一起丢掉。
                 if (syncLoaded) onSaveSyncCredentials(syncServiceUrl, syncAccountKey, syncIncludeApiKey)
             },
             enabled = baseUrl.isNotBlank() && model.isNotBlank(),
@@ -617,9 +627,11 @@ fun SettingsScreen(
             serviceUrl = syncServiceUrl,
             accountKey = syncAccountKey,
             includeApiKey = syncIncludeApiKey,
+            loaded = syncLoaded,
             onServiceUrlChange = { syncServiceUrl = it },
             onAccountKeyChange = { syncAccountKey = it },
-            onSaveCredentials = onSaveSyncCredentials,
+            onPushToCloud = onPushToCloud,
+            onPullFromCloud = onPullFromCloud,
             onSetIncludeApiKey = onSetSyncIncludeApiKey,
             onDeleteCloudData = onDeleteCloudData
         )
@@ -636,6 +648,13 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(40.dp))
+    }
+
+    // 同步期间盖住整页：上传/下载是一轮网络往返，期间改地址、改密钥、再点一次都只会让
+    // 结果说不清。遮罩吃掉所有点击（连返回键也吞掉），用户除了等没有别的动作可做；
+    // 同步一结束状态离开 Working，它就消失。
+    (syncStatus as? SyncStatus.Working)?.let { working ->
+        SyncBlockingOverlay(working.label)
     }
 }
 
@@ -1057,10 +1076,14 @@ private fun SyncSection(
     serviceUrl: String,
     accountKey: String,
     includeApiKey: Boolean,
+    /** 输入框里的值是否已经从本机读回来。没读回来之前不允许动，否则会把已存的凭据写成空。 */
+    loaded: Boolean,
     onServiceUrlChange: (String) -> Unit,
     onAccountKeyChange: (String) -> Unit,
-    /** 写地址与密钥，有密钥时顺带同步一次；由调用方保证"先写后同步"的顺序。 */
-    onSaveCredentials: (url: String, accountKey: String, includeApiKey: Boolean) -> Unit,
+    /** 写凭据后上传并等它结束。 */
+    onPushToCloud: (url: String, accountKey: String, includeApiKey: Boolean) -> Unit,
+    /** 写凭据后下载并等它结束。 */
+    onPullFromCloud: (url: String, accountKey: String, includeApiKey: Boolean) -> Unit,
     onSetIncludeApiKey: (Boolean) -> Unit,
     onDeleteCloudData: () -> Unit
 ) {
@@ -1139,21 +1162,30 @@ private fun SyncSection(
 
         SyncStatusText(status)
 
+        // 两个动作都是"先写凭据、再跑这一轮"：让调用方按顺序 await，而不是在 UI 层
+        // "先写、睡一会儿、再同步"——写盘是异步的，睡多久都只是猜。
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
-                enabled = status !is SyncStatus.Working,
-                // 写凭据与同步交给同一个调用：在 UI 层"先写、睡一会儿、再同步"是不可靠的
-                // （写盘是异步的，睡多久都只是猜），由调用方按顺序 await 才是确定的。
-                onClick = { onSaveCredentials(serviceUrl, accountKey, includeApiKey) }
+                enabled = loaded && serviceUrl.isNotBlank() && accountKey.isNotBlank(),
+                modifier = Modifier.weight(1f),
+                onClick = { onPushToCloud(serviceUrl, accountKey, includeApiKey) }
             ) {
-                Text("立即同步并保存")
+                Text("上传到云端")
             }
-            OutlinedButton(
-                enabled = serviceUrl.isNotBlank() || accountKey.isNotBlank(),
-                onClick = { confirmDelete = true }
+            Button(
+                enabled = loaded && serviceUrl.isNotBlank() && accountKey.isNotBlank(),
+                modifier = Modifier.weight(1f),
+                onClick = { onPullFromCloud(serviceUrl, accountKey, includeApiKey) }
             ) {
-                Text("清空云端数据")
+                Text("从云端下载")
             }
+        }
+        OutlinedButton(
+            enabled = serviceUrl.isNotBlank() || accountKey.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { confirmDelete = true }
+        ) {
+            Text("清空云端数据")
         }
     }
 
@@ -1164,7 +1196,7 @@ private fun SyncSection(
             text = {
                 Text(
                     "云端的历史记录会被删除且无法恢复（没有账号找回）。本机记录不受影响，" +
-                        "但下次同步会把本机现有的消息重新上传。"
+                        "之后「上传到云端」会把本机现有的消息重新传上去。"
                 )
             },
             confirmButton = {
@@ -1199,6 +1231,43 @@ private fun SyncStatusText(status: SyncStatus) {
         style = MaterialTheme.typography.bodySmall,
         color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     )
+}
+
+/**
+ * 同步期间盖住整页的阻塞动画。
+ *
+ * 用 [Dialog] 而不是在页面里叠一层 Box：对话自成一层窗口，返回键与页面外点击都能一起吞掉，
+ * 设置页本身也不必为了这一层遮罩改结构。有意的阻塞——上传/下载是一轮网络往返，期间改地址、
+ * 改密钥、再点一次都只会让结果说不清；同步一结束状态离开 [SyncStatus.Working]，它自己消失。
+ */
+@Composable
+private fun SyncBlockingOverlay(label: String) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
 }
 
 /**

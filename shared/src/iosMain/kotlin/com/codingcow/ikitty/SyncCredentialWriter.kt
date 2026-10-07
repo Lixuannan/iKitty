@@ -15,8 +15,8 @@ import platform.Foundation.NSUserDefaults
  *   续体不是同一条路径），正是要避免的那类死锁。
  *
  * 所以落盘走这里：`NSUserDefaults` 的写入在 Kotlin/Native 上是直接调用 Foundation，
- * 函数返回时值就已经写进 store 了，Swift 侧不需要 `await`。上传仍然由
- * `IosAppEnvironment.syncNow()` 在后台作用域上完成。
+ * 函数返回时值就已经写进 store 了，Swift 侧不需要 `await`。上传由设置页的
+ * 「上传到云端」单独发起（`IosAppEnvironment.pushAndWait`），与落盘彻底分开。
  *
  * 键名复用 [SyncKeys]：它只在 [KeyValueSyncCredentialStore] 里被解释一次，
  * 这里如果另抄一份，"改了键名等于让老用户重新配对"这条约束就会在两边漂移。

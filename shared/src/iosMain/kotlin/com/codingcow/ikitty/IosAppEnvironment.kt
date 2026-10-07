@@ -61,21 +61,15 @@ class IosAppEnvironment {
         imageDataUrls = { names -> images.dataUrls(names) },
         locationSource = IpLocationSource(KtorTransport()),
         invalidateImageCache = { images.invalidateCache() },
-        scope = scope,
-        // 消息落盘与设置保存都会走到这里；同步门面可能在引擎之后才建好，所以用可空引用。
-        onContentChanged = { sync?.notifyContentChanged() }
+        scope = scope
     )
 
     /**
-     * 云端同步。
+     * 同步用的 `NSUserDefaults` 套件：与用户设置分开存放，换账号时整块作废。
      *
      * 服务地址与账号密钥都在设置页里填，不编译进代码：这是自托管应用，
-     * 每个人的 Worker 地址都不同。凭据存在**独立的** `NSUserDefaults` 套件里，
-     * 与用户设置分开——换账号时整块作废，不该混进 `SettingsKeys`。
+     * 每个人的 Worker 地址都不同。
      */
-    private var sync: SyncFacade? = null
-
-    /** 同步用的 NSUserDefaults 套件：与设置分开，换账号时整块作废。 */
     private val syncDefaults = NSUserDefaults(suiteName = SYNC_DEFAULTS_SUITE)
         ?: NSUserDefaults.standardUserDefaults
 
@@ -92,9 +86,6 @@ class IosAppEnvironment {
         credentialsStore = UserDefaultsKeyValueStore(syncDefaults),
         images = IosSyncImages(images),
         ioDispatcher = ioDispatcher,
-        // 防抖任务与一次同步的收尾都排在界面作用域上：这是刻意的取舍——"保存"时前台
-        // 会等这一次同步跑完（见 [awaitSync]），窗口期内界面本来就该显示进度而不是继续响应。
-        scope = scope,
         now = ::nowMillis,
         migrateImages = {
             val result = migrateLegacyImageNames(
@@ -109,49 +100,31 @@ class IosAppEnvironment {
                 emptyList()
             }
         }
-    ).also { sync = it }
+    )
 
     val observer = ChatEngineObserver(engine, scope, syncFacade.status)
 
-    /**
-     * 应用回到前台：先同步一次。
-     *
-     * 没有系统级后台调度（那要 `BGTaskScheduler` 与额外的 Info.plist 配置），
-     * 前台化这一次已经覆盖了"换设备后看到新消息"这个主要场景。
-     * 界面刚回到前台，多一次网络往返不会影响任何可交互的窗口期。
-     */
-    fun onForeground() {
-        syncInBackground()
-    }
+    /** 上传并等它结束；返回给用户看的一句话（nil 表示没什么要说的）。 */
+    suspend fun pushAndWait(): String? = awaitSync { syncFacade.push() }
+
+    /** 下载并等它结束；返回给用户看的一句话（nil 表示没什么要说的）。 */
+    suspend fun pullAndWait(): String? = awaitSync { syncFacade.pull() }
 
     /**
-     * 在后台作用域上发起一次同步，**不等结果**。
+     * 跑一轮上传或下载并**等它结束**。
      *
-     * 设置页「保存」走这条路径：凭据已经同步落盘，上传只是顺带，不该让"保存"这个动作
-     * 挂在一次网络往返上。结果照旧会更新到同步状态行（`state.sync`）。
-     */
-    fun syncInBackground() {
-        scope.launch { syncFacade.syncNow() }
-    }
-
-    /**
-     * 跑一次同步并**等它结束**，返回给用户看的一句话（nil 表示没什么要说的）。
-     *
-     * 这是设置页「保存并同步」走的路径：落盘（[applySyncCredentials]）之后立刻跑一次，
-     * 结果直接回给界面，用户不需要事后去猜"到底同步了没有"。
-     *
-     * 等的是 [SyncFacade.syncNowAndAwait] 的**返回值**，而不是"状态变了"：状态没变时
+     * 等的是 [SyncFacade.push] / [SyncFacade.pull] 的**返回值**，而不是"状态变了"：状态没变时
      * （例如没配服务地址，前后都是 `Disabled`）状态流不会重新发射，靠它推断结束会一直等到
      * 超时——那正是"点保存就卡住"的来源。
      *
      * 超时是**兜底**，不是主要的取消手段：超时只放弃"等"，这一轮同步本身仍在跑，状态行
      * 照旧会更新到最终结果。它挡的是"网络一直不回应"时设置页永远关不掉。
      */
-    suspend fun syncNowAndWait(): String? {
+    private suspend fun awaitSync(block: suspend () -> SyncStatus): String? {
         // 在界面作用域上发起：同步的状态更新因此仍在主线程，SwiftUI 可以直接消费。
-        val started: Deferred<SyncStatus> = scope.async { syncFacade.syncNowAndAwait() }
+        val started: Deferred<SyncStatus> = scope.async { block() }
         val status = withTimeoutOrNull(SYNC_WAIT_TIMEOUT_MILLIS) { started.await() }
-            ?: return "同步超时（$SYNC_WAIT_TIMEOUT_SECONDS 秒），已保存；稍后会自动重试"
+            ?: return "同步超时（$SYNC_WAIT_TIMEOUT_SECONDS 秒）；可以再点一次重试"
         return when (status) {
             is SyncStatus.Done -> status.message
             is SyncStatus.Failed -> status.message
@@ -173,8 +146,8 @@ class IosAppEnvironment {
      * 写同步凭据。**不挂起、不等待网络**：`NSUserDefaults` 的写入在 Kotlin/Native 上就是
      * 直接调用 Foundation，函数返回时值已经落盘。返回一句给用户看的话（nil 表示没什么要说的）。
      *
-     * 上传不在这里：它由 [syncNowAndWait] 单独做。两者分开之后，落盘永远是"函数返回即生效"，
-     * 不会因为网络好坏而时快时慢。
+     * 上传不在这里：它由 [pushAndWait] / [pullAndWait] 单独做。两者分开之后，落盘永远是
+     * "函数返回即生效"，不会因为网络好坏而时快时慢。
      *
      * 密钥太短之类的本地校验失败必须说出来，而不是静默保存一个服务端一定会拒的值；
      * 这种情况下**什么都不写**，用户看到的仍旧是上一次的配置。
@@ -431,9 +404,6 @@ class IosAppEnvironment {
 
     /** 应用退出时调用；之后这个环境不可再用。 */
     fun dispose() {
-        // 先收掉同步门面的防抖任务，再取消作用域：只取消作用域也能停住，
-        // 但门面里那个 Job 会被留着直到作用域真正取消，顺序反了会多一次无谓的同步。
-        syncFacade.dispose()
         scope.cancel()
     }
 }
